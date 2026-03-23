@@ -1,0 +1,217 @@
+rules_version='2';
+
+// ─── Helper functions ──────────────────────────────────────────────────────────
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Core auth helpers ─────────────────────────────────────────────────────
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Fetch caller's user profile (cached within a single request evaluation)
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isSaasMasterAdmin() {
+      return isSignedIn() && userDoc().role == 'saas_master_admin';
+    }
+
+    // Is the caller a member of this tenant (via denormalized tenantIds[])?
+    function belongsToTenant(tenantId) {
+      return isSignedIn() && tenantId in userDoc().tenantIds;
+    }
+
+    // Is the caller an admin (tenant_admin or higher) on this tenant?
+    function isTenantAdmin(tenantId) {
+      return isSignedIn()
+          && userDoc().role in ['saas_master_admin', 'tenant_admin']
+          && tenantId in userDoc().tenantIds;
+    }
+
+    // Can the caller manage members of this tenant?
+    function canManageMembers(tenantId) {
+      return isTenantAdmin(tenantId) || isSaasMasterAdmin();
+    }
+
+    // ── Platform config ───────────────────────────────────────────────────────
+    // Readable by anyone signed in.
+    // First-time create allowed without auth (bootstrap on empty platform).
+    match /platform/config {
+      allow read:   if isSignedIn() || !exists(/databases/$(database)/documents/platform/config);
+      allow create: if !exists(/databases/$(database)/documents/platform/config);
+      allow update: if isSaasMasterAdmin();
+      allow delete: if false;
+    }
+
+    // ── TOTP MFA Secrets (app-level MFA) ─────────────────────────────────────
+    // Only the account owner may read or write their own TOTP secret.
+    // This is intentionally more restrictive than the user profile —
+    // even SaaS Master Admins cannot read these secrets.
+    match /user_mfa_secrets/{uid} {
+      allow read, write: if isSignedIn() && request.auth.uid == uid;
+      allow delete:      if isSignedIn() && request.auth.uid == uid;
+    }
+
+    // ── Users ─────────────────────────────────────────────────────────────────
+    match /users/{uid} {
+      // Users read their own profile; SaaS Master Admins read all;
+      // tenant_admins can read profiles of users in their tenant
+      allow read: if isSignedIn() && (
+        request.auth.uid == uid
+        || isSaasMasterAdmin()
+        || (userDoc().role == 'tenant_admin'
+            && resource.data.tenantIds.hasAny(userDoc().tenantIds))
+      );
+
+      // Anyone signed-in creates their own profile on first sign-in
+      allow create: if isSignedIn() && request.auth.uid == uid;
+
+      // Self may update non-sensitive fields; SaaS Master Admins update everything
+      allow update: if isSignedIn() && (
+        (request.auth.uid == uid
+          && !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(['role', 'status', 'tenantIds', 'tenantId']))
+        || isSaasMasterAdmin()
+        // tenant_admins may update tenantIds (to add/remove from their tenant)
+        || (userDoc().role in ['tenant_admin'] && request.auth.uid != uid)
+      );
+
+      allow delete: if isSaasMasterAdmin();
+
+      // ── Mail integration connections (OAuth tokens stored server-side, only metadata here) ──
+      match /integrations/{provider} {
+        allow read, write: if isSignedIn() && request.auth.uid == uid;
+      }
+
+      // ── Synced email log entries (metadata only — no message bodies stored) ──
+      match /email_logs/{logId} {
+        allow read:          if isSignedIn() && request.auth.uid == uid;
+        allow create:        if isSignedIn() && request.auth.uid == uid;
+        allow update:        if isSignedIn() && request.auth.uid == uid;
+        allow delete:        if false; // logs are immutable; disconnect clears via server
+      }
+    }
+
+    // ── Tenants ───────────────────────────────────────────────────────────────
+    match /tenants/{tenantId} {
+      allow read:   if isSignedIn() && (belongsToTenant(tenantId) || isSaasMasterAdmin());
+      allow create: if isSaasMasterAdmin() || !exists(/databases/$(database)/documents/platform/config);
+      allow update: if isTenantAdmin(tenantId) || isSaasMasterAdmin();
+      allow delete: if isSaasMasterAdmin();
+
+      // ── Tenant members sub-collection ──────────────────────────────────────
+      // This is the authoritative access list for each tenant.
+      match /members/{uid} {
+        // Members can read their own record; admins read all
+        allow read:   if isSignedIn() && (request.auth.uid == uid || canManageMembers(tenantId));
+        // Only tenant admins or SaaS Master Admins can write membership
+        allow create, update: if canManageMembers(tenantId);
+        allow delete:         if canManageMembers(tenantId);
+      }
+
+      // ── All other tenant sub-collections (families, tasks, docs, etc.) ─────
+      match /{collection}/{docId} {
+        allow read:  if belongsToTenant(tenantId) || isSaasMasterAdmin();
+        allow write: if isTenantAdmin(tenantId)   || isSaasMasterAdmin();
+      }
+    }
+
+    // ── Tenant Invitations ────────────────────────────────────────────────────
+    // Pending email invitations for users not yet on the platform.
+    match /tenant_invitations/{inviteId} {
+      // Anyone signed in can read their own invitation (matched by email)
+      allow read: if isSignedIn() && (
+        resource.data.email == request.auth.token.email
+        || canManageMembers(resource.data.tenantId)
+      );
+      // Only tenant admins can create invitations
+      allow create: if canManageMembers(request.resource.data.tenantId);
+      // Update status (accept, revoke) by the invitee or a tenant admin
+      allow update: if isSignedIn() && (
+        resource.data.email == request.auth.token.email
+        || canManageMembers(resource.data.tenantId)
+      );
+      allow delete: if isSaasMasterAdmin();
+    }
+
+    // ── Audit logs ────────────────────────────────────────────────────────────
+    // Append-only. No updates or deletes ever.
+    match /audit_logs/{logId} {
+      allow create: if isSignedIn();
+      allow read:   if isSaasMasterAdmin()
+                    || (isSignedIn() && isTenantAdmin(resource.data.tenantId));
+      allow update, delete: if false;
+    }
+
+    // ── Suitability assessment tokens (public link flow) ──────────────────────
+    match /suitability_tokens/{token} {
+      allow read:  if true;   // token IS the secret
+      allow write: if isSignedIn();
+    }
+
+    match /suitability_responses/{docId} {
+      allow create: if true;  // anyone with the link can submit
+      allow read:   if isSignedIn();
+      allow update, delete: if isSignedIn();
+    }
+
+    // ── Demo tenants ──────────────────────────────────────────────────────────
+    match /demo_tenants/{tenantId} {
+      allow read, write: if isSaasMasterAdmin() || isTenantAdmin(tenantId);
+    }
+
+    // ── Subscriptions (billing) ───────────────────────────────────────────────
+    match /subscriptions/{tenantId} {
+      allow read, write: if isSaasMasterAdmin();
+    }
+
+    // ── Invoices ──────────────────────────────────────────────────────────────
+    match /invoices/{invoiceId} {
+      allow read:          if isSaasMasterAdmin();
+      allow create, update: if isSaasMasterAdmin();
+      allow delete:         if false;
+    }
+
+    // ── Subscription events (billing audit trail) ─────────────────────────────
+    match /subscription_events/{eventId} {
+      allow create: if isSaasMasterAdmin();
+      allow read:   if isSaasMasterAdmin();
+      allow update, delete: if false;
+    }
+
+    // ── Platform CRM — Organizations ──────────────────────────────────────────
+    match /platform_orgs/{orgId} {
+      allow read, write: if isSaasMasterAdmin();
+    }
+
+    // ── Platform CRM — Contacts ───────────────────────────────────────────────
+    match /platform_contacts/{contactId} {
+      allow read, write: if isSaasMasterAdmin();
+    }
+
+    // ── Subscription plan definitions ─────────────────────────────────────────
+    // All signed-in users can read (for pricing display in-app).
+    // Only SaaS Master Admins can create/update.
+    match /subscription_plans/{code} {
+      allow read:           if isSignedIn();
+      allow create, update: if isSaasMasterAdmin();
+      allow delete:         if false; // use archive flag
+    }
+
+    // ── Plan version history (immutable audit snapshots) ─────────────────────
+    match /subscription_plan_versions/{docId} {
+      allow create: if isSaasMasterAdmin();
+      allow read:   if isSaasMasterAdmin();
+      allow update, delete: if false; // immutable by design
+    }
+
+    // ── Deny-all catch-all ────────────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

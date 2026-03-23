@@ -1,0 +1,15 @@
+﻿{
+  "name": "@mfo-crm/ui",
+  "version": "0.0.1",
+  "type": "module",
+  "module": "src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18",
+    "next": ">=14"
+  },
+  "dependencies": {
+    "lucide-react": "^0.460.0"
+  }
+}

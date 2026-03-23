@@ -1,0 +1,93 @@
+# apphosting.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Firebase App Hosting / Webframeworks — production environment configuration.
+#
+# Public variables (NEXT_PUBLIC_*) go under `env:`.
+# Secret variables go under `env:` with `secret:` referencing a Firebase Secret Manager secret.
+#
+# HOW TO CREATE SECRETS:
+#   firebase apphosting:secrets:set MICROSOFT_CLIENT_SECRET
+#   firebase apphosting:secrets:set GOOGLE_CLIENT_SECRET
+#   firebase apphosting:secrets:set FIREBASE_ADMIN_SDK_JSON
+#
+# HOW TO GRANT ACCESS (run once per secret):
+#   firebase apphosting:secrets:grantaccess MICROSOFT_CLIENT_SECRET
+# ─────────────────────────────────────────────────────────────────────────────
+
+runConfig:
+  minInstances: 0
+  maxInstances: 10
+  concurrency: 80
+  cpu: 1
+  memoryMiB: 512
+
+env:
+  # ── Public — exposed to browser ────────────────────────────────────────────
+  - variable: NEXT_PUBLIC_APP_URL
+    value: https://mfo-crm.web.app
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_AUTH_DOMAIN
+    value: mfo-crm.firebaseapp.com
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_PROJECT_ID
+    value: mfo-crm
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_STORAGE_BUCKET
+    value: mfo-crm.firebasestorage.app
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_MESSAGING_SENDER_ID
+    value: "597083102550"
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_APP_ID
+    value: 1:597083102550:web:a6067a7a2c460629
+    availability:
+      - BUILD
+      - RUNTIME
+
+  # ── Microsoft OAuth — values stored in Secret Manager ──────────────────────
+  - variable: MICROSOFT_TENANT_ID
+    value: common
+    availability:
+      - RUNTIME
+
+  - variable: MICROSOFT_CLIENT_ID
+    secret: MICROSOFT_CLIENT_ID
+    availability:
+      - RUNTIME
+
+  - variable: MICROSOFT_CLIENT_SECRET
+    secret: MICROSOFT_CLIENT_SECRET
+    availability:
+      - RUNTIME
+
+  # ── Google OAuth — values stored in Secret Manager ─────────────────────────
+  - variable: GOOGLE_CLIENT_ID
+    secret: GOOGLE_CLIENT_ID
+    availability:
+      - RUNTIME
+
+  - variable: GOOGLE_CLIENT_SECRET
+    secret: GOOGLE_CLIENT_SECRET
+    availability:
+      - RUNTIME
+
+  # ── Firebase Admin SDK — stored in Secret Manager ──────────────────────────
+  - variable: FIREBASE_ADMIN_SDK_JSON
+    secret: FIREBASE_ADMIN_SDK_JSON
+    availability:
+      - RUNTIME

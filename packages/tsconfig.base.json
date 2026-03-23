@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": {
+      "@mfo-crm/config": ["packages/config/src"],
+      "@mfo-crm/ui": ["packages/ui/src"],
+      "@mfo-crm/types": ["packages/types/src"]
+    },
+    "strict": true,
+    "noEmit": true
+  }
+}

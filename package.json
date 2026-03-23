@@ -1,0 +1,21 @@
+{
+  "name": "mfo-crm-monorepo",
+  "private": true,
+  "packageManager": "pnpm@9",
+  "engines": { "node": ">=20" },
+  "workspaces": ["apps/*", "packages/*", "functions", "run-jobs"],
+  "scripts": {
+    "dev":           "pnpm -C apps/web dev",
+    "build":         "pnpm --filter @mfo-crm/web build",
+    "deploy:rules":  "firebase deploy --only firestore:rules,storage",
+    "deploy:all":    "pnpm deploy:rules"
+  },
+  "pnpm": {
+    "overrides": {
+      "firebase": "^12.11.0",
+      "@firebase/app": "^0.14.0",
+      "@firebase/auth": "^1.9.0",
+      "@firebase/firestore": "^4.13.0"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "mfo-crm-functions",
+  "type": "module",
+  "main": "index.js",
+  "engines": { "node": "20" },
+  "scripts": {
+    "lint": "echo \"No lint configured for functions\"",
+    "build": "echo \"Nothing to build for functions\""
+  },
+  "dependencies": {
+    "firebase-functions": "^4.5.0"
+  }
+}
