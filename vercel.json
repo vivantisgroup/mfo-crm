@@ -1,8 +1,7 @@
 {
-  "framework": "nextjs",
   "buildCommand": "pnpm --filter @mfo-crm/web build",
   "outputDirectory": "apps/web/.next",
   "installCommand": "pnpm install",
   "devCommand": "pnpm --filter @mfo-crm/web dev",
-  "rootDirectory": null
+  "framework": "nextjs"
 }
