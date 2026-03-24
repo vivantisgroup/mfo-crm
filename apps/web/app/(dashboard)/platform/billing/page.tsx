@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import Link from 'next/link';
+import { getMockRenewals, renewalDaysLeft, formatRenewalDate } from '@/lib/renewalService';
 import { usePageTitle } from '@/lib/PageTitleContext';
 
 
@@ -274,13 +276,100 @@ function InvoicesTab() {
   );
 }
 
+// ─── Renewals embed tab ──────────────────────────────────────────────────────
+
+function RenewalsTab() {
+  const renewals = getMockRenewals();
+  const dueSoon  = renewals.filter(r => !['completed', 'declined', 'expired'].includes(r.status) && renewalDaysLeft(r) <= 30);
+  const highRisk = renewals.filter(r => r.risk === 'high' && !['declined', 'expired'].includes(r.status));
+  const mrrAtRisk = renewals.filter(r => !['completed', 'declined', 'expired'].includes(r.status)).reduce((s, r) => s + r.currentMrr, 0);
+
+  const riskColors: Record<string, string> = { low: '#22c55e', medium: '#f59e0b', high: '#ef4444' };
+  const statColors: Record<string, string> = { pending: '#6366f1', sent: '#f59e0b', accepted: '#22c55e', declined: '#ef4444', expired: '#64748b', completed: '#22d3ee' };
+
+  return (
+    <div className="animate-fade-in">
+      {/* KPIs */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 28 }}>
+        {[
+          { label: 'MRR at stake',       value: fmt(mrrAtRisk),    color: '#22c55e' },
+          { label: 'Due ≤ 30 days',      value: dueSoon.length,    color: '#f59e0b' },
+          { label: 'High-risk renewals', value: highRisk.length,   color: '#ef4444' },
+        ].map(k => (
+          <div key={k.label} style={{ padding: '20px', background: 'var(--bg-elevated)', border: `1px solid ${k.color}33`, borderRadius: 14 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>{k.label}</div>
+            <div style={{ fontSize: 26, fontWeight: 900, color: k.color }}>{k.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Quick list of upcoming renewals */}
+      <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h3 style={{ fontWeight: 800, fontSize: 16 }}>Renewals Due ≤ 30 Days</h3>
+        <Link href="/platform/renewals" style={{ fontSize: 13, color: 'var(--brand-400)', textDecoration: 'none', fontWeight: 600 }}>
+          Open full Renewals module →
+        </Link>
+      </div>
+
+      {dueSoon.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-tertiary)', fontSize: 14, background: 'var(--bg-elevated)', borderRadius: 14, border: '1px solid var(--border)' }}>
+          🎉 No renewals due in the next 30 days!
+        </div>
+      ) : (
+        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
+                {['Tenant', 'Plan', 'MRR', 'Period End', 'Days Left', 'Risk', 'Status'].map(h => (
+                  <th key={h} style={{ padding: '12px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {dueSoon.map(r => {
+                const days = renewalDaysLeft(r);
+                const dayColor = days <= 14 ? '#ef4444' : days <= 30 ? '#f59e0b' : '#22c55e';
+                return (
+                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)' }} className="hover-lift">
+                    <td style={{ padding: '14px 14px', fontWeight: 700, fontSize: 14 }}>{r.tenantName}</td>
+                    <td style={{ padding: '14px 14px', fontSize: 12, color: 'var(--text-secondary)' }}>{r.planName} · {r.billingCycle}</td>
+                    <td style={{ padding: '14px 14px', fontWeight: 800, color: '#22c55e' }}>{fmt(r.currentMrr)}</td>
+                    <td style={{ padding: '14px 14px', fontSize: 13 }}>{formatRenewalDate(r.periodEnd)}</td>
+                    <td style={{ padding: '14px 14px' }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: dayColor, background: `${dayColor}15`, padding: '2px 8px', borderRadius: 20 }}>
+                        {days === 0 ? 'Today!' : `${days}d`}
+                      </span>
+                    </td>
+                    <td style={{ padding: '14px 14px', fontSize: 12, color: riskColors[r.risk] ?? '#64748b', fontWeight: 700 }}>
+                      {r.risk === 'high' ? '🔴' : r.risk === 'medium' ? '🟡' : '🟢'} {r.risk}
+                    </td>
+                    <td style={{ padding: '14px 14px' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: `${statColors[r.status] ?? '#64748b'}15`, color: statColors[r.status] ?? '#64748b', border: `1px solid ${statColors[r.status] ?? '#64748b'}44`, textTransform: 'capitalize' }}>
+                        {r.status}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-type Tab = 'overview' | 'subscribers' | 'invoices';
+type Tab = 'overview' | 'subscribers' | 'invoices' | 'renewals';
 
 
 export default function BillingPage() {
   const [tab, setTab] = useState<Tab>('overview');
+  const { renewalsDueSoon } = useMemo(() => {
+    const rnwls = getMockRenewals();
+    return { renewalsDueSoon: rnwls.filter(r => !['completed', 'declined', 'expired'].includes(r.status) && renewalDaysLeft(r) <= 30).length };
+  }, []);
   usePageTitle('Billing & Subscriptions');
 
   const totalMRR = SUBSCRIBERS.filter(s => s.status === 'active').reduce((s, t) => s + t.mrr, 0);
@@ -299,23 +388,25 @@ export default function BillingPage() {
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 32, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
         {([
-          { id: 'overview', label: '📊 Revenue Overview' },
-          { id: 'subscribers', label: '🏢 Subscribers' },
-          { id: 'invoices', label: '🧾 Invoices' },
-        ] as const).map(t => (
+          { id: 'overview' as Tab,     label: '📊 Revenue Overview' },
+          { id: 'subscribers' as Tab,  label: '🏢 Subscribers' },
+          { id: 'invoices' as Tab,     label: '🧾 Invoices' },
+          { id: 'renewals' as Tab,     label: `🔁 Renewals${renewalsDueSoon > 0 ? ` (${renewalsDueSoon})` : ''}` },
+        ]).map(t => (
           <button
             key={t.id} onClick={() => setTab(t.id)}
             className="btn btn-ghost btn-sm"
-            style={{ borderRadius: '8px 8px 0 0', borderBottom: tab === t.id ? '2px solid var(--brand-500)' : '2px solid transparent', fontWeight: tab === t.id ? 700 : 500, paddingBottom: 12 }}
+            style={{ borderRadius: '8px 8px 0 0', borderBottom: tab === t.id ? '2px solid var(--brand-500)' : '2px solid transparent', fontWeight: tab === t.id ? 700 : 500, paddingBottom: 12, position: 'relative' }}
           >
             {t.label}
           </button>
         ))}
       </div>
 
-      {tab === 'overview' && <OverviewTab />}
-      {tab === 'subscribers' && <SubscribersTab />}
-      {tab === 'invoices' && <InvoicesTab />}
+      {tab === 'overview'     && <OverviewTab />}
+      {tab === 'subscribers'  && <SubscribersTab />}
+      {tab === 'invoices'     && <InvoicesTab />}
+      {tab === 'renewals'     && <RenewalsTab />}
     </div>
   );
 }

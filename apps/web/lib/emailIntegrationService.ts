@@ -77,9 +77,10 @@ export interface EmailLogEntry {
 }
 
 export interface SyncResult {
-  newEmails:    number;
-  errors:       string[];
-  lastSyncAt:   string;
+  newEmails:     number;
+  newActivities: number;
+  errors:        string[];
+  lastSyncAt:    string;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -291,9 +292,10 @@ export async function logEmailToCrm(
 // ─── Connection test ──────────────────────────────────────────────────────────
 
 export interface ConnectionTestResult {
-  ok:      boolean;
-  latency: number;   // ms
-  details: string;
+  ok:             boolean;
+  latency:        number;   // ms
+  details:        string;
+  needsReconnect?: boolean; // set by client when token expiry is detected
 }
 
 export async function testMailConnection(

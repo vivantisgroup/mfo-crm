@@ -76,6 +76,7 @@ export default function Sidebar({ collapsed, toggle }: SidebarProps) {
           { href: '/platform/users',    icon: '👤', labelKey: 'nav.users'    as TranslationKey },
           { href: '/platform/plans',    icon: '📋', labelKey: 'nav.plans'    as TranslationKey },
           { href: '/platform/billing',  icon: '💳', labelKey: 'nav.billing'  as TranslationKey },
+          { href: '/platform/renewals', icon: '🔁', labelKey: 'nav.renewals' as TranslationKey },
           { href: '/platform/expenses', icon: '💸', labelKey: 'nav.expenses' as TranslationKey },
           { href: '/platform/crm',      icon: '🎯', labelKey: 'nav.crm'      as TranslationKey },
           { href: '/platform/support',  icon: '🎫', labelKey: 'nav.support'  as TranslationKey, badge: '12' },

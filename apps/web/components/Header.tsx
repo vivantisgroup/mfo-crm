@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { getInitials } from '@/lib/utils';
+import { useUserSettings } from '@/lib/UserSettingsContext';
 import { useTranslation } from '@/lib/i18n/context';
 import { logAction } from '@/lib/auditLog';
 import { useAuth } from '@/lib/AuthContext';
@@ -655,13 +656,14 @@ function TenantSwitcher() {
 export default function Header() {
   const { title, subtitle, crumbs } = usePageTitle();
   const router = useRouter();
-  const [menuOpen,     setMenuOpen]     = useState(false);
-  const [notifOpen,    setNotifOpen]    = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const { tickerSpeed, setTickerSpeed } = useUserSettings();
   const { language, setLanguage, t } = useTranslation();
   const { user, tenant, logout, isHydrated } = useAuth();
   const { unreadCount } = useTaskQueue();
-  const menuRef  = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
 
   const handleSignOut = async () => {
@@ -872,8 +874,26 @@ export default function Header() {
 
                   <hr style={{ borderColor: 'var(--border)', margin: '0' }} />
 
-                  {/* Appearance */}
-                  <MiniThemePicker />
+                {/* Ticker speed */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <label className="text-xs fw-600 text-secondary">{t('profile.speed')}</label>
+                    <span className="text-xs text-brand">{Math.round(100 - (tickerSpeed / 400 * 100))}%</span>
+                  </div>
+                  <input
+                    type="range" min="20" max="400" step="10"
+                    value={420 - tickerSpeed}
+                    onChange={(e) => setTickerSpeed(420 - parseInt(e.target.value, 10))}
+                    style={{ width: '100%', accentColor: 'var(--brand-500)', cursor: 'pointer' }}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                    <span className="text-xs text-secondary">{t('profile.slow')}</span>
+                    <span className="text-xs text-secondary">{t('profile.fast')}</span>
+                  </div>
+                </div>
+
+                {/* ── Appearance: themes + fonts (personal preference) */}
+                <MiniThemePicker />
 
                   <hr style={{ borderColor: 'var(--border)', margin: '0' }} />
 

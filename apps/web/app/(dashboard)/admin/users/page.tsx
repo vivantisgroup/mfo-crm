@@ -384,11 +384,20 @@ export default function TenantUsersPage() {
   const nonMembers = allUsers.filter(u => !members.find(m => m.uid === u.uid));
   const filteredAdd = nonMembers.filter(u => !memberInput || u.displayName?.toLowerCase().includes(memberInput.toLowerCase()) || u.email?.toLowerCase().includes(memberInput.toLowerCase()));
 
+  async function getClientIdToken(): Promise<string | null> {
+    try {
+      const { getAuth } = await import('firebase/auth');
+      const { firebaseApp } = await import('@mfo-crm/config');
+      const auth = getAuth(firebaseApp);
+      return (await auth.currentUser?.getIdToken()) ?? null;
+    } catch { return null; }
+  }
+
   async function doSmartAdd() {
     if (!memberInput) return;
     const input = memberInput.trim().toLowerCase();
-    
-    // Check if input is a valid email
+
+    // Validate email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(input)) {
       setMsg('❌ Please enter a valid email address.');
@@ -402,16 +411,23 @@ export default function TenantUsersPage() {
         await addMemberToTenant(tenantId, tenantName, existingUser, memberRole, performer);
         setMsg(`✅ Existing user ${existingUser.displayName} added to tenant.`);
       } else {
-        // Dynamically import the Next.js Server Action
+        // Get caller's idToken on the CLIENT (where currentUser is defined)
+        const idToken = await getClientIdToken();
+        if (!idToken) {
+          setMsg('❌ Not authenticated — please refresh the page and try again.');
+          setLoading(false);
+          return;
+        }
+
         const { adminCreateFirebaseUser, adminGeneratePasswordResetLink } = await import('@/lib/usersAdmin');
-        
-        const result = await adminCreateFirebaseUser(input, input.split('@')[0]);
+
+        const result = await adminCreateFirebaseUser(input, input.split('@')[0], idToken);
         if (!result.success || !result.userRecord) {
           setMsg(`❌ Error creating user: ${result.error}`);
           setLoading(false);
           return;
         }
-        
+
         const uid = result.userRecord.uid;
         const newProfile = { uid, email: input, displayName: input.split('@')[0], tenantIds: [] };
 
@@ -419,7 +435,7 @@ export default function TenantUsersPage() {
         const { doc, setDoc, getFirestore } = await import('firebase/firestore');
         const { firebaseApp } = await import('@mfo-crm/config');
         const db = getFirestore(firebaseApp);
-        
+
         await setDoc(doc(db, 'users', uid), {
           uid,
           email: input,
@@ -428,22 +444,22 @@ export default function TenantUsersPage() {
           mfaEnabled: false,
           status: 'active',
           createdAt: new Date().toISOString(),
-          tenantIds: []
+          tenantIds: [],
         }, { merge: true });
 
-        // Add them to the tenant using true UID instead of a fake placeholder UID
+        // Add them to the tenant
         await addMemberToTenant(tenantId, tenantName, newProfile, memberRole, performer);
-        
-        let successMsg = `✅ User ${input} created and added.`;
+
+        let successMsg = `✅ User ${input} created and added to ${tenantName}.`;
         if (sendInvite) {
-          const linkRes = await adminGeneratePasswordResetLink(input);
+          const linkRes = await adminGeneratePasswordResetLink(input, idToken);
           if (linkRes.success) {
-            successMsg += ` (Reset link generated for invite).`;
+            successMsg += ' A password-reset / invite email has been sent.';
           }
         } else {
-          successMsg += ` Temp Password: ${result.tempPassword}`;
+          successMsg += ` Temp password: ${result.tempPassword}`;
         }
-        
+
         setMsg(successMsg);
       }
       setMemberInput('');

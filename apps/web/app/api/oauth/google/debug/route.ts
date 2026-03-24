@@ -1,40 +1,22 @@
 /**
- * TEMPORARY DEBUG ENDPOINT — remove after investigation
  * GET /api/oauth/google/debug
- * Returns the exact OAuth URL that would be sent to Google (no redirect).
+ * Returns OAuth configuration status without exposing secrets.
+ * Keep this endpoint — it's useful for diagnosing Vercel env issues.
  */
 import { NextResponse } from 'next/server';
+import { googleOAuthConfigured } from '@/lib/googleTokenRefresh';
 
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? '(not set)';
-const APP_URL   = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
-const REDIRECT  = `${APP_URL}/api/oauth/google/callback`;
-
-const SCOPES = [
-  'openid', 'email', 'profile',
-  'https://www.googleapis.com/auth/gmail.readonly',
-  'https://www.googleapis.com/auth/gmail.compose',
-  'https://www.googleapis.com/auth/calendar',
-].join(' ');
+const APP_URL  = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+const CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? '';
 
 export async function GET() {
-  const params = new URLSearchParams({
-    client_id:     CLIENT_ID,
-    redirect_uri:  REDIRECT,
-    response_type: 'code',
-    scope:         SCOPES,
-    state:         'DEBUG_STATE',
-    access_type:   'offline',
-    prompt:        'consent select_account',
-  });
-
-  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
-
+  const { ok, missing } = googleOAuthConfigured();
   return NextResponse.json({
-    client_id_set:    CLIENT_ID !== '(not set)',
-    client_id_prefix: CLIENT_ID.slice(0, 12) + '...',
-    redirect_uri:     REDIRECT,
-    scopes:           SCOPES.split(' '),
-    full_auth_url:    authUrl,
-    app_url_env:      APP_URL,
-  }, { status: 200 });
+    configured:       ok,
+    missing_vars:     missing,
+    client_id_set:    !!CLIENT_ID,
+    client_id_prefix: CLIENT_ID ? CLIENT_ID.slice(0, 16) + '…' : '(not set)',
+    redirect_uri:     `${APP_URL}/api/oauth/google/callback`,
+    app_url:          APP_URL,
+  });
 }

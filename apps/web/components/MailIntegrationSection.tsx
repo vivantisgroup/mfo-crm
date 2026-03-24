@@ -132,6 +132,16 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
       const idToken = await getAuth().currentUser?.getIdToken();
       if (!idToken) throw new Error('Not authenticated — please refresh the page.');
       const result = await testMailConnection(provider, user.uid, idToken);
+      // Classify error for better UX
+      if (!result.ok && result.details) {
+        const d = result.details.toLowerCase();
+        if (d.includes('client_id') || d.includes('invalid_request') || d.includes('not configured')) {
+          result.details = '❌ OAuth credentials not configured on the server. Contact your administrator.';
+        } else if (d.includes('refresh') || d.includes('expired') || d.includes('re-connect')) {
+          result.details = '🔄 Token expired — please disconnect and re-connect your Google account.';
+          result.needsReconnect = true;
+        }
+      }
       setTestResult(result);
     } catch (e: any) {
       setTestResult({ ok: false, latency: 0, details: e.message ?? 'Test request failed' });
@@ -149,10 +159,20 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
       const idToken = await getAuth().currentUser?.getIdToken();
       if (!idToken) throw new Error('Not authenticated — please refresh the page.');
       const result = await triggerManualSync(user.uid, provider, idToken);
-      setSyncMsg(`✅ Synced ${result.newEmails} new email${result.newEmails !== 1 ? 's' : ''}`);
+      setSyncMsg(`✅ Synced ${result.newEmails} new email${result.newEmails !== 1 ? 's' : ''}${
+        result.newActivities ? ` · ${result.newActivities} CRM activities created` : ''
+      }`);
       onRefresh();
     } catch (e: any) {
-      setSyncMsg(`❌ Sync failed: ${e.message}`);
+      const msg = e.message ?? 'Sync failed';
+      const d = msg.toLowerCase();
+      if (d.includes('client_id') || d.includes('invalid_request') || d.includes('not configured')) {
+        setSyncMsg('❌ OAuth not configured on the server. Contact your administrator.');
+      } else if (d.includes('refresh') || d.includes('expired') || d.includes('re-connect')) {
+        setSyncMsg('🔄 Token expired — please Disconnect and Re-connect your Google account.');
+      } else {
+        setSyncMsg(`❌ Sync failed: ${msg}`);
+      }
     } finally {
       setSyncing(false);
     }
