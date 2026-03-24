@@ -19,13 +19,11 @@ import {
   doc,
   getDoc,
   getDocs,
-  setDoc,
   addDoc,
   updateDoc,
   query,
   where,
   orderBy,
-  Timestamp,
 } from 'firebase/firestore';
 
 const db = getFirestore(firebaseApp);
@@ -115,7 +113,7 @@ function daysBetween(a: string, b: string = new Date().toISOString()): number {
   return Math.ceil((new Date(a).getTime() - new Date(b).getTime()) / 86_400_000);
 }
 
-export function inferRisk(renewal: Omit<RenewalRecord, 'id' | 'risk'>): RenewalRisk {
+export function inferRisk(renewal: Pick<RenewalRecord, 'periodEnd' | 'status'>): RenewalRisk {
   const daysLeft = daysBetween(renewal.periodEnd);
   if (renewal.status === 'declined') return 'high';
   if (daysLeft < 14) return 'high';
