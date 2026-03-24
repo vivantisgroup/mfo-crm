@@ -64,13 +64,14 @@ export interface PlatformContact {
 
 export async function getOrg(id: string): Promise<PlatformOrg | null> {
   const snap = await getDoc(doc(db, 'platform_orgs', id));
-  return snap.exists() ? (snap.data() as PlatformOrg) : null;
+  return snap.exists() ? ({ ...snap.data(), id: snap.id } as PlatformOrg) : null;
 }
 
 export async function getAllOrgs(): Promise<PlatformOrg[]> {
   const snap = await getDocs(query(collection(db, 'platform_orgs')));
-  return snap.docs.map(d => d.data() as PlatformOrg)
-             .sort((a, b) => a.name.localeCompare(b.name));
+  return snap.docs
+    .map(d => ({ ...d.data(), id: d.id } as PlatformOrg))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function createOrg(
@@ -82,6 +83,8 @@ export async function createOrg(
     ...data, tenantIds: data.tenantIds ?? [],
     createdAt: now, createdBy: performer.uid, updatedAt: now,
   });
+  // Write id into the document so subsequent reads always carry it
+  await updateDoc(ref, { id: ref.id });
   return { ...data, id: ref.id, tenantIds: data.tenantIds ?? [], createdAt: now, updatedAt: now } as PlatformOrg;
 }
 
@@ -120,7 +123,7 @@ export async function getContactsForOrg(orgId: string): Promise<PlatformContact[
     query(collection(db, 'platform_contacts'), where('orgId', '==', orgId))
   );
   return snap.docs
-    .map(d => d.data() as PlatformContact)
+    .map(d => ({ ...d.data(), id: d.id } as PlatformContact))
     .sort((a, b) => (b.isPrimary ? 1 : 0) - (a.isPrimary ? 1 : 0) || a.name.localeCompare(b.name));
 }
 
@@ -129,14 +132,22 @@ export async function createContact(
   performer: { uid: string },
 ): Promise<PlatformContact> {
   const now = new Date().toISOString();
+  // Strip undefined optional fields so Firestore doesn't reject them
+  const payload: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(data)) {
+    if (v !== undefined) payload[k] = v;
+  }
   const ref = await addDoc(collection(db, 'platform_contacts'), {
-    ...data, createdAt: now, createdBy: performer.uid, updatedAt: now,
+    ...payload, createdAt: now, createdBy: performer.uid, updatedAt: now,
   });
+  // Store id in the document for consistent reads
+  await updateDoc(ref, { id: ref.id });
   return { ...data, id: ref.id, createdAt: now, updatedAt: now } as PlatformContact;
 }
 
 export async function updateContact(id: string, patch: Partial<PlatformContact>): Promise<void> {
-  await updateDoc(doc(db, 'platform_contacts'), {
+  // id arg was missing from the doc() call — fixed
+  await updateDoc(doc(db, 'platform_contacts', id), {
     ...patch, updatedAt: new Date().toISOString(),
   });
 }
