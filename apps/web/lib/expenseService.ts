@@ -101,17 +101,26 @@ export interface CreateExpenseInput {
   endDate?: string; active?: boolean; tags?: string[]; createdBy: string;
 }
 
+/** Remove keys with undefined values — Firestore rejects them */
+function stripUndefined<T extends object>(obj: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => v !== undefined)
+  ) as Partial<T>;
+}
+
 export async function createExpense(
   input: CreateExpenseInput,
   performer: { uid: string },
 ): Promise<PlatformExpense> {
-  const payload = {
+  const raw = {
     ...input,
     active: input.active ?? true,
     tags:   input.tags ?? [],
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
+  // Firestore does not accept undefined — strip optional fields that are absent
+  const payload = stripUndefined(raw);
   const ref = await addDoc(collection(db, COL), payload);
   await updateDoc(doc(db, COL, ref.id), { id: ref.id });
   await logAction({
@@ -119,7 +128,7 @@ export async function createExpense(
     action: 'EXPENSE_CREATED', resourceId: ref.id,
     resourceType: 'expense', resourceName: input.name, status: 'success',
   });
-  return toExpense(ref.id, { ...payload, id: ref.id, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  return toExpense(ref.id, { ...raw, id: ref.id, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
 }
 
 export async function updateExpense(
@@ -127,7 +136,8 @@ export async function updateExpense(
   patch: Partial<Omit<PlatformExpense, 'id' | 'createdAt' | 'createdBy'>>,
   performer: { uid: string },
 ): Promise<void> {
-  await updateDoc(doc(db, COL, id), { ...patch, updatedAt: serverTimestamp() });
+  const cleanPatch = stripUndefined({ ...patch, updatedAt: serverTimestamp() });
+  await updateDoc(doc(db, COL, id), cleanPatch);
   await logAction({
     tenantId: 'platform', userId: performer.uid, userName: performer.uid,
     action: 'EXPENSE_UPDATED', resourceId: id,
