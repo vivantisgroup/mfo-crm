@@ -269,7 +269,7 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
   async function doSmartAdd() {
     if (!memberInput) return;
     const input = memberInput.trim().toLowerCase();
-    
+
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(input)) {
       setMsg('❌ Please enter a valid email address.');
@@ -278,6 +278,7 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
 
     setAddingMember(true); setMsg(null);
     try {
+      // ── Case 1: user already exists in our CRM ────────────────────────────
       const existingUser = allUsers.find(u => u.email.toLowerCase() === input);
       if (existingUser) {
         if (members.find(m => m.uid === existingUser.uid)) {
@@ -286,53 +287,71 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
           return;
         }
         await addMemberToTenant(sub.tenantId, sub.tenantName, existingUser, memberRole, performer);
-        setMsg(`✅ Existing user ${existingUser.displayName} added to tenant.`);
+        setMsg(`✅ ${existingUser.displayName} (existing user) added to ${sub.tenantName}.`);
       } else {
-        // Dynamically import the Next.js Server Action
+        // ── Case 2: new user — create via Firebase Auth REST API ─────────────
         const { adminCreateFirebaseUser, adminGeneratePasswordResetLink } = await import('@/lib/usersAdmin');
-        
+
         const result = await adminCreateFirebaseUser(input, input.split('@')[0]);
         if (!result.success || !result.userRecord) {
           setMsg(`❌ Error creating user: ${result.error}`);
           setAddingMember(false);
           return;
         }
-        
-        const uid = result.userRecord.uid;
-        const newProfile = { uid, email: input, displayName: input.split('@')[0], tenantIds: [] };
 
-        // Ensure base UserProfile exists in Firestore before linking tenant
+        const uid         = result.userRecord.uid;
+        const displayName = input.split('@')[0];
+        const newProfile  = { uid, email: input, displayName, tenantIds: [] as string[] };
+
+        // Write user profile to Firestore via client SDK
+        // (uid may be "email:xxx" placeholder if Firebase Auth lookup wasn't possible)
         const { doc, setDoc, getFirestore } = await import('firebase/firestore');
         const { firebaseApp } = await import('@mfo-crm/config');
         const db = getFirestore(firebaseApp);
-        
-        await setDoc(doc(db, 'users', uid), {
-          uid,
-          email: input,
-          displayName: input.split('@')[0],
-          role: 'report_viewer',
-          mfaEnabled: false,
-          status: 'active',
-          createdAt: new Date().toISOString(),
-          tenantIds: []
+
+        // Use a sanitised key — Firestore doc IDs can't contain "/"
+        const firestoreKey = uid.startsWith('email:')
+          ? `pending_${input.replace(/[^a-z0-9]/g, '_')}`
+          : uid;
+
+        await setDoc(doc(db, 'users', firestoreKey), {
+          uid:         firestoreKey,
+          email:       input,
+          displayName,
+          role:        'report_viewer',
+          mfaEnabled:  false,
+          status:      'active',
+          createdAt:   new Date().toISOString(),
+          tenantIds:   [],
+          // Flag so ensureUserProfile can reconcile on first real login
+          ...(uid.startsWith('email:') ? { pendingActivation: true } : {}),
         }, { merge: true });
 
-        // Add them to the tenant using true UID instead of a fake placeholder UID
-        await addMemberToTenant(sub.tenantId, sub.tenantName, newProfile, memberRole, performer);
-        
-        let successMsg = `✅ User ${input} created and added.`;
+        // Link user to tenant
+        await addMemberToTenant(
+          sub.tenantId,
+          sub.tenantName,
+          { ...newProfile, uid: firestoreKey },
+          memberRole,
+          performer,
+        );
+
+        // Send invite / password reset email
+        let successMsg = `✅ User ${input} ${result.isNew ? 'created' : 'found'} and added to ${sub.tenantName}.`;
         if (sendInvite) {
           const linkRes = await adminGeneratePasswordResetLink(input);
           if (linkRes.success) {
-            // In a real app we'd trigger SendGrid. For demonstration we use the reset link as the invite link.
-            successMsg += ` (Reset link generated for invite).`;
+            successMsg += ' 📧 Password-reset invitation email sent.';
+          } else {
+            successMsg += ` (Could not send invite email: ${linkRes.error ?? 'unknown error'})`;
           }
-        } else {
-          successMsg += ` Temp Password: ${result.tempPassword}`;
+        } else if (result.isNew && result.tempPassword) {
+          successMsg += ` Temp password: ${result.tempPassword}`;
         }
-        
+
         setMsg(successMsg);
       }
+
       setMemberInput('');
       const [m] = await Promise.all([getTenantMembers(sub.tenantId)]);
       setMembers(m);
@@ -342,6 +361,7 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
       setAddingMember(false);
     }
   }
+
 
   async function doChangeRole(member: TenantMember, newRole: any) {
     try {
