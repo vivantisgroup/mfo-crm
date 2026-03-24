@@ -18,11 +18,10 @@ import {
 import { saveUserProfile, uploadAvatar } from '@/lib/userProfileService';
 import { MailIntegrationSection } from '@/components/MailIntegrationSection';
 import { getTenantsForUser, getUserProfile, type TenantRecord } from '@/lib/platformService';
+import { usePageTitle } from '@/lib/PageTitleContext';
 
 interface HeaderProps {
-  title?: string;
-  subtitle?: string;
-  actions?: React.ReactNode;
+  // No props — title comes from PageTitleContext
 }
 
 // ─── Mini Theme Grid (profile dropdown) ───────────────────────────────────────
@@ -653,7 +652,8 @@ function TenantSwitcher() {
 
 // ─── Header ───────────────────────────────────────────────────────────────────
 
-export default function Header({ title, subtitle, actions }: HeaderProps) {
+export default function Header() {
+  const { title, subtitle } = usePageTitle();
   const router = useRouter();
   const [menuOpen,     setMenuOpen]     = useState(false);
   const [notifOpen,    setNotifOpen]    = useState(false);
@@ -719,7 +719,6 @@ export default function Header({ title, subtitle, actions }: HeaderProps) {
 
         {/* Right actions */}
         <div className="header-right">
-          {actions}
 
           {/* Notifications */}
           <div ref={notifRef} style={{ position: 'relative' }}>

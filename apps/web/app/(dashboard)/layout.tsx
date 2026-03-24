@@ -12,6 +12,7 @@ import { ThemeProvider } from '@/lib/ThemeContext';
 import { ThemeCustomizer } from '@/components/ThemeCustomizer';
 import { TaskQueueProvider } from '@/lib/TaskQueueContext';
 import { usePathname, useRouter } from 'next/navigation';
+import { PageTitleProvider } from '@/lib/PageTitleContext';
 
 function DashboardInner({ children }: { children: React.ReactNode }) {
   const [collapsed,    setCollapsed]    = useState(false);
@@ -106,7 +107,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
       }}
     >
       <Sidebar collapsed={collapsed} toggle={() => setCollapsed(c => !c)} />
-      <Header title={tenant?.name} />
+      <Header />
       {showMfaBanner && (
         <div style={{
           gridColumn: '2', gridRow: '2',
@@ -142,7 +143,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <UserSettingsProvider>
           <ThemeProvider>
             <TaskQueueProvider>
-              <DashboardInner>{children}</DashboardInner>
+              <PageTitleProvider>
+                <DashboardInner>{children}</DashboardInner>
+              </PageTitleProvider>
             </TaskQueueProvider>
           </ThemeProvider>
         </UserSettingsProvider>

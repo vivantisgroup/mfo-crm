@@ -7,6 +7,7 @@ import { getAllSubscriptions } from '@/lib/subscriptionService';
 import { getAllExpenses, monthlyEquivalent, EXPENSE_CATEGORIES, type PlatformExpense } from '@/lib/expenseService';
 import type { PlatformOrg } from '@/lib/crmService';
 import type { TenantSubscription } from '@/lib/subscriptionService';
+import { usePageTitle } from '@/lib/PageTitleContext';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -72,6 +73,7 @@ type AnalyticsTab = 'overview' | 'revenue' | 'expenses' | 'customers' | 'roi';
 
 export default function AnalyticsPage() {
   const { user } = useAuth();
+  usePageTitle('Business Intelligence');
 
   const [orgs,     setOrgs]     = useState<PlatformOrg[]>([]);
   const [subs,     setSubs]     = useState<TenantSubscription[]>([]);
@@ -166,24 +168,6 @@ export default function AnalyticsPage() {
 
   return (
     <div className="animate-fade-in" style={{ maxWidth: 1400, margin: '0 auto' }}>
-      {/* Header */}
-      <header style={{ marginBottom: 28 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div>
-            <h1 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4 }}>
-              Business <span style={{ color: 'var(--brand-500)', fontWeight: 400 }}>Intelligence</span>
-            </h1>
-            <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
-              Real-time platform performance: ROI, revenue, expenses, and customer metrics — all in one view.
-            </p>
-          </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Live data · {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
-            <button className="btn btn-ghost btn-sm" onClick={load}>↻ Refresh</button>
-          </div>
-        </div>
-      </header>
-
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border)', marginBottom: 28 }}>
         {TABS.map(t => (

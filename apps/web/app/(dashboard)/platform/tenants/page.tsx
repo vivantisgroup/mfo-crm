@@ -30,8 +30,9 @@ import {
   ROLE_LABELS, ROLE_DESCRIPTIONS, TENANT_ROLES,
   type TenantMember, type TenantInvitation,
 } from '@/lib/tenantMemberService';
-import { getAllUsers, deleteTenant, type UserProfile } from '@/lib/platformService';
+import { getAllUsers, deleteTenant, createTenant, type UserProfile } from '@/lib/platformService';
 import { CommunicationPanel } from '@/components/CommunicationPanel';
+import { usePageTitle } from '@/lib/PageTitleContext';
 
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -1286,6 +1287,17 @@ function NewSubscriptionModal({ onClose, onCreated, performer }: {
     };
     try {
       await upsertSubscription(sub);
+      // Write a tenants/{id} record so getTenant() resolves this tenant in the switcher
+      await createTenant({
+        id:         form.tenantId,
+        name:       form.tenantName,
+        plan:       (['trial', 'standard', 'enterprise'].includes(form.planId)
+                      ? form.planId
+                      : 'standard') as 'trial' | 'standard' | 'enterprise',
+        status:     form.planId === 'trial' ? 'trial' : 'active',
+        isInternal: false,
+        brandColor: '#6366f1',
+      });
       // Bidirectional CRM link
       if (form.crmOrgId) {
         await linkTenantToOrg(form.crmOrgId, form.tenantId);
@@ -1398,6 +1410,7 @@ type MainTab = 'tenants' | 'invoices' | 'plans' | 'events';
 
 export default function TenantManagementPage() {
   const { user } = useAuth();
+  usePageTitle('Tenant Management');
   const performer = { uid: user?.uid ?? 'unknown', name: user?.name ?? 'Admin' };
   const searchParams = useSearchParams();
 

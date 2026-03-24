@@ -10,6 +10,7 @@ import { formatCurrency, formatPercent } from '@/lib/utils';
 import { DASHBOARD_STATS, BALANCE_SHEETS, TASKS, ACTIVITIES, PLATFORM_USERS } from '@/lib/mockData';
 import { useAuth } from '@/lib/AuthContext';
 import { useLiveMode } from '@/lib/useLiveMode';
+import { usePageTitle } from '@/lib/PageTitleContext';
 import { getPlatformConfig, getAllTenants, getAllUsers } from '@/lib/platformService';
 import type { PlatformConfig, TenantRecord, UserProfile } from '@/lib/platformService';
 
@@ -17,35 +18,28 @@ import type { PlatformConfig, TenantRecord, UserProfile } from '@/lib/platformSe
 
 const SETUP_STEPS = [
   {
-    icon: '✅',
+    icon: '\u2705',
     title: 'Platform initialized',
     desc: 'Master tenant created, SaaS Master Admin account active.',
     done: true,
     link: null,
   },
   {
-    icon: '🏢',
+    icon: '\uD83C\uDFE2',
     title: 'Create your first tenant',
     desc: 'Onboard a family office firm as a new tenant with their own workspace.',
     done: false,
     link: '/admin',
   },
   {
-    icon: '👤',
+    icon: '\uD83D\uDC64',
     title: 'Invite team members',
     desc: 'Add users and assign them roles within tenants.',
     done: false,
     link: '/admin',
   },
   {
-    icon: '🌱',
-    title: 'Seed a demo tenant',
-    desc: 'Provision a trial tenant with realistic sample data for demonstrations.',
-    done: false,
-    link: '/platform/demo',
-  },
-  {
-    icon: '⚙️',
+    icon: '\u2699\uFE0F',
     title: 'Configure task queues & SLAs',
     desc: 'Set up workflow queues, task types, and SLA targets.',
     done: false,
@@ -61,27 +55,23 @@ function LivePlatformDashboard({ user, platformCfg, tenants, users }: {
   tenants: TenantRecord[];
   users: UserProfile[];
 }) {
+  usePageTitle('Dashboard');
   const now = new Date();
   const greeting = now.getHours() < 12 ? 'Good morning' : now.getHours() < 17 ? 'Good afternoon' : 'Good evening';
 
   return (
     <div className="page animate-fade-in">
-      {/* Header */}
-      <div className="page-header">
+      {/* Greeting row */}
+      <div style={{ marginBottom: 24, padding: '18px 20px', background: 'var(--bg-elevated)', borderRadius: 12, border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h1 className="page-title">
-            {greeting}, {user?.name?.split(' ')[0] ?? 'Admin'} 👋
-          </h1>
-          <p className="page-subtitle">
+          <div style={{ fontSize: 18, fontWeight: 800 }}>{greeting}, {user?.name?.split(' ')[0] ?? 'Admin'} 👋</div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}>
             Platform initialized {platformCfg?.initializedAt
               ? new Date(platformCfg.initializedAt).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
               : ''} · Version {platformCfg?.version ?? '—'}
-          </p>
+          </div>
         </div>
-        <div className="page-actions">
-          <Link href="/platform/audit" className="btn btn-secondary">Audit Log</Link>
-          <Link href="/platform/demo" className="btn btn-primary">+ New Demo Tenant</Link>
-        </div>
+        <Link href="/platform/tenants" className="btn btn-primary" style={{ flexShrink: 0 }}>+ New Tenant</Link>
       </div>
 
       {/* Live stats */}
@@ -207,6 +197,7 @@ function DemoDashboard() {
   const { tenant } = useAuth();
   const isInternal = tenant?.isInternal;
   const stats = DASHBOARD_STATS;
+  usePageTitle(isInternal ? 'Firm Dashboard' : 'Advisor Dashboard');
 
   const allAllocs = BALANCE_SHEETS.flatMap(b => b.allocation);
   const aggAllocs = Array.from(
@@ -222,25 +213,6 @@ function DemoDashboard() {
 
   return (
     <div className="page animate-fade-in">
-      {/* Demo banner */}
-      <div style={{ padding: '10px 16px', background: '#f59e0b11', border: '1px solid #f59e0b44', borderRadius: 10, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
-        <span>⚠️</span>
-        <span style={{ color: 'var(--text-secondary)' }}>
-          <strong style={{ color: '#f59e0b' }}>Demo Mode</strong> — Showing sample data. Sign in with your account to see real data.
-        </span>
-        <Link href="/login" className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto' }}>Sign In</Link>
-      </div>
-
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">{isInternal ? 'Firm Management Dashboard' : 'Advisor Dashboard'}</h1>
-          <p className="page-subtitle">{isInternal ? 'Aggregate platform analytics' : `Consolidation across ${stats.totalFamilies} families`}</p>
-        </div>
-        <div className="page-actions">
-          <button className="btn btn-secondary">{isInternal ? 'Platform Audit' : 'Download Master Report'}</button>
-          {!isInternal && <button className="btn btn-primary">New Activity</button>}
-        </div>
-      </div>
 
       <div className="stat-grid">
         <StatCard label="Total Platform AUM" value={formatCurrency(stats.totalAum, 'USD', true)} trendValue="+8.3% YTD" trendDirection="up" icon="🏛️" />
@@ -359,33 +331,38 @@ export default function DashboardPage() {
 
   // In live mode as regular user → show empty tenant dashboard
   if (isLive && !isSaasMasterAdmin) {
-    return (
-      <div className="page animate-fade-in">
-        <div className="page-header">
-          <div>
-            <h1 className="page-title">Welcome, {user?.name?.split(' ')[0] ?? 'there'} 👋</h1>
-            <p className="page-subtitle">Your workspace is ready. Start by adding families, tasks, or activities.</p>
-          </div>
-          <div className="page-actions">
-            <Link href="/activities" className="btn btn-primary">+ New Activity</Link>
-          </div>
-        </div>
-        <div className="card mt-6" style={{ textAlign: 'center', padding: '60px 40px' }}>
-          <div style={{ fontSize: 56, marginBottom: 16 }}>🏛️</div>
-          <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 8 }}>Your workspace is empty</h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: 14, maxWidth: 400, margin: '0 auto 24px', lineHeight: 1.6 }}>
-            No families, tasks, or activities have been added yet. Get started by adding your first client family, or ask your platform administrator to provision data.
-          </p>
-          <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <Link href="/families" className="btn btn-primary">+ Add Family</Link>
-            <Link href="/tasks" className="btn btn-secondary">+ Create Task</Link>
-            <Link href="/activities" className="btn btn-secondary">+ Log Activity</Link>
-          </div>
-        </div>
-      </div>
-    );
+    return <RegularUserDashboard user={user} />;
   }
 
   // Demo / unauthenticated mode → show demo dashboard
   return <DemoDashboard />;
+}
+
+function RegularUserDashboard({ user }: { user: ReturnType<typeof useAuth>['user'] }) {
+  usePageTitle('Dashboard');
+  const now = new Date();
+  const greeting = now.getHours() < 12 ? 'Good morning' : now.getHours() < 17 ? 'Good afternoon' : 'Good evening';
+  return (
+    <div className="page animate-fade-in">
+      <div style={{ marginBottom: 24, padding: '18px 20px', background: 'var(--bg-elevated)', borderRadius: 12, border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800 }}>{greeting}, {user?.name?.split(' ')[0] ?? 'there'} 👋</div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}>Your workspace is ready.</div>
+        </div>
+        <Link href="/activities" className="btn btn-primary">+ New Activity</Link>
+      </div>
+      <div className="card mt-6" style={{ textAlign: 'center', padding: '60px 40px' }}>
+        <div style={{ fontSize: 56, marginBottom: 16 }}>🏛️</div>
+        <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 8 }}>Your workspace is empty</h2>
+        <p style={{ color: 'var(--text-secondary)', fontSize: 14, maxWidth: 400, margin: '0 auto 24px', lineHeight: 1.6 }}>
+          No families, tasks, or activities have been added yet. Get started by adding your first client family.
+        </p>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <Link href="/families" className="btn btn-primary">+ Add Family</Link>
+          <Link href="/tasks" className="btn btn-secondary">+ Create Task</Link>
+          <Link href="/activities" className="btn btn-secondary">+ Log Activity</Link>
+        </div>
+      </div>
+    </div>
+  );
 }
