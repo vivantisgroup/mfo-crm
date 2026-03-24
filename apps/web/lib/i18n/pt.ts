@@ -23,6 +23,8 @@ export const pt: Record<TranslationKey, string> = {
   'nav.users': 'Usuários',
   'nav.expenses': 'Despesas',
   'nav.analytics': 'Analytics',
+  'nav.renewals': 'Renovações',
+  'nav.inbox': 'Caixa de Entrada',
 
   // Header & User Profile
   'header.search': 'Buscar registros… (⌘K)',
