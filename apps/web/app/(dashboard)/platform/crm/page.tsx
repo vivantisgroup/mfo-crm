@@ -70,7 +70,7 @@ function NewOrgView({ onBack, onCreated, performer }: {
       if (form.contactName && form.contactEmail) {
         await createContact({
           orgId: org.id, name: form.contactName, email: form.contactEmail,
-          role: form.contactRole || undefined, phone: form.contactPhone || undefined,
+          role: form.contactRole || '', phone: form.contactPhone || '',
           isPrimary: true, notes: '', createdBy: performer.uid,
         }, performer);
       }
