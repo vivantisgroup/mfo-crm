@@ -66,3 +66,4 @@ bower_components/
 
 fix_*.ps1
 .vercel
+ts_out.txt

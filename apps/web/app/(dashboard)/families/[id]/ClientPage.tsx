@@ -10,6 +10,7 @@ import { AssetAllocationChart } from '@/components/AssetAllocationChart';
 import { RelationshipsTab } from '@/components/RelationshipsTab';
 import { SuitabilityAssessment } from '@/components/SuitabilityAssessment';
 import { InvestmentAdvisory } from '@/components/InvestmentAdvisory';
+import { CommunicationPanel } from '@/components/CommunicationPanel';
 
 export default function FamilyDetailPage() {
   const params = useParams();
@@ -35,23 +36,25 @@ export default function FamilyDetailPage() {
   const relevantEdges = RELATIONSHIP_EDGES.filter(e => relevantNodeIds.has(e.sourceId) || relevantNodeIds.has(e.targetId));
 
   return (
-    <div className="page animate-fade-in">
+    <div className="page animate-fade-in" style={{ maxWidth: 1400, margin: '0 auto' }}>
+      {/* Breadcrumbs */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, fontSize: 13, color: 'var(--text-tertiary)', fontWeight: 600 }}>
+        <button onClick={() => router.push('/families')} style={{ background: 'none', border: 'none', color: 'var(--brand-400)', cursor: 'pointer', padding: 0, fontWeight: 600 }}>Families</button>
+        <span>/</span>
+        <span style={{ color: 'var(--text-primary)' }}>{family.name}</span>
+      </div>
+
       <div className="page-header" style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
-          <button className="icon-btn" onClick={() => router.push('/families')} title="Back to list">
-            ←
-          </button>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <h1 className="page-title" style={{ margin: 0 }}>{family.name}</h1>
-              <span className={`badge badge-${family.serviceTier === 'platinum' ? 'platinum' : family.serviceTier === 'gold' ? 'gold' : 'neutral'}`}>
-                {family.serviceTier.toUpperCase()}
-              </span>
-            </div>
-            <p className="page-subtitle" style={{ marginTop: 6 }}>
-              {family.code} · Domiciled in {family.domicileCountry} · Inception {formatDate(family.inceptionDate || '')}
-            </p>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <h1 className="page-title" style={{ margin: 0 }}>{family.name}</h1>
+            <span className={`badge badge-${family.serviceTier === 'platinum' ? 'platinum' : family.serviceTier === 'gold' ? 'gold' : 'neutral'}`}>
+              {family.serviceTier.toUpperCase()}
+            </span>
           </div>
+          <p className="page-subtitle" style={{ marginTop: 6 }}>
+            {family.code} · Domiciled in {family.domicileCountry} · Inception {formatDate(family.inceptionDate || '')}
+          </p>
         </div>
         <div className="page-actions">
           <button className="btn btn-secondary">Edit Family</button>
@@ -60,7 +63,7 @@ export default function FamilyDetailPage() {
       </div>
 
       <div className="tabs">
-        {['overview', 'members', 'entities', 'network', 'suitability', 'advisory', 'settings'].map(t => (
+        {['overview', 'communications', 'members', 'entities', 'network', 'suitability', 'advisory', 'tickets', 'settings'].map(t => (
           <button
             key={t}
             className={`tab ${activeTab === t ? 'active' : ''}`}
@@ -72,7 +75,7 @@ export default function FamilyDetailPage() {
         ))}
       </div>
 
-      <div style={{ marginTop: 24 }}>
+      <div style={{ marginTop: 24, flex: 1, minHeight: 0 }}>
         {activeTab === 'overview' && (
           <div className="grid-3-1">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -189,6 +192,32 @@ export default function FamilyDetailPage() {
             family={family} 
             balanceSheet={bs}
           />
+        )}
+
+        {activeTab === 'communications' && (
+          <div style={{ height: 600 }}>
+            <CommunicationPanel
+              familyId={family.id}
+              familyName={family.name}
+              linkedRecordType="crm"
+              linkedRecordId={family.id}
+            />
+          </div>
+        )}
+
+        {activeTab === 'tickets' && (
+          <div className="card">
+            <div className="card-header">
+              <h2 className="card-title">Support Tickets</h2>
+              <button className="btn btn-secondary btn-sm" onClick={() => router.push('/tasks')}>New Ticket</button>
+            </div>
+            <div className="card-body" style={{ padding: '0 20px' }}>
+              <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-tertiary)' }}>
+                <div style={{ fontSize: 32, marginBottom: 12 }}>🎫</div>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>Please use the main tasks queue to view specific tickets.</div>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

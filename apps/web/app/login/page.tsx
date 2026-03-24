@@ -2,10 +2,11 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
 import {
   getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  updateProfile,
+  updateProfile, sendPasswordResetEmail,
 } from 'firebase/auth';
 import { firebaseApp } from '@mfo-crm/config';
 import {
@@ -15,12 +16,20 @@ import {
 } from '@/lib/platformService';
 import { verifyTotpLogin, totpSecondsRemaining } from '@/lib/mfaService';
 
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Loader2, ShieldCheck, UserPlus, LogIn, ChevronRight, LockKeyhole } from 'lucide-react';
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Screen =
   | 'loading'
   | 'signin'
   | 'signup'
+  | 'forgot_password'   // ← password reset email flow
   | 'mfa_challenge'     // ← TOTP OTP entry after password OK
   | 'tenant_select'     // ← workspace picker after full auth
   | 'confirm_init'
@@ -34,29 +43,30 @@ interface LogEntry { ts: string; status: 'info' | 'ok' | 'error' | 'warn'; messa
 function PasswordStrength({ pw }: { pw: string }) {
   const score = [/.{8,}/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter(r => r.test(pw)).length;
   const labels = ['', 'Weak', 'Fair', 'Good', 'Strong'];
-  const colors = ['', '#ef4444', '#f59e0b', '#22d3ee', '#22c55e'];
+  const colors = ['', 'bg-destructive', 'bg-amber-500', 'bg-cyan-500', 'bg-green-500'];
   if (!pw) return null;
   return (
-    <div style={{ marginTop: 6 }}>
-      <div style={{ display: 'flex', gap: 4 }}>
+    <div className="mt-2">
+      <div className="flex gap-1 h-1.5 rounded overflow-hidden">
         {[1,2,3,4].map(i => (
-          <div key={i} style={{ flex: 1, height: 3, borderRadius: 2, background: i <= score ? colors[score] : '#1e293b', transition: 'background 0.2s' }} />
+          <div key={i} className={`flex-1 transition-colors duration-300 ${i <= score ? colors[score] : 'bg-muted'}`} />
         ))}
       </div>
-      <div style={{ fontSize: 10, color: colors[score], marginTop: 3, fontWeight: 600 }}>{labels[score]}</div>
+      <div className="text-[10px] mt-1 font-semibold" style={{ color: iToColor(score) }}>{labels[score]}</div>
     </div>
   );
 }
 
-function Spinner({ size = 14 }: { size?: number }) {
-  return <div style={{ width: size, height: size, border: `2px solid rgba(255,255,255,0.3)`, borderTopColor: 'white', borderRadius: '50%', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />;
+function iToColor(i: number) {
+  const c = ['', '#ef4444', '#f59e0b', '#06b6d4', '#22c55e'];
+  return i <= 4 ? c[i] : c[4];
 }
 
 function StatusIcon({ status }: { status: LogEntry['status'] }) {
-  if (status === 'ok')    return <span style={{ color: '#22c55e', fontSize: 13 }}>✓</span>;
-  if (status === 'error') return <span style={{ color: '#ef4444', fontSize: 13 }}>✗</span>;
-  if (status === 'warn')  return <span style={{ color: '#f59e0b', fontSize: 13 }}>⚠</span>;
-  return <Spinner size={12} />;
+  if (status === 'ok')    return <span className="text-green-500 text-sm">✓</span>;
+  if (status === 'error') return <span className="text-destructive text-sm">✗</span>;
+  if (status === 'warn')  return <span className="text-warning text-sm">⚠</span>;
+  return <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />;
 }
 
 // ─── OTP Input — 6 individual digit boxes ────────────────────────────────────
@@ -92,7 +102,7 @@ function OtpInput({ value, onChange, disabled, firstRef }: {
   }
 
   return (
-    <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+    <div className="flex gap-2 sm:gap-3 justify-center">
       {[0,1,2,3,4,5].map(i => (
         <input
           key={i}
@@ -109,18 +119,9 @@ function OtpInput({ value, onChange, disabled, firstRef }: {
           onPaste={handlePaste}
           disabled={disabled}
           autoComplete="one-time-code"
-          style={{
-            width: 52, height: 64, textAlign: 'center', fontSize: 26, fontWeight: 800,
-            fontFamily: 'ui-monospace, monospace',
-            background: value[i] ? 'rgba(99,102,241,0.18)' : 'rgba(255,255,255,0.07)',
-            border: `2px solid ${value[i] ? '#818cf8' : 'rgba(255,255,255,0.28)'}`,
-            borderRadius: 14,
-            color: value[i] ? '#ffffff' : 'rgba(255,255,255,0.9)',
-            outline: 'none',
-            boxShadow: value[i] ? '0 0 0 3px rgba(99,102,241,0.25), inset 0 0 6px rgba(99,102,241,0.15)' : '0 2px 8px rgba(0,0,0,0.3)',
-            transition: 'all 0.18s',
-            caretColor: 'transparent',
-          }}
+          className={`w-10 h-12 sm:w-12 sm:h-14 text-center text-2xl font-bold bg-background border-2 rounded-xl focus:outline-none transition-all caret-transparent
+            ${value[i] ? 'border-primary ring-2 ring-primary/20 text-primary-foreground bg-primary/10' : 'border-border text-foreground hover:border-muted-foreground'}
+          `}
         />
       ))}
     </div>
@@ -140,24 +141,27 @@ function TotpTimer() {
   const dash = circ * pct;
   const color = secs <= 5 ? '#ef4444' : secs <= 10 ? '#f59e0b' : '#22c55e';
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', marginTop: 16 }}>
-      <svg width={32} height={32} viewBox="0 0 32 32" style={{ transform: 'rotate(-90deg)' }}>
-        <circle cx={16} cy={16} r={r} fill="none" stroke="var(--border)" strokeWidth={2.5} />
-        <circle cx={16} cy={16} r={r} fill="none" stroke={color} strokeWidth={2.5}
+    <div className="flex items-center gap-2 justify-center mt-4">
+      <svg width={32} height={32} viewBox="0 0 32 32" className="-rotate-90">
+        <circle cx={16} cy={16} r={r} fill="none" className="stroke-border" strokeWidth={2.5} />
+        <circle cx={16} cy={16} r={r} fill="none" strokeWidth={2.5}
           strokeDasharray={`${dash} ${circ}`} strokeLinecap="round"
-          style={{ transition: 'stroke-dasharray 1s linear, stroke 0.3s' }} />
+          style={{ stroke: color, transition: 'stroke-dasharray 1s linear, stroke 0.3s' }} />
       </svg>
-      <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
+      <span className="text-sm text-muted-foreground tabular-nums">
         Code refreshes in <strong style={{ color }}>{secs}s</strong>
       </span>
     </div>
   );
 }
 
-// ─── Main Page ─────────────────────────────────────────────────────────────────
+// ─── Login Component Logic ───────────────────────────────────────────────────────────
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isAdminRequest = searchParams.get('admin') === '1';
+
   const auth   = getAuth(firebaseApp);
   const logRef = useRef<HTMLDivElement>(null);
 
@@ -169,6 +173,7 @@ export default function LoginPage() {
   const [pwConfirm,   setPwConfirm]   = useState('');
   const [loading,     setLoading]     = useState(false);
   const [error,       setError]       = useState('');
+  const [isInitialized, setIsInitialized] = useState<boolean | null>(null);
 
   // Init flow
   const [logs,        setLogs]        = useState<LogEntry[]>([]);
@@ -193,6 +198,10 @@ export default function LoginPage() {
   const [mfaLoading,  setMfaLoading]  = useState(false);
   const [mfaShake,    setMfaShake]    = useState(false);
   const firstOtpRef  = useRef<HTMLInputElement | null>(null);
+
+  // Forgot password state
+  const [resetSent,   setResetSent]   = useState(false);
+  const [resetEmail,  setResetEmail]  = useState('');
 
   /**
    * mfaPassedRef — true after successful TOTP verification.
@@ -226,6 +235,7 @@ export default function LoginPage() {
         // Case A: existing session (page reload / navigating to /login while logged in)
         try {
           const initialized = await isPlatformInitialized();
+          setIsInitialized(initialized);
           if (!initialized) { setScreen('signup'); return; }
 
           const profile = await ensureUserProfile(fbUser);
@@ -263,8 +273,9 @@ export default function LoginPage() {
       // Case B: not signed in
       try {
         const initialized = await isPlatformInitialized();
+        setIsInitialized(initialized);
         setScreen(initialized ? 'signin' : 'signup');
-      } catch { setScreen('signin'); }
+      } catch { setIsInitialized(true); setScreen('signin'); }
     });
     return () => unsub();
   }, [auth, router]);
@@ -274,6 +285,22 @@ export default function LoginPage() {
     const ts = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
     setLogs(prev => [...prev, { ts, status, message }]);
   }, []);
+
+  // ── Forgot Password ──────────────────────────────────────────────────────────
+  async function handlePasswordReset(e: React.FormEvent) {
+    e.preventDefault();
+    if (!resetEmail) { setError('Please enter your email address.'); return; }
+    setLoading(true);
+    setError('');
+    try {
+      await sendPasswordResetEmail(auth, resetEmail);
+      setResetSent(true);
+    } catch (err: any) {
+      setError(friendlyAuthError(err.code ?? err.message));
+    } finally {
+      setLoading(false);
+    }
+  }
   const setStep = useCallback((n: number, total: number) => setProgress(Math.round((n / total) * 100)), []);
 
   // ── Finish auth: load profile + tenants ───────────────────────────────────────
@@ -522,7 +549,7 @@ export default function LoginPage() {
             {!initDone && !initError && logs.length > 0 && (
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 4 }}>
                 <span style={{ color: '#334155' }}>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
-                <Spinner size={11} />
+                <Loader2 className="animate-spin w-[11px] h-[11px]" />
                 <span style={{ color: '#475569' }}>Processing…</span>
               </div>
             )}
@@ -612,286 +639,336 @@ export default function LoginPage() {
   const isFirstSetup = screen === 'signup';
 
   return (
-    <div className="login-page">
+    <div className="flex min-h-screen bg-background text-foreground">
       {/* Left hero */}
-      <div className="login-art" style={{ background: 'linear-gradient(225deg,#0f172a 0%,#020617 100%)', position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', top: '-10%', right: '-10%', width: 400, height: 400, background: 'radial-gradient(circle,var(--brand-500) 0%,transparent 70%)', opacity: 0.1, filter: 'blur(80px)' }} />
-        <div style={{ position: 'absolute', bottom: '10%', left: '5%', width: 300, height: 300, background: 'radial-gradient(circle,#818cf8 0%,transparent 70%)', opacity: 0.05, filter: 'blur(60px)' }} />
-        <div className="login-art-title" style={{ fontSize: 52, fontWeight: 900, lineHeight: 1.1, letterSpacing: '-0.04em' }}>
-          Intelligence.<br /><span style={{ color: 'var(--brand-400)' }}>Governance.</span><br />Legacy.
+      <div className="hidden lg:flex flex-col justify-between w-1/2 max-w-[800px] p-12 relative overflow-hidden bg-slate-950">
+        <div className="absolute -top-[10%] -right-[10%] w-[400px] h-[400px] bg-primary/20 blur-[80px] rounded-full pointer-events-none" />
+        <div className="absolute bottom-[10%] left-[5%] w-[300px] h-[300px] bg-indigo-500/10 blur-[60px] rounded-full pointer-events-none" />
+        
+        <div className="relative z-10 flex items-center gap-3">
+          <div className="bg-gradient-to-br from-primary to-indigo-400 text-white font-black w-10 h-10 text-xl rounded-xl flex items-center justify-center shadow-lg shadow-primary/20">V</div>
+          <div className="font-black text-xl tracking-wider text-slate-50">VIVANTS</div>
         </div>
-        <p className="login-art-sub" style={{ opacity: 0.6, fontSize: 16, maxWidth: 440, marginTop: 24, lineHeight: 1.6 }}>
-          Comprehensive wealth management and family office orchestration for the next generation of fiduciaries.
-        </p>
-        <div className="login-art-stats" style={{ marginTop: 60, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 40 }}>
-          {[['$1.4B+','Platform AUM'],['99.9%','Uptime SLA'],['ISO 27001','Certified'],['TOTP MFA','Protected']].map(([v, l]) => (
-            <div key={l} className="login-art-stat">
-              <div className="login-art-stat-val" style={{ fontSize: 24, fontWeight: 800 }}>{v}</div>
-              <div className="login-art-stat-label" style={{ fontSize: 11 }}>{l}</div>
+
+        <div className="relative z-10 my-auto">
+          <div className="text-5xl lg:text-6xl font-black leading-[1.1] tracking-tight text-slate-50">
+            Intelligence.<br />
+            <span className="text-primary">Governance.</span><br />
+            Legacy.
+          </div>
+          <p className="mt-8 text-lg text-slate-400 max-w-md leading-relaxed">
+            Comprehensive wealth management and family office orchestration for the next generation of fiduciaries.
+          </p>
+        </div>
+
+        <div className="relative z-10 grid grid-cols-2 gap-8 text-slate-300">
+          {[
+            ['$1.4B+', 'Platform AUM'],
+            ['99.9%', 'Uptime SLA'],
+            ['ISO 27001', 'Certified'],
+            ['TOTP MFA', 'Protected']
+          ].map(([v, l]) => (
+            <div key={l}>
+              <div className="text-2xl font-bold text-slate-100">{v}</div>
+              <div className="text-xs uppercase tracking-wider text-slate-500 mt-1 font-semibold">{l}</div>
             </div>
           ))}
         </div>
       </div>
 
       {/* Right form */}
-      <div className="login-form-col" style={{ background: 'var(--bg-base)' }}>
-        <div className="login-form-inner" style={{ minWidth: 420, maxWidth: 480 }}>
-
-          {/* Logo */}
-          <div className="login-logo" style={{ marginBottom: 36 }}>
-            <div className="login-logo-mark" style={{ background: 'linear-gradient(135deg,var(--brand-500),#818cf8)', color: 'white', fontWeight: 900, width: 48, height: 48, fontSize: 24, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>V</div>
+      <div className="flex-1 flex flex-col justify-center px-6 py-12 sm:px-12 lg:px-20 bg-background relative z-10">
+        <div className="mx-auto w-full max-w-md">
+          
+          {/* Logo Mobile */}
+          <div className="flex lg:hidden items-center gap-3 mb-10">
+            <div className="bg-gradient-to-br from-primary to-indigo-400 text-white font-black w-10 h-10 text-xl rounded-xl flex items-center justify-center shadow-lg shadow-primary/20">V</div>
             <div>
-              <div style={{ fontWeight: 900, fontSize: 20, letterSpacing: '0.05em' }}>VIVANTS</div>
-              <div style={{ fontSize: 10, color: 'var(--text-tertiary)', letterSpacing: '0.2em', textTransform: 'uppercase' }}>
-                {isFirstSetup ? 'First-Time Setup' : screen === 'mfa_challenge' ? 'Two-Factor Auth' : 'MFO NEXUS PLATFORM'}
-              </div>
+              <div className="font-black text-xl tracking-wider">VIVANTS</div>
+              <div className="text-[10px] text-muted-foreground uppercase tracking-widest">{isFirstSetup ? 'First-Time Setup' : 'MFO Nexus Platform'}</div>
             </div>
           </div>
 
           {/* First-time banner */}
           {isFirstSetup && (
-            <div style={{ padding: '12px 16px', background: '#6366f111', border: '1px solid #6366f144', borderRadius: 10, marginBottom: 24 }}>
-              <div style={{ fontWeight: 700, color: 'var(--brand-400)', marginBottom: 4, fontSize: 13 }}>🏗 First-Time Platform Setup</div>
-              <div style={{ color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.6 }}>
+            <div className="mb-8 p-4 bg-primary/10 border border-primary/20 rounded-xl">
+              <div className="font-bold text-primary text-sm mb-1 flex items-center gap-2"><Loader2 className="w-4 h-4" /> First-Time Platform Setup</div>
+              <div className="text-muted-foreground text-sm leading-relaxed">
                 No platform account exists yet. This account becomes the <strong>SaaS Master Admin</strong>.
               </div>
             </div>
           )}
 
-          {/* Tab switcher */}
-          {!isFirstSetup && screen === 'signin' && (
-            <div style={{ display: 'flex', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 10, padding: 3, marginBottom: 28, gap: 3 }}>
-              {(['signin', 'signup'] as const).map(m => (
-                <button key={m} onClick={() => { setScreen(m); setError(''); }}
-                  style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
-                    fontWeight: screen === m ? 700 : 500,
-                    background: screen === m ? 'var(--bg-surface)' : 'transparent',
-                    color: screen === m ? 'var(--brand-400)' : 'var(--text-secondary)',
-                    boxShadow: screen === m ? 'var(--shadow-sm)' : 'none', transition: 'all 0.15s' }}>
-                  {m === 'signin' ? 'Sign In' : 'Create Account'}
-                </button>
-              ))}
-            </div>
+          {/* Tab switcher — only shown to admins via ?admin=1 param */}
+          {!isFirstSetup && screen === 'signin' && isAdminRequest && (
+            <Tabs defaultValue="signin" onValueChange={(v) => { setScreen(v as Screen); setError(''); }} className="mb-8">
+              <TabsList className="grid w-full grid-cols-2 h-11">
+                <TabsTrigger value="signin">Sign In</TabsTrigger>
+                <TabsTrigger value="signup">Create Account</TabsTrigger>
+              </TabsList>
+            </Tabs>
           )}
 
-          {/* Error */}
+          {/* Error Alert */}
           {error && (
-            <div style={{ background: '#ef444411', border: '1px solid #ef444466', color: '#fca5a5', padding: '12px 16px', borderRadius: 10, marginBottom: 20, fontSize: 13, lineHeight: 1.6 }}>
-              <strong style={{ color: '#ef4444' }}>⚠ {error.split('\n')[0]}</strong>
+            <div className="mb-6 p-4 bg-destructive/10 border border-destructive/20 text-destructive rounded-xl text-sm font-medium flex gap-3 items-start">
+              <span className="mt-0.5">⚠</span>
+              <span>{error.split('\n')[0]}</span>
             </div>
           )}
 
           {/* ── MFA CHALLENGE SCREEN ── */}
           {screen === 'mfa_challenge' && (
-            <div className="animate-fade-in">
-              {/* Shield icon */}
-              <div style={{ textAlign: 'center', marginBottom: 28 }}>
-                <div style={{
-                  width: 72, height: 72, borderRadius: '50%', margin: '0 auto 16px',
-                  background: 'linear-gradient(135deg, #6366f1 0%, #818cf8 100%)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32,
-                  boxShadow: '0 8px 32px #6366f144',
-                }}>🔐</div>
-                <h1 style={{ fontSize: 22, fontWeight: 800, margin: '0 0 8px' }}>Verification Required</h1>
-                <p style={{ color: 'var(--text-secondary)', fontSize: 13, margin: 0, lineHeight: 1.6 }}>
-                  Open your authenticator app and enter the 6-digit<br />
-                  code for <strong style={{ color: 'var(--text-primary)' }}>{email}</strong>
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="text-center mb-8">
+                <div className="w-20 h-20 mx-auto bg-gradient-to-br from-primary to-indigo-400 rounded-full flex items-center justify-center shadow-lg shadow-primary/30 mb-6">
+                  <ShieldCheck className="w-10 h-10 text-white" />
+                </div>
+                <h1 className="text-2xl font-bold tracking-tight mb-2">Verification Required</h1>
+                <p className="text-muted-foreground text-sm">
+                  Open your authenticator app and enter the 6-digit code for <strong className="text-foreground">{email}</strong>
                 </p>
               </div>
 
-              {/* OTP input — shake on wrong code */}
-              <div style={{
-                animation: mfaShake ? 'mfa-shake 0.5s ease' : 'none',
-              }}>
+              <div className={mfaShake ? 'animate-[mfa-shake_0.5s_ease]' : ''}>
                 <OtpInput value={otpCode} onChange={v => { setMfaError(''); setOtpCode(v); }} disabled={mfaLoading} firstRef={firstOtpRef} />
               </div>
 
-              {/* TOTP timer */}
               <TotpTimer />
 
-              {/* Error */}
               {mfaError && (
-                <div style={{ marginTop: 16, padding: '12px 16px', background: '#ef444411', border: '1px solid #ef444433', borderRadius: 10, fontSize: 13, color: '#fca5a5', textAlign: 'center', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
-                  <span>❌</span> {mfaError}
+                <div className="mt-4 p-3 bg-destructive/10 text-destructive text-sm text-center rounded-lg font-medium border border-destructive/20">
+                  {mfaError}
                 </div>
               )}
 
-              {/* Verify button */}
-              <button
-                id="mfa-verify-btn"
-                onClick={handleMfaVerify}
-                disabled={otpCode.length < 6 || mfaLoading}
-                style={{ ...btnPrimary(otpCode.length < 6 || mfaLoading), marginTop: 24 }}
-              >
-                {mfaLoading ? <><Spinner /> Verifying…</> : '✓ Verify Code'}
-              </button>
+              <Button size="lg" className="w-full mt-8 font-semibold text-base py-6 rounded-xl shadow-lg shadow-primary/20" onClick={handleMfaVerify} disabled={otpCode.length < 6 || mfaLoading}>
+                {mfaLoading ? <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Verifying…</> : 'Verify Code'}
+              </Button>
 
-
-              {/* Back to Sign In — signs out Firebase so password must be re-entered */}
-              <button
-                onClick={async () => {
-                  signInInProgressRef.current = false;
-                  setOtpCode('');
-                  setMfaError('');
-                  setMfaUid('');
-                  setMfaFbUser(null);
-                  mfaPassedRef.current = false;
-                  // Sign out Firebase so onAuthStateChanged fires with null user
-                  // and the sign-in form is shown cleanly
-                  await auth.signOut();
-                }}
-                style={{ width: '100%', marginTop: 12, padding: '11px', background: 'none', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
-              >
-                ← Back to Sign In
-              </button>
-
-              <div style={{ marginTop: 20, padding: '12px 16px', background: 'var(--bg-canvas)', borderRadius: 10, fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.8 }}>
-                <strong style={{ color: 'var(--text-secondary)' }}>Supported apps:</strong><br />
-                Google Authenticator · Authy · 1Password · Bitwarden · Microsoft Authenticator
+              <div className="mt-4 text-center">
+                <Button variant="ghost" onClick={async () => {
+                  signInInProgressRef.current = false; setOtpCode(''); setMfaError(''); setMfaUid(''); setMfaFbUser(null);
+                  mfaPassedRef.current = false; await auth.signOut();
+                }} className="text-muted-foreground hover:text-foreground">
+                  ← Back to Sign In
+                </Button>
               </div>
             </div>
           )}
 
           {/* ── SIGN IN FORM ── */}
           {screen === 'signin' && (
-            <div className="animate-fade-in">
-              <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8 }}>Welcome back</h1>
-              <p style={{ color: 'var(--text-secondary)', marginBottom: 28, fontSize: 14 }}>Sign in to access your workspace</p>
-              <form onSubmit={handleSignIn} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                <div>
-                  <label style={labelStyle}>Email address</label>
-                  <input type="email" autoComplete="email" required placeholder="you@yourfirm.com"
-                    value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} />
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <h1 className="text-3xl font-bold tracking-tight mb-2">Welcome back</h1>
+              <p className="text-muted-foreground mb-8">Sign in to access your workspace</p>
+              
+              <form onSubmit={handleSignIn} className="space-y-5">
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email address</Label>
+                  <Input id="email" type="email" required placeholder="you@yourfirm.com"
+                    value={email} onChange={e => setEmail(e.target.value)} className="h-12 bg-muted/50" />
                 </div>
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 7 }}>
-                    <label style={{ ...labelStyle, margin: 0 }}>Password</label>
-                    <a href="#" style={{ fontSize: 12, color: 'var(--brand-400)' }}>Forgot password?</a>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <Label htmlFor="password">Password</Label>
+                    <button
+                      type="button"
+                      className="text-xs font-semibold text-primary hover:text-primary/80 transition-colors"
+                      onClick={() => { setResetEmail(email); setResetSent(false); setError(''); setScreen('forgot_password'); }}
+                    >
+                      Forgot password?
+                    </button>
                   </div>
-                  <input type="password" autoComplete="current-password" required placeholder="••••••••••••"
-                    value={password} onChange={e => setPassword(e.target.value)} style={inputStyle} />
+                  <Input id="password" type="password" required placeholder="••••••••••••"
+                    value={password} onChange={e => setPassword(e.target.value)} className="h-12 bg-muted/50" />
                 </div>
-                <button type="submit" id="sign-in-btn" disabled={loading} style={btnPrimary(loading)}>
-                  {loading ? <><Spinner /> Authenticating…</> : 'Sign In →'}
-                </button>
+                <Button type="submit" size="lg" className="w-full h-12 mt-2 text-base font-bold shadow-lg shadow-primary/20" disabled={loading}>
+                  {loading ? <><Loader2 className="mr-2 h-5 w-5 animate-spin"/> Authenticating…</> : <>Sign In <ChevronRight className="w-4 h-4 ml-1" /></>}
+                </Button>
               </form>
-              {/* MFA hint */}
-              <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: 'var(--bg-canvas)', borderRadius: 8, border: '1px solid var(--border)' }}>
-                <span style={{ fontSize: 16 }}>🔐</span>
-                <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-                  If MFA is enabled, you'll be prompted for your authenticator code after sign-in.
-                </span>
+
+              <div className="flex items-center justify-center gap-2 mt-8 text-xs text-muted-foreground">
+                <LockKeyhole className="w-4 h-4" /> End-to-end encrypted session
               </div>
+            </div>
+          )}
+
+          {/* ── FORGOT PASSWORD SCREEN ── */}
+          {screen === 'forgot_password' && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="text-center mb-8">
+                <div className="w-16 h-16 mx-auto bg-muted rounded-full flex items-center justify-center mb-4">
+                  <LockKeyhole className="w-8 h-8 text-muted-foreground" />
+                </div>
+                <h1 className="text-2xl font-bold tracking-tight mb-2">Reset your password</h1>
+                <p className="text-muted-foreground text-sm">
+                  Enter your account email and we'll send you a link to reset your password.
+                </p>
+              </div>
+
+              {resetSent ? (
+                <div className="space-y-6">
+                  <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-xl text-center">
+                    <div className="text-2xl mb-2">✉️</div>
+                    <div className="font-bold text-green-600 dark:text-green-400 text-sm mb-1">Reset email sent!</div>
+                    <div className="text-muted-foreground text-sm">
+                      Check your inbox at <strong>{resetEmail}</strong> for a password reset link.
+                    </div>
+                  </div>
+                  <Button variant="outline" size="lg" className="w-full h-12" onClick={() => { setScreen('signin'); setResetSent(false); }}>
+                    ← Back to Sign In
+                  </Button>
+                </div>
+              ) : (
+                <form onSubmit={handlePasswordReset} className="space-y-5">
+                  <div className="space-y-2">
+                    <Label htmlFor="resetEmail">Email address</Label>
+                    <Input
+                      id="resetEmail"
+                      type="email"
+                      required
+                      placeholder="you@yourfirm.com"
+                      value={resetEmail}
+                      onChange={e => setResetEmail(e.target.value)}
+                      className="h-12 bg-muted/50"
+                      autoFocus
+                    />
+                  </div>
+                  <Button type="submit" size="lg" className="w-full h-12 font-bold shadow-lg shadow-primary/20" disabled={loading}>
+                    {loading ? <><Loader2 className="mr-2 h-5 w-5 animate-spin"/> Sending…</> : 'Send Reset Link'}
+                  </Button>
+                  <Button type="button" variant="ghost" className="w-full" onClick={() => { setScreen('signin'); setError(''); }}>
+                    ← Back to Sign In
+                  </Button>
+                </form>
+              )}
             </div>
           )}
 
           {/* ── TENANT SELECT ── */}
           {screen === 'tenant_select' && (
-            <div className="animate-fade-in">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#22c55e0f', border: '1px solid #22c55e33', borderRadius: 10, marginBottom: 24 }}>
-                <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #22c55e, #16a34a)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>✓</div>
+            <div className="animate-in fade-in slide-in-from-right-4 duration-500">
+              <div className="flex items-center gap-4 p-4 bg-green-500/10 border border-green-500/20 rounded-xl mb-8">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white shadow-lg shadow-green-500/20 shrink-0">✓</div>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 13, color: '#22c55e' }}>Signed In</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 1 }}>{userProfile?.email}</div>
+                  <div className="font-bold text-sm text-green-600 dark:text-green-400">Successfully Signed In</div>
+                  <div className="text-xs text-muted-foreground">{userProfile?.email}</div>
                 </div>
               </div>
-              <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 6 }}>Select Workspace</h1>
-              <p style={{ color: 'var(--text-secondary)', marginBottom: 20, fontSize: 14 }}>
+              
+              <h1 className="text-2xl font-bold tracking-tight mb-2">Select Workspace</h1>
+              <p className="text-muted-foreground mb-6 text-sm">
                 You have access to {tenants.length} workspaces. Choose which one to open.
               </p>
-              <div style={{ marginBottom: 20 }}>
-                <label style={labelStyle}>Workspace</label>
-                <select id="tenant-select" value={selectedId} onChange={e => setSelectedId(e.target.value)}
-                  style={{ ...inputStyle, fontWeight: 600, cursor: 'pointer', appearance: 'none',
-                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236366f1' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")`,
-                    backgroundRepeat: 'no-repeat', backgroundPosition: 'right 14px center', paddingRight: 40 }}>
-                  {tenants.map(t => (
-                    <option key={t.id} value={t.id}>{t.isInternal ? '🔵' : '🏢'} {t.name}{t.isInternal ? ' (Platform HQ)' : ''}{t.status === 'trial' ? ' — Trial' : ''}</option>
-                  ))}
-                </select>
+              
+              <div className="space-y-3 mb-8">
+                <Label>Workspace</Label>
+                <div className="relative">
+                  <select value={selectedId} onChange={e => setSelectedId(e.target.value)}
+                    className="w-full h-12 px-4 appearance-none font-semibold bg-muted/50 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer">
+                    {tenants.map(t => (
+                      <option key={t.id} value={t.id}>{t.isInternal ? '🔵' : '🏢'} {t.name}{t.isInternal ? ' (Platform HQ)' : ''}</option>
+                    ))}
+                  </select>
+                  <ChevronRight className="absolute right-4 top-4 w-4 h-4 text-muted-foreground rotate-90 pointer-events-none" />
+                </div>
               </div>
+
               {selectedId && (() => {
                 const t = tenants.find(x => x.id === selectedId);
                 if (!t) return null;
-                const statusColors: Record<string, string> = { active: '#22c55e', trial: '#f59e0b', suspended: '#94a3b8' };
                 return (
-                  <div style={{ padding: '14px 16px', background: 'var(--bg-elevated)', border: `1px solid ${t.brandColor ?? '#6366f1'}44`, borderLeft: `3px solid ${t.brandColor ?? '#6366f1'}`, borderRadius: 10, marginBottom: 20 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div>
-                        <div style={{ fontWeight: 800, fontSize: 15 }}>{t.name}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 3 }}>ID: <code style={{ fontSize: 11 }}>{t.id}</code></div>
+                  <Card className="mb-8 border-l-4 overflow-hidden" style={{ borderLeftColor: t.brandColor || 'var(--primary)' }}>
+                    <CardContent className="p-4">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <div className="font-bold">{t.name}</div>
+                          <div className="text-xs font-mono text-muted-foreground mt-1">ID: {t.id}</div>
+                        </div>
+                        <span className="text-[10px] font-bold px-2 py-1 bg-muted rounded-full uppercase tracking-wider">{t.plan}</span>
                       </div>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 8, background: `${statusColors[t.status] ?? '#6366f1'}18`, color: statusColors[t.status] ?? '#6366f1' }}>{t.status}</span>
-                    </div>
-                    <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 16 }}>
-                      <span>📋 {t.plan}</span>
-                      <span>{t.isInternal ? '🔐 Internal Platform' : '🏢 Client Workspace'}</span>
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 );
               })()}
-              <button id="enter-workspace-btn" onClick={handleEnterTenant} disabled={!selectedId || enteringTenant} style={btnPrimary(!selectedId || enteringTenant)}>
-                {enteringTenant ? <><Spinner /> Entering workspace…</> : 'Enter Workspace →'}
-              </button>
-              <button onClick={async () => {
+
+              <Button size="lg" className="w-full h-12 text-base font-bold shadow-lg shadow-primary/20" onClick={handleEnterTenant} disabled={!selectedId || enteringTenant}>
+                {enteringTenant ? <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Entering workspace…</> : <>Enter Workspace <ChevronRight className="w-4 h-4 ml-1" /></>}
+              </Button>
+
+              <div className="mt-4 text-center">
+                <Button variant="ghost" onClick={async () => {
                   const { getAuth } = await import('firebase/auth');
-                  const fb = getAuth(firebaseApp);
-                  // Clear MFA session so next user is properly challenged
                   if (authedUser?.uid) sessionStorage.removeItem(`mfa_verified:${authedUser.uid}`);
                   sessionStorage.removeItem('activeTenantId');
-                  fb.signOut();
+                  await getAuth(firebaseApp).signOut();
                   setScreen('signin'); setAuthedUser(null); setUserProfile(null); setTenants([]);
-                }}
-                style={{ width: '100%', marginTop: 10, padding: '11px', background: 'none', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
-                ← Sign in with a different account
-              </button>
+                }} className="text-muted-foreground hover:text-foreground w-full">
+                  Sign in with a different account
+                </Button>
+              </div>
             </div>
           )}
 
           {/* ── SIGN UP FORM ── */}
           {screen === 'signup' && (
-            <div className="animate-fade-in">
-              <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8 }}>{isFirstSetup ? 'Create Master Admin' : 'Create Account'}</h1>
-              <p style={{ color: 'var(--text-secondary)', marginBottom: 28, fontSize: 14 }}>
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <h1 className="text-3xl font-bold tracking-tight mb-2">{isFirstSetup ? 'Create Master Admin' : 'Create Account'}</h1>
+              <p className="text-muted-foreground mb-8 text-sm">
                 {isFirstSetup ? 'This account will have full control over the platform.' : 'Create your account to get started.'}
               </p>
-              <form onSubmit={handleSignUpPreflight} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-                <div>
-                  <label style={labelStyle}>Full Name</label>
-                  <input type="text" autoComplete="name" required placeholder="e.g. Alexandre Torres"
-                    value={displayName} onChange={e => setDisplayName(e.target.value)} style={inputStyle} />
+              
+              <form onSubmit={handleSignUpPreflight} className="space-y-5">
+                <div className="space-y-2">
+                  <Label htmlFor="displayName">Full Name</Label>
+                  <Input id="displayName" type="text" required placeholder="e.g. Alexandre Torres"
+                    value={displayName} onChange={e => setDisplayName(e.target.value)} className="h-12 bg-muted/50" />
                 </div>
-                <div>
-                  <label style={labelStyle}>Email Address</label>
-                  <input type="email" autoComplete="email" required placeholder="you@yourfirm.com"
-                    value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} />
+                <div className="space-y-2">
+                  <Label htmlFor="emailSup">Email Address</Label>
+                  <Input id="emailSup" type="email" required placeholder="you@yourfirm.com"
+                    value={email} onChange={e => setEmail(e.target.value)} className="h-12 bg-muted/50" />
                 </div>
-                <div>
-                  <label style={labelStyle}>Password</label>
-                  <input type="password" autoComplete="new-password" required placeholder="Min. 6 characters"
-                    value={password} onChange={e => setPassword(e.target.value)} style={inputStyle} />
+                <div className="space-y-2">
+                  <Label htmlFor="pw">Password</Label>
+                  <Input id="pw" type="password" required placeholder="Min. 6 characters"
+                    value={password} onChange={e => setPassword(e.target.value)} className="h-12 bg-muted/50" />
                   <PasswordStrength pw={password} />
                 </div>
-                <div>
-                  <label style={labelStyle}>Confirm Password</label>
-                  <input type="password" autoComplete="new-password" required placeholder="Repeat password"
+                <div className="space-y-2">
+                  <Label htmlFor="pwConfirm">Confirm Password</Label>
+                  <Input id="pwConfirm" type="password" required placeholder="Repeat password"
                     value={pwConfirm} onChange={e => setPwConfirm(e.target.value)}
-                    style={{ ...inputStyle, borderColor: pwConfirm && pwConfirm !== password ? '#ef4444' : undefined }} />
-                  {pwConfirm && pwConfirm !== password && <div style={{ fontSize: 11, color: '#ef4444', marginTop: 4 }}>Passwords do not match</div>}
+                    className={`h-12 bg-muted/50 ${pwConfirm && pwConfirm !== password ? 'border-destructive focus-visible:ring-destructive' : ''}`} />
+                  {pwConfirm && pwConfirm !== password && <div className="text-[11px] text-destructive font-medium">Passwords do not match</div>}
                 </div>
-                <button type="submit" disabled={loading || (!!pwConfirm && pwConfirm !== password)} style={btnPrimary(loading)}>
-                  {loading ? <><Spinner /> Checking…</> : isFirstSetup ? 'Review & Initialize →' : 'Create Account →'}
-                </button>
+                <Button type="submit" size="lg" className="w-full h-12 mt-4 text-base font-bold shadow-lg shadow-primary/20" disabled={loading || (!!pwConfirm && pwConfirm !== password)}>
+                  {loading ? <><Loader2 className="mr-2 w-5 h-5 animate-spin"/> Checking…</> : <>{isFirstSetup ? 'Review & Initialize' : 'Create Account'} <ChevronRight className="w-4 h-4 ml-1" /></>}
+                </Button>
               </form>
             </div>
           )}
-
-          <div style={{ marginTop: 'auto', paddingTop: 40, textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', opacity: 0.5, lineHeight: 1.8 }}>
-            Vivants MFO Nexus · Firebase Auth · TOTP MFA · AES-256 Encrypted
+          
+          <div className="mt-16 text-center text-xs text-muted-foreground/60 leading-relaxed max-w-xs mx-auto">
+            Vivants MFO Nexus &middot; Enterprise Grade Security<br />
+            AES-256 · TOTP MFA · SOC 2 Ready
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    }>
+      <LoginContent />
+    </Suspense>
   );
 }
 

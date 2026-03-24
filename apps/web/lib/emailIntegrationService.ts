@@ -137,9 +137,11 @@ export async function getRecentEmailLogs(
 export function buildOAuthStartUrl(
   provider: MailProvider,
   returnTo: string = '/settings?section=mail',
+  uid?: string,
 ): string {
   const base = typeof window !== 'undefined' ? window.location.origin : '';
   const params = new URLSearchParams({ returnTo });
+  if (uid) params.set('uid', uid);
   return `${base}/api/oauth/${provider}/start?${params}`;
 }
 
@@ -209,26 +211,33 @@ export async function disconnectMailProvider(
 export async function triggerManualSync(
   uid:      string,
   provider: MailProvider,
+  idToken:  string,
 ): Promise<SyncResult> {
-  const res = await fetch(`/api/mail/sync`, {
+  const tenant = typeof localStorage !== 'undefined'
+    ? JSON.parse(localStorage.getItem('mfo_active_tenant') ?? '{}')
+    : {};
+
+  const res = await fetch('/api/mail/sync', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider }),
+    body: JSON.stringify({ uid, idToken, provider, tenantId: tenant?.id }),
   });
 
   if (!res.ok) {
-    const err = await res.text();
-    throw new Error(err || 'Sync request failed');
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Sync request failed');
   }
 
   const result: SyncResult = await res.json();
 
-  // Persist last sync time in Firestore
-  await updateDoc(integrationRef(uid, provider), {
-    lastSyncAt: result.lastSyncAt,
-    lastSyncResult: result.errors.length > 0 ? 'error' : 'ok',
-    emailsSynced: result.newEmails,
-  });
+  // Persist last sync time in Firestore (client SDK write is fine here)
+  try {
+    await updateDoc(integrationRef(uid, provider), {
+      lastSyncAt: result.lastSyncAt,
+      lastSyncResult: result.errors.length > 0 ? 'error' : 'ok',
+      emailsSynced: result.newEmails,
+    });
+  } catch { /* non-critical */ }
 
   return result;
 }
@@ -287,13 +296,17 @@ export interface ConnectionTestResult {
   details: string;
 }
 
-export async function testMailConnection(provider: MailProvider): Promise<ConnectionTestResult> {
+export async function testMailConnection(
+  provider: MailProvider,
+  uid:      string,
+  idToken:  string,
+): Promise<ConnectionTestResult> {
   const start = Date.now();
   try {
-    const res = await fetch(`/api/mail/test`, {
+    const res = await fetch('/api/mail/test', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ provider }),
+      body:    JSON.stringify({ provider, uid, idToken }),
     });
     const data = await res.json().catch(() => ({}));
     return {
@@ -301,7 +314,7 @@ export async function testMailConnection(provider: MailProvider): Promise<Connec
       latency: Date.now() - start,
       details: res.ok
         ? (data.details ?? 'Connection successful')
-        : (data.error  ?? `HTTP ${res.status}`),
+        : (data.error  ?? data.details ?? `HTTP ${res.status}`),
     };
   } catch (e: any) {
     return { ok: false, latency: Date.now() - start, details: e.message };

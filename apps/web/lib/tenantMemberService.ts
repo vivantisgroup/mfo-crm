@@ -144,6 +144,58 @@ export async function addMemberToTenant(
 }
 
 /**
+ * Add a new user directly using their email as a placeholder UID.
+ * This satisfies the requirement that "a never seen user can be added directly".
+ */
+export async function addPlaceholderMember(
+  tenantId:    string,
+  tenantName:  string,
+  email:       string,
+  role:        PlatformRole,
+  performer:   { uid: string; name: string },
+): Promise<void> {
+  const now = new Date().toISOString();
+  const batch = writeBatch(db);
+
+  // We assign a special uid format to recognize placeholders.
+  // email base64 encoding prevents invalid document ID characters.
+  const b64email = typeof btoa === 'function' ? btoa(email) : Buffer.from(email).toString('base64');
+  const tempUid = 'invite_' + b64email.replace(/=/g, '');
+
+  // 1. Create UserProfile in users collection
+  const userRef = doc(db, 'users', tempUid);
+  batch.set(userRef, {
+    uid:         tempUid,
+    email:       email,
+    displayName: email.split('@')[0],
+    role:        'report_viewer', // base role
+    mfaEnabled:  false,
+    status:      'invited',
+    createdAt:   now,
+    tenantIds:   arrayUnion(tenantId)
+  }, { merge: true });
+
+  // 2. Add to members collection
+  const memberRef = doc(db, 'tenants', tenantId, 'members', tempUid);
+  const member: TenantMember = {
+    uid:         tempUid,
+    tenantId,
+    email:       email,
+    displayName: email.split('@')[0],
+    role,
+    status:      'invited',
+    joinedAt:    now,
+    invitedBy:   performer.uid,
+  };
+  batch.set(memberRef, member);
+
+  await batch.commit();
+
+  await audit(tenantId, performer, 'MEMBER_ADDED_PLACEHOLDER', tempUid, 'user',
+    `Placeholder member ${email} added to ${tenantName} as ${ROLE_LABELS[role]}`);
+}
+
+/**
  * Remove a user from a tenant.
  * Atomically deletes the member doc + removes tenantId from users.tenantIds.
  */
@@ -262,6 +314,52 @@ export async function revokeInvitation(
     status: 'revoked', revokedAt: new Date().toISOString(), revokedBy: performer.uid,
   });
   await audit(tenantId, performer, 'INVITATION_REVOKED', inviteId, 'invitation', 'Invitation revoked');
+}
+
+export async function getInvitationByToken(inviteId: string, token: string): Promise<TenantInvitation | null> {
+  const snap = await getDoc(doc(db, 'tenant_invitations', inviteId));
+  if (!snap.exists()) return null;
+  const data = snap.data() as Omit<TenantInvitation, 'id'>;
+  if (data.token !== token) return null;
+  return { id: snap.id, ...data };
+}
+
+export async function acceptInvitation(
+  invite: TenantInvitation,
+  user: Pick<UserProfile, 'uid' | 'email' | 'displayName' | 'tenantIds'>,
+): Promise<void> {
+  const now = new Date().toISOString();
+  const batch = writeBatch(db);
+
+  // 1. Mark invitation as accepted
+  batch.update(doc(db, 'tenant_invitations', invite.id), {
+    status: 'accepted',
+    acceptedAt: now,
+  });
+
+  // 2. Add member to tenant doc
+  const memberRef = doc(db, 'tenants', invite.tenantId, 'members', user.uid);
+  const member: TenantMember = {
+    uid:         user.uid,
+    tenantId:    invite.tenantId,
+    email:       user.email,
+    displayName: user.displayName,
+    role:        invite.role,
+    status:      'active',
+    joinedAt:    now,
+    invitedBy:   invite.invitedBy,
+  };
+  batch.set(memberRef, member);
+
+  // 3. Update user.tenantIds
+  const userRef = doc(db, 'users', user.uid);
+  batch.update(userRef, {
+    tenantIds: arrayUnion(invite.tenantId),
+    ...(user.tenantIds.length === 0 ? { tenantId: invite.tenantId } : {}),
+    updatedAt: now,
+  });
+
+  await batch.commit();
 }
 
 // ─── Cross-tenant lookup (for tenant selector on login) ───────────────────────

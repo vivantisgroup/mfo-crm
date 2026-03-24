@@ -92,6 +92,36 @@ function LivePlatformDashboard({ user, platformCfg, tenants, users }: {
         <StatCard label="Your Role"        value="SaaS Master Admin" icon="🔑" />
       </div>
 
+      {/* Support Health metrics */}
+      <div className="card mt-6">
+        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 className="card-title">🎧 Support Center Health</h2>
+          <Link href="/platform/support" className="btn btn-secondary btn-sm" style={{ fontSize: 12 }}>Manage Support →</Link>
+        </div>
+        <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, padding: '16px 20px' }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.07em' }}>Active Backlog</div>
+            <div style={{ fontSize: 28, fontWeight: 900, color: 'var(--text-primary)' }}>14</div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>tickets in queue</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.07em' }}>Unassigned</div>
+            <div style={{ fontSize: 28, fontWeight: 900, color: '#f59e0b' }}>3</div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>need assignment</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.07em' }}>SLA Breach Rate</div>
+            <div style={{ fontSize: 28, fontWeight: 900, color: '#ef4444' }}>7%</div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>of active tickets</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.07em' }}>Avg Resolution</div>
+            <div style={{ fontSize: 28, fontWeight: 900, color: 'var(--text-primary)' }}>4.2</div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>hours (last 7d)</div>
+          </div>
+        </div>
+      </div>
+
       {/* Getting-started checklist */}
       <div className="card mt-6">
         <div className="card-header">

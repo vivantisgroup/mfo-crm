@@ -1,16 +1,21 @@
 /**
  * /api/oauth/google/start/route.ts
  *
- * Initiates Google OAuth 2.0 PKCE Authorization Code flow.
+ * Initiates Google OAuth 2.0 Authorization Code flow (confidential client).
+ *
+ * NOTE: This is a server-side confidential client that uses client_secret.
+ * PKCE is intentionally omitted — Google's policy rejects combining
+ * code_challenge with client_secret (updated 2024/2025 policy).
+ * The client_secret stored in env vars is the security guarantee here.
  *
  * Required environment variables:
- *   NEXT_PUBLIC_APP_URL      – canonical app URL
- *   GOOGLE_CLIENT_ID         – Google Cloud OAuth 2.0 Client ID
+ *   NEXT_PUBLIC_APP_URL  – canonical app URL
+ *   GOOGLE_CLIENT_ID     – Google Cloud OAuth 2.0 Client ID
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { randomBytes, createHash } from 'crypto';
+import { randomBytes } from 'crypto';
 
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? '';
 const APP_URL   = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
@@ -32,28 +37,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'GOOGLE_CLIENT_ID not configured' }, { status: 503 });
   }
 
-  const returnTo  = req.nextUrl.searchParams.get('returnTo') ?? '/settings?section=mail';
-  const verifier  = base64UrlEncode(randomBytes(32));
-  const challenge = base64UrlEncode(
-    Buffer.from(createHash('sha256').update(verifier).digest('hex'), 'hex')
-  );
-  const state = base64UrlEncode(randomBytes(16));
+  const returnTo = req.nextUrl.searchParams.get('returnTo') ?? '/settings?section=mail';
+  const uid      = req.nextUrl.searchParams.get('uid') ?? '';
+  const state    = base64UrlEncode(randomBytes(32));
 
   const store = await cookies();
-  store.set('g_pkce_verifier', verifier, { httpOnly: true, maxAge: 600, path: '/', sameSite: 'lax' });
-  store.set('g_oauth_state',   state,    { httpOnly: true, maxAge: 600, path: '/', sameSite: 'lax' });
-  store.set('g_return_to',     returnTo, { httpOnly: true, maxAge: 600, path: '/', sameSite: 'lax' });
+  store.set('g_oauth_state',  state,    { httpOnly: true, maxAge: 600, path: '/', sameSite: 'lax' });
+  store.set('g_return_to',    returnTo, { httpOnly: true, maxAge: 600, path: '/', sameSite: 'lax' });
+  if (uid) {
+    store.set('firebase_uid', uid,      { httpOnly: true, maxAge: 600, path: '/', sameSite: 'lax' });
+  }
 
   const params = new URLSearchParams({
-    client_id:             CLIENT_ID,
-    redirect_uri:          REDIRECT,
-    response_type:         'code',
-    scope:                 SCOPES,
+    client_id:     CLIENT_ID,
+    redirect_uri:  REDIRECT,
+    response_type: 'code',
+    scope:         SCOPES,
     state,
-    code_challenge:        challenge,
-    code_challenge_method: 'S256',
-    access_type:           'offline',
-    prompt:                'consent select_account',
+    access_type:   'offline',
+    prompt:        'consent select_account',
   });
 
   return NextResponse.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);

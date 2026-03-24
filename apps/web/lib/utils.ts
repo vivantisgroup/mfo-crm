@@ -1,5 +1,10 @@
 import { format, formatDistanceToNow, parseISO } from 'date-fns';
+import { clsx, type ClassValue } from "clsx"
+import { twMerge } from "tailwind-merge"
 
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
+}
 export function formatCurrency(value: number, currency = 'USD', compact = false): string {
   if (compact) {
     const absVal = Math.abs(value);

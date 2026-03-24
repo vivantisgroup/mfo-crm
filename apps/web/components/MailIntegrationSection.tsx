@@ -99,18 +99,42 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
   }, [record?.syncDirection, record?.autoLogToCrm, record?.syncWindowDays]);
 
   async function handleConnect() {
-    window.location.href = buildOAuthStartUrl(provider, '/settings?section=mail');
+    if (provider === 'google') {
+      try {
+        const idToken = await (await import('firebase/auth')).getAuth().currentUser?.getIdToken();
+        if (!idToken || !user?.uid) {
+          alert('You must be signed in to connect an email account.');
+          return;
+        }
+        const res = await fetch('/api/oauth/google/prepare', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ idToken, uid: user.uid, returnTo: '/settings?section=mail' }),
+        });
+        if (!res.ok) throw new Error(`Prepare failed: ${res.status}`);
+        const { authUrl } = await res.json();
+        window.location.href = authUrl;
+      } catch (e: any) {
+        alert(`Could not start Google OAuth: ${e.message}`);
+      }
+    } else {
+      // Microsoft — uses standard GET redirect (no ID token needed server-side)
+      window.location.href = buildOAuthStartUrl(provider, '/settings?section=mail', user?.uid ?? undefined);
+    }
   }
 
   async function handleTest() {
-    if (!isConnected) return;
+    if (!isConnected || !user?.uid) return;
     setTesting(true);
     setTestResult(null);
     try {
-      const result = await testMailConnection(provider);
+      const { getAuth } = await import('firebase/auth');
+      const idToken = await getAuth().currentUser?.getIdToken();
+      if (!idToken) throw new Error('Not authenticated — please refresh the page.');
+      const result = await testMailConnection(provider, user.uid, idToken);
       setTestResult(result);
-    } catch {
-      setTestResult({ ok: false, latency: 0, details: 'Test request failed — check network' });
+    } catch (e: any) {
+      setTestResult({ ok: false, latency: 0, details: e.message ?? 'Test request failed' });
     } finally {
       setTesting(false);
     }
@@ -121,7 +145,10 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
     setSyncing(true);
     setSyncMsg(null);
     try {
-      const result = await triggerManualSync(user.uid, provider);
+      const { getAuth } = await import('firebase/auth');
+      const idToken = await getAuth().currentUser?.getIdToken();
+      if (!idToken) throw new Error('Not authenticated — please refresh the page.');
+      const result = await triggerManualSync(user.uid, provider, idToken);
       setSyncMsg(`✅ Synced ${result.newEmails} new email${result.newEmails !== 1 ? 's' : ''}`);
       onRefresh();
     } catch (e: any) {

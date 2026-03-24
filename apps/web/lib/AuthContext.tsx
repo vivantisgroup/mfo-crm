@@ -27,6 +27,7 @@ import {
   isPlatformInitialized,
   bootstrapPlatform,
   ensureUserProfile,
+  updateUserProfile,
   getTenant,
   getTenantsForUser,
   type UserProfile,
@@ -131,13 +132,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const profile = await ensureUserProfile(fbU);
       setUserProfile(profile);
 
-      // Respect the tenant the user selected on the login screen
-      const chosenTenantId =
-        (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('activeTenantId'))
-        ?? profile.tenantId;
+      const localLast = typeof localStorage !== 'undefined' ? localStorage.getItem(`lastTenantId_${profile.uid}`) : null;
+      const sessionLast = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('activeTenantId') : null;
+
+      const chosenTenantId = sessionLast || localLast || profile.tenantId;
 
       const tRecord = chosenTenantId ? await getTenant(chosenTenantId) : null;
-      setTenantRecord(tRecord);
+      
+      // If tRecord is null but they tried to access one they don't have via localStorage
+      // fallback to profile.tenantId
+      if (!tRecord && chosenTenantId !== profile.tenantId && profile.tenantId) {
+        const fallback = await getTenant(profile.tenantId);
+        setTenantRecord(fallback);
+      } else {
+        setTenantRecord(tRecord);
+      }
+      
       setStage('authenticated');
     } catch (err: any) {
       console.error('[AuthContext] loadProfile error:', err);
@@ -214,9 +224,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const switchTenant = useCallback(async (tenantId: string) => {
     if (!userProfile) return;
-    if (typeof sessionStorage !== 'undefined') {
-      sessionStorage.setItem('activeTenantId', tenantId);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(`lastTenantId_${userProfile.uid}`, tenantId);
     }
+    // Fire and forget updating user profile
+    updateUserProfile(userProfile.uid, { tenantId }).catch(console.error);
+
+    setUserProfile(prev => prev ? { ...prev, tenantId } : prev);
     const tRecord = await getTenant(tenantId);
     setTenantRecord(tRecord);
   }, [userProfile]);

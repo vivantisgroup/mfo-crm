@@ -16,6 +16,7 @@ const NAV: NavSection[] = [
     section: 'Main',
     items: [
       { href: '/dashboard',  icon: '◉', labelKey: 'nav.dashboard' },
+      { href: '/inbox',      icon: '📬', labelKey: 'nav.inbox' as TranslationKey },
       { href: '/families',   icon: '👥', labelKey: 'nav.families' },
       { href: '/activities', icon: '💬', labelKey: 'nav.activities', badge: '5' },
       { href: '/tasks',      icon: '✓',  labelKey: 'nav.tasks',      badge: '5' },
@@ -64,6 +65,7 @@ export default function Sidebar({ collapsed, toggle }: SidebarProps) {
         section: 'Platform',
         items: [
           { href: '/dashboard', icon: '◉', labelKey: 'nav.dashboard' as TranslationKey },
+          { href: '/inbox',     icon: '📬', labelKey: 'nav.inbox'     as TranslationKey },
           { href: '/reports',   icon: '📈', labelKey: 'nav.reports'   as TranslationKey },
         ],
       },

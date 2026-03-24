@@ -48,3 +48,10 @@ export function getAdminFirestore(): any {
   _db = admin.firestore();
   return _db;
 }
+
+/** Returns an Admin Auth instance (lazy). */
+export function getAdminAuth(): any {
+  const admin = require('firebase-admin');
+  getAdminApp();
+  return admin.auth();
+}

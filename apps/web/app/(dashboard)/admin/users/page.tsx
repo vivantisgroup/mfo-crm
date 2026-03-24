@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { getAllUsers, updateUserProfile, type UserProfile, type PlatformRole } from '@/lib/platformService';
-import { getTenantMembers, addMemberToTenant, removeMemberFromTenant, updateMemberRole, setMemberStatus, createInvitation, getInvitationsForTenant, revokeInvitation, ROLE_LABELS, ROLE_DESCRIPTIONS, TENANT_ROLES, type TenantMember, type TenantInvitation } from '@/lib/tenantMemberService';
+import { getTenantMembers, addMemberToTenant, addPlaceholderMember, removeMemberFromTenant, updateMemberRole, setMemberStatus, createInvitation, getInvitationsForTenant, revokeInvitation, ROLE_LABELS, ROLE_DESCRIPTIONS, TENANT_ROLES, type TenantMember, type TenantInvitation } from '@/lib/tenantMemberService';
 import { getTenantGroups, getGroup, createGroup, updateGroup, deleteGroup, getGroupMembers, addMemberToGroup, removeMemberFromGroup, getGroupsForUser, type TenantGroup, type GroupMember } from '@/lib/groupService';
 import { ROLE_PERMISSIONS, PERMISSION_META, PERMISSION_MODULES, permissionsByModule, effectivePermissions, setUserPermissionOverride, getUserPermissionOverride, type Permission, type AuthzContext } from '@/lib/rbacService';
 
@@ -84,16 +84,20 @@ function PermissionsPanel({ uid, tenantId, role, performer, onClose }: {
   const modPerms = permissionsByModule(mod as any);
 
   return (
-    <Modal onClose={onClose} width={860}>
-      <div style={{ padding: '20px 24px 0', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+    <div className="animate-fade-in">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, fontSize: 13, color: 'var(--text-tertiary)', fontWeight: 600 }}>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--brand-400)', cursor: 'pointer', padding: 0, fontWeight: 600 }}>Users</button>
+        <span>/</span>
+        <span style={{ color: 'var(--text-primary)' }}>Permission Overrides</span>
+      </div>
+      <div style={{ padding: '0 0 0', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
           <div>
-            <div style={{ fontWeight: 900, fontSize: 16 }}>🔐 Permission Overrides</div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+            <div style={{ fontWeight: 900, fontSize: 24 }}>🔐 Permission Overrides</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
               Add explicit grants (+) or denies (−) on top of the {ROLE_LABELS[role]} role defaults
             </div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text-tertiary)' }}>✕</button>
         </div>
         <div style={{ display: 'flex', gap: 0, overflowX: 'auto', paddingBottom: 0 }}>
           {PERMISSION_MODULES.map(m => (
@@ -134,9 +138,9 @@ function PermissionsPanel({ uid, tenantId, role, performer, onClose }: {
             <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
             <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>{saving ? '…' : '💾 Save'}</button>
           </div>
-        </div>
       </div>
-    </Modal>
+    </div>
+    </div>
   );
 }
 
@@ -265,20 +269,24 @@ function GroupDetailModal({ group, tenantId, allMembers, performer, onClose, onR
   return (
     <>
       {editing && <GroupFormModal tenantId={tenantId} group={group} performer={performer} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); onRefresh(); onClose(); }} />}
-      <Modal onClose={onClose} width={700}>
-        <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)' }}>
+      <div className="animate-fade-in">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, fontSize: 13, color: 'var(--text-tertiary)', fontWeight: 600 }}>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--brand-400)', cursor: 'pointer', padding: 0, fontWeight: 600 }}>Groups</button>
+          <span>/</span>
+          <span style={{ color: 'var(--text-primary)' }}>{group.name}</span>
+        </div>
+        <div style={{ padding: '0 0 16px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
               <div style={{ width: 48, height: 48, borderRadius: 12, background: group.color + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>{group.icon}</div>
               <div>
-                <div style={{ fontWeight: 900, fontSize: 17 }}>{group.name}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{group.description}</div>
+                <div style={{ fontWeight: 900, fontSize: 24 }}>{group.name}</div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>{group.description}</div>
                 <div style={{ marginTop: 5 }}><Chip label={ROLE_LABELS[group.roleId]} color={group.color} /></div>
               </div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-sm btn-secondary" onClick={() => setEditing(true)}>✏️ Edit</button>
-              <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text-tertiary)' }}>✕</button>
+              <button className="btn btn-secondary" onClick={() => setEditing(true)}>✏️ Edit Configuration</button>
             </div>
           </div>
         </div>
@@ -316,7 +324,7 @@ function GroupDetailModal({ group, tenantId, allMembers, performer, onClose, onR
             {filtered.length === 0 && <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-tertiary)', fontSize: 13 }}>All members already in group</div>}
           </div>
         </div>
-      </Modal>
+      </div>
     </>
   );
 }
@@ -345,10 +353,9 @@ export default function TenantUsersPage() {
   const [selectedGroup,   setSelectedGroup]   = useState<TenantGroup | null>(null);
   const [showGroupForm,   setShowGroupForm]   = useState(false);
   const [showPerms,       setShowPerms]       = useState<TenantMember | null>(null);
-  const [invEmail,        setInvEmail]        = useState('');
-  const [invRole,         setInvRole]         = useState<PlatformRole>('report_viewer');
-  const [memberSearch,    setMemberSearch]    = useState('');
-  const [addRole,         setAddRole]         = useState<PlatformRole>('report_viewer');
+  const [memberInput,     setMemberInput]     = useState('');
+  const [memberRole,      setMemberRole]      = useState<PlatformRole>('report_viewer');
+  const [sendInvite,      setSendInvite]      = useState(true);
 
   const load = useCallback(async () => {
     if (!tenantId) return;
@@ -375,22 +382,77 @@ export default function TenantUsersPage() {
   }), [members, search, roleF]);
 
   const nonMembers = allUsers.filter(u => !members.find(m => m.uid === u.uid));
-  const filteredAdd = nonMembers.filter(u => !memberSearch || u.displayName?.toLowerCase().includes(memberSearch.toLowerCase()) || u.email?.toLowerCase().includes(memberSearch.toLowerCase()));
+  const filteredAdd = nonMembers.filter(u => !memberInput || u.displayName?.toLowerCase().includes(memberInput.toLowerCase()) || u.email?.toLowerCase().includes(memberInput.toLowerCase()));
 
-  async function doAdd(u: any) {
-    try {
-      await addMemberToTenant(tenantId, tenantName, u, addRole, performer);
-      await load(); setMsg('✅ User added.');
-    } catch (e: any) { setMsg('❌ ' + e.message); }
-  }
+  async function doSmartAdd() {
+    if (!memberInput) return;
+    const input = memberInput.trim().toLowerCase();
+    
+    // Check if input is a valid email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(input)) {
+      setMsg('❌ Please enter a valid email address.');
+      return;
+    }
 
-  async function doInvite() {
-    if (!invEmail) return;
+    setLoading(true); setMsg('');
     try {
-      const inv = await createInvitation(tenantId, tenantName, invEmail, invRole, performer);
-      setInvitations(p => [inv, ...p]); setInvEmail('');
-      setMsg(`✅ Invitation sent to ${invEmail}`);
-    } catch (e: any) { setMsg('❌ ' + e.message); }
+      const existingUser = allUsers.find(u => u.email.toLowerCase() === input);
+      if (existingUser) {
+        await addMemberToTenant(tenantId, tenantName, existingUser, memberRole, performer);
+        setMsg(`✅ Existing user ${existingUser.displayName} added to tenant.`);
+      } else {
+        // Dynamically import the Next.js Server Action
+        const { adminCreateFirebaseUser, adminGeneratePasswordResetLink } = await import('@/lib/usersAdmin');
+        
+        const result = await adminCreateFirebaseUser(input, input.split('@')[0]);
+        if (!result.success || !result.userRecord) {
+          setMsg(`❌ Error creating user: ${result.error}`);
+          setLoading(false);
+          return;
+        }
+        
+        const uid = result.userRecord.uid;
+        const newProfile = { uid, email: input, displayName: input.split('@')[0], tenantIds: [] };
+
+        // Ensure base UserProfile exists in Firestore before linking tenant
+        const { doc, setDoc, getFirestore } = await import('firebase/firestore');
+        const { firebaseApp } = await import('@mfo-crm/config');
+        const db = getFirestore(firebaseApp);
+        
+        await setDoc(doc(db, 'users', uid), {
+          uid,
+          email: input,
+          displayName: input.split('@')[0],
+          role: 'report_viewer',
+          mfaEnabled: false,
+          status: 'active',
+          createdAt: new Date().toISOString(),
+          tenantIds: []
+        }, { merge: true });
+
+        // Add them to the tenant using true UID instead of a fake placeholder UID
+        await addMemberToTenant(tenantId, tenantName, newProfile, memberRole, performer);
+        
+        let successMsg = `✅ User ${input} created and added.`;
+        if (sendInvite) {
+          const linkRes = await adminGeneratePasswordResetLink(input);
+          if (linkRes.success) {
+            successMsg += ` (Reset link generated for invite).`;
+          }
+        } else {
+          successMsg += ` Temp Password: ${result.tempPassword}`;
+        }
+        
+        setMsg(successMsg);
+      }
+      setMemberInput('');
+      await load();
+    } catch (e: any) {
+      setMsg('❌ ' + e.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function doChangeRole(m: TenantMember, r: PlatformRole) {
@@ -476,35 +538,28 @@ export default function TenantUsersPage() {
       {tab === 'members' && (
         <>
           <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>➕ Add Existing Platform User</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'flex-end' }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>➕ Add Member</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 2fr) 1fr auto', gap: 10, alignItems: 'flex-end' }}>
               <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 4 }}>Search User</div>
-                <input className="input" style={{ width: '100%' }} placeholder="Name or email…" value={memberSearch} onChange={e => setMemberSearch(e.target.value)} list="um-users" />
-                <datalist id="um-users">{filteredAdd.slice(0,20).map(u => <option key={u.uid} value={u.email}>{u.displayName}</option>)}</datalist>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 4 }}>User Email (or select existing)</div>
+                <input className="input" type="email" style={{ width: '100%' }} placeholder="user@firm.com" value={memberInput} onChange={e => setMemberInput(e.target.value)} list="add-users" />
+                <datalist id="add-users">{filteredAdd.slice(0,20).map(u => <option key={u.uid} value={u.email}>{u.displayName || u.email}</option>)}</datalist>
               </div>
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 4 }}>Role</div>
-                <select className="input" style={{ width: '100%' }} value={addRole} onChange={e => setAddRole(e.target.value as PlatformRole)}>
+                <select className="input" style={{ width: '100%' }} value={memberRole} onChange={e => setMemberRole(e.target.value as PlatformRole)}>
                   {TENANT_ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
                 </select>
               </div>
-              <button className="btn btn-primary" style={{ height: 40, whiteSpace: 'nowrap' }}
-                onClick={() => { const u = allUsers.find(x => x.email === memberSearch || x.displayName === memberSearch); if (u) doAdd(u); else setMsg('❌ User not found'); }}
-                disabled={!memberSearch}>Add User</button>
+              <button className="btn btn-primary" style={{ height: 40, padding: '0 20px', whiteSpace: 'nowrap' }} onClick={doSmartAdd} disabled={!memberInput || loading}>
+                {loading ? '…' : 'Add to Tenant'}
+              </button>
             </div>
-            <div style={{ marginTop: 10, borderTop: '1px solid var(--border)', paddingTop: 10, display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 4 }}>Invite by Email (new user)</div>
-                <input className="input" style={{ width: '100%' }} type="email" placeholder="new@firm.com" value={invEmail} onChange={e => setInvEmail(e.target.value)} />
-              </div>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 4 }}>Role</div>
-                <select className="input" value={invRole} onChange={e => setInvRole(e.target.value as PlatformRole)}>
-                  {TENANT_ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
-                </select>
-              </div>
-              <button className="btn btn-secondary" style={{ height: 40, whiteSpace: 'nowrap' }} onClick={doInvite} disabled={!invEmail}>📧 Send Invite</button>
+            <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" id="sendInv" checked={sendInvite} onChange={e => setSendInvite(e.target.checked)} style={{ cursor: 'pointer', accentColor: 'var(--brand-500)', width: 14, height: 14 }} />
+              <label htmlFor="sendInv" style={{ fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}>
+                Generate an invitation link (if user is completely new to platform)
+              </label>
             </div>
           </div>
 
@@ -626,10 +681,20 @@ export default function TenantUsersPage() {
                     <td style={{ fontSize: 12 }}>{inv.invitedByName}</td>
                     <td>
                       {inv.status === 'pending' && (
-                        <button onClick={async () => { await revokeInvitation(inv.id, performer, tenantId); setInvitations(p => p.map(i => i.id === inv.id ? { ...i, status: 'revoked' as any } : i)); }}
-                          style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
-                          Revoke
-                        </button>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button onClick={() => {
+                            const link = `${window.location.origin}/join?id=${inv.id}&token=${inv.token}`;
+                            navigator.clipboard.writeText(link);
+                            setMsg('✅ Invite link copied to clipboard!');
+                          }}
+                            style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--brand-500)44', background: 'var(--bg-elevated)', cursor: 'pointer', color: 'var(--brand-400)', fontWeight: 700 }}>
+                            🔗 Copy Link
+                          </button>
+                          <button onClick={async () => { await revokeInvitation(inv.id, performer, tenantId); setInvitations(p => p.map(i => i.id === inv.id ? { ...i, status: 'revoked' as any } : i)); }}
+                            style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+                            Revoke
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>

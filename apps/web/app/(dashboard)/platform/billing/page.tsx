@@ -225,59 +225,6 @@ function SubscribersTab() {
   );
 }
 
-function PlansTab() {
-  const [billing, setBilling] = useState<'monthly' | 'annual'>('monthly');
-
-  return (
-    <div className="animate-fade-in">
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 28 }}>
-        <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Configure subscription tiers, pricing, and feature gates.</p>
-        <div style={{ display: 'flex', gap: 0, background: 'var(--bg-canvas)', borderRadius: 'var(--radius-md)', padding: 3, border: '1px solid var(--border)' }}>
-          {(['monthly', 'annual'] as const).map(b => (
-            <button key={b} onClick={() => setBilling(b)} className={`btn btn-sm ${billing === b ? 'btn-secondary' : 'btn-ghost'}`} style={{ border: 'none', gap: 4 }}>
-              {b === 'annual' ? '📅 Annual (save 16%)' : '📆 Monthly'}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24 }}>
-        {PLANS.map(plan => (
-          <div key={plan.id} style={{
-            padding: 28, background: 'var(--bg-elevated)', borderRadius: 'var(--radius-xl)',
-            border: `2px solid ${plan.popular ? plan.color : 'var(--border)'}`,
-            position: 'relative', transition: 'transform 0.2s'
-          }}>
-            {plan.popular && <div style={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', fontSize: 11, fontWeight: 800, padding: '3px 14px', background: plan.color, color: 'white', borderRadius: 20, whiteSpace: 'nowrap' }}>MOST POPULAR</div>}
-            <div style={{ fontSize: 13, fontWeight: 800, color: plan.color, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>{plan.name}</div>
-            <div style={{ fontSize: 36, fontWeight: 900, marginBottom: 4 }}>
-              {fmt(billing === 'monthly' ? plan.priceMonthly : Math.round(plan.priceAnnual / 12))}
-              <span style={{ fontSize: 14, color: 'var(--text-tertiary)', fontWeight: 400 }}>/mo</span>
-            </div>
-            {billing === 'annual' && (
-              <div style={{ fontSize: 12, color: '#22c55e', marginBottom: 4 }}>Billed {fmt(plan.priceAnnual)}/yr</div>
-            )}
-            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 20 }}>
-              {plan.seats === 999 ? 'Unlimited seats' : `Up to ${plan.seats} seats`} • {plan.families === 999 ? 'Unlimited families' : `${plan.families} families`}
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 4 }}>🤖 {plan.aiTokens} AI tokens</div>
-            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 20 }}>💾 {plan.storage} storage</div>
-            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {plan.features.map(f => (
-                <li key={f} style={{ fontSize: 13, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                  <span style={{ color: plan.color, fontWeight: 700 }}>✓</span> {f}
-                </li>
-              ))}
-            </ul>
-            <button className="btn btn-sm" style={{ width: '100%', background: plan.popular ? plan.color : 'var(--bg-canvas)', color: plan.popular ? 'white' : 'var(--text-primary)', border: `1px solid ${plan.color}` }}>
-              Edit Plan
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function InvoicesTab() {
   return (
     <div className="animate-fade-in">
@@ -327,7 +274,7 @@ function InvoicesTab() {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-type Tab = 'overview' | 'subscribers' | 'plans' | 'invoices';
+type Tab = 'overview' | 'subscribers' | 'invoices';
 
 export default function BillingPage() {
   const [tab, setTab] = useState<Tab>('overview');
@@ -356,7 +303,6 @@ export default function BillingPage() {
         {([
           { id: 'overview', label: '📊 Revenue Overview' },
           { id: 'subscribers', label: '🏢 Subscribers' },
-          { id: 'plans', label: '📋 Plans & Pricing' },
           { id: 'invoices', label: '🧾 Invoices' },
         ] as const).map(t => (
           <button
@@ -371,7 +317,6 @@ export default function BillingPage() {
 
       {tab === 'overview' && <OverviewTab />}
       {tab === 'subscribers' && <SubscribersTab />}
-      {tab === 'plans' && <PlansTab />}
       {tab === 'invoices' && <InvoicesTab />}
     </div>
   );

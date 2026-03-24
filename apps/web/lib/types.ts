@@ -294,6 +294,9 @@ export interface Activity {
   source: 'manual' | 'email_sync' | 'calendar_sync';
   tags: string[];
   sentiment?: 'neutral' | 'positive' | 'concern' | 'urgent';
+  /** For linking communication to a specific ticket, lead, etc. */
+  linkedRecordType?: 'ticket' | 'crm' | 'opportunity';
+  linkedRecordId?: string;
 }
 
 export interface Task {

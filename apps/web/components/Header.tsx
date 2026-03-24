@@ -17,7 +17,7 @@ import {
 } from '@/lib/timezones';
 import { saveUserProfile, uploadAvatar } from '@/lib/userProfileService';
 import { MailIntegrationSection } from '@/components/MailIntegrationSection';
-
+import { getTenantsForUser, type TenantRecord } from '@/lib/platformService';
 
 interface HeaderProps {
   title?: string;
@@ -548,6 +548,97 @@ function Toggle({ label, desc, defaultOn }: { label: string; desc: string; defau
   );
 }
 
+function TenantSwitcher() {
+  const { userProfile, tenant, switchTenant } = useAuth();
+  const [tenants, setTenants] = useState<TenantRecord[]>([]);
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (userProfile && open && tenants.length === 0) {
+      getTenantsForUser(userProfile).then(setTenants).catch(console.error);
+    }
+  }, [userProfile, open, tenants.length]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  if (!userProfile || !tenant) return null;
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          background: 'var(--bg-canvas)', border: '1px solid var(--border)',
+          padding: '6px 12px', borderRadius: 'var(--radius-md)', cursor: 'pointer',
+          color: 'var(--text-primary)', fontSize: 13, fontWeight: 600,
+          transition: 'border-color var(--transition)'
+        }}
+        title="Switch Tenant"
+      >
+        <div style={{
+          width: 8, height: 8, borderRadius: '50%',
+          background: tenant.brandColor || 'var(--brand-500)'
+        }} />
+        <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {tenant.name}
+        </span>
+        <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>▼</span>
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+          background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-md)', padding: '6px', width: 220,
+          boxShadow: 'var(--shadow-lg)', zIndex: 100,
+        }}>
+          {tenants.length === 0 ? (
+            <div style={{ padding: '12px', fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'center' }}>
+              Loading...
+            </div>
+          ) : (
+            tenants.map(t => (
+              <button
+                key={t.id}
+                onClick={async () => {
+                  setOpen(false);
+                  if (t.id !== tenant.id) {
+                    await switchTenant(t.id);
+                    window.location.assign('/dashboard');
+                  }
+                }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+                  background: t.id === tenant.id ? 'var(--brand-900)' : 'transparent',
+                  border: 'none', padding: '8px 10px', borderRadius: 4, cursor: 'pointer',
+                  color: t.id === tenant.id ? 'var(--brand-400)' : 'var(--text-secondary)',
+                  textAlign: 'left', transition: 'background 0.15s'
+                }}
+              >
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: t.brandColor || 'var(--text-tertiary)' }} />
+                <span style={{ flex: 1, fontSize: 13, fontWeight: t.id === tenant.id ? 700 : 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {t.name}
+                </span>
+                {t.id === tenant.id && <span style={{ fontSize: 11 }}>✓</span>}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Header ───────────────────────────────────────────────────────────────────
 
 export default function Header({ title, subtitle, actions }: HeaderProps) {
@@ -642,6 +733,9 @@ export default function Header({ title, subtitle, actions }: HeaderProps) {
 
           {/* Help */}
           <button className="icon-btn" title={t('header.help')}>?</button>
+
+          {/* Tenant Switcher */}
+          <TenantSwitcher />
 
           {/* User avatar */}
           <div ref={menuRef} style={{ position: 'relative' }}>

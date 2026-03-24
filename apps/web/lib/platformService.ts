@@ -68,6 +68,7 @@ export interface UserProfile {
   mfaEnrolledAt?: string;
   status:        'active' | 'invited' | 'suspended';
   createdAt:     string;
+  updatedAt?:    string;
   lastLoginAt?:  string;
   photoURL?:     string;
 }
@@ -272,8 +273,51 @@ export async function ensureUserProfile(
     return { ...existing, lastLoginAt: nowISO() };
   }
 
-  // New sign-up — they weren't bootstraped and weren't invited
-  // They get a basic profile with no tenant. An admin must assign them.
+  // New sign-up — they weren't bootstraped and weren't invited natively
+  // But maybe they were pre-provisioned via an email invite!
+  const qObj = query(collection(db, 'users'), where('email', '==', firebaseUser.email));
+  const snap = await getDocs(qObj);
+  const placeholderDoc = snap.docs.find(d => d.id.startsWith('invite_') || d.data().status === 'invited');
+
+  if (placeholderDoc) {
+    const placeholder = placeholderDoc.data() as UserProfile;
+    const batch = writeBatch(db);
+    const now = nowISO();
+
+    const newProfile: UserProfile = {
+      ...placeholder,
+      uid:         firebaseUser.uid,
+      displayName: displayName || placeholder.displayName || firebaseUser.email!.split('@')[0],
+      status:      'active',
+      lastLoginAt: now,
+      updatedAt:   now,
+    };
+    batch.set(doc(db, 'users', firebaseUser.uid), newProfile);
+
+    // Migrate tenant memberships
+    for (const tenantId of placeholder.tenantIds ?? []) {
+      const oldMemberRef = doc(db, 'tenants', tenantId, 'members', placeholder.uid);
+      const oldMemberSnap = await getDoc(oldMemberRef);
+      if (oldMemberSnap.exists()) {
+        const memberData = oldMemberSnap.data();
+        batch.set(doc(db, 'tenants', tenantId, 'members', firebaseUser.uid), {
+          ...memberData,
+          uid: firebaseUser.uid,
+          status: 'active',
+          displayName: newProfile.displayName,
+          updatedAt: now,
+        });
+        batch.delete(oldMemberRef);
+      }
+    }
+
+    // Delete placeholder user
+    batch.delete(placeholderDoc.ref);
+    await batch.commit();
+    return newProfile;
+  }
+
+  // Completely new user without any placeholder
   const profile: UserProfile = {
     uid:         firebaseUser.uid,
     email:       firebaseUser.email!,
@@ -394,6 +438,7 @@ export async function deleteTenant(
 
   // 4. Delete the tenant document itself
   await deleteDoc(doc(db, 'tenants', tenantId));
+  await deleteDoc(doc(db, 'subscriptions', tenantId));
 
   // 5. Write audit log (to master tenant, since the tenant is gone)
   await addDoc(collection(db, 'audit_logs'), {

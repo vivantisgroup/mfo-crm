@@ -6,6 +6,7 @@ import { TASK_TYPES } from '@/lib/mockData';
 import { StatusBadge } from '@/components/StatusBadge';
 import type { Task } from '@/lib/types';
 import { LiveModeGate, TasksEmptyState } from '@/components/LiveModeGate';
+import { CommunicationPanel } from '@/components/CommunicationPanel';
 
 // ─── Sort helpers ─────────────────────────────────────────────────────────────
 
@@ -156,9 +157,10 @@ function QueueChip({ queueId }: { queueId: string }) {
 
 // ─── Task Card ────────────────────────────────────────────────────────────────
 
-function TaskCard({ task, draggable, onDragStart, onDragEnd }: {
+function TaskCard({ task, draggable, onClick, onDragStart, onDragEnd }: {
   task: Task;
   draggable?: boolean;
+  onClick?: () => void;
   onDragStart?: (e: React.DragEvent) => void;
   onDragEnd?:   (e: React.DragEvent) => void;
 }) {
@@ -168,6 +170,7 @@ function TaskCard({ task, draggable, onDragStart, onDragEnd }: {
   return (
     <div
       draggable={draggable}
+      onClick={onClick}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       style={{
@@ -354,7 +357,7 @@ function AnalyticsView() {
 
 // ─── Queue View — with collapsible columns ────────────────────────────────────
 
-function QueueView({ tasks }: { tasks: Task[] }) {
+function QueueView({ tasks, onSelectTask }: { tasks: Task[]; onSelectTask: (task: Task) => void }) {
   const { queues, acceptTask } = useTaskQueue();
   // Set of collapsed queue IDs
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -505,7 +508,7 @@ function QueueView({ tasks }: { tasks: Task[] }) {
                   </div>
                 ) : qTasks.map(task => (
                   <div key={task.id} style={{ position: 'relative' }}>
-                    <TaskCard task={task} />
+                    <TaskCard task={task} onClick={() => onSelectTask(task)} />
                     {!task.assignedUserId && (
                       <button
                         onClick={() => acceptTask(task.id, 'usr-rm-001', 'Alexandra Torres')}
@@ -532,7 +535,7 @@ function QueueView({ tasks }: { tasks: Task[] }) {
 
 // ─── Board View ───────────────────────────────────────────────────────────────
 
-function BoardView({ tasks }: { tasks: Task[] }) {
+function BoardView({ tasks, onSelectTask }: { tasks: Task[]; onSelectTask: (task: Task) => void }) {
   const { updateTask } = useTaskQueue();
 
   const handleDrop = (e: React.DragEvent, status: 'open' | 'in_progress' | 'completed') => {
@@ -570,6 +573,7 @@ function BoardView({ tasks }: { tasks: Task[] }) {
               {items.map(task => (
                 <TaskCard
                   key={task.id} task={task} draggable
+                  onClick={() => onSelectTask(task)}
                   onDragStart={e => e.dataTransfer.setData('taskId', task.id)}
                   onDragEnd={e => e.currentTarget.classList.remove('dragging')}
                 />
@@ -602,7 +606,7 @@ function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
   );
 }
 
-function ListView({ tasks: allTasks }: { tasks: Task[] }) {
+function ListView({ tasks: allTasks, onSelectTask }: { tasks: Task[]; onSelectTask: (task: Task) => void }) {
   const { queues, getTaskTime } = useTaskQueue();
 
   // ── Column sort state ──────────────────────────────────────────────────────
@@ -846,6 +850,7 @@ function ListView({ tasks: allTasks }: { tasks: Task[] }) {
               return (
                 <tr
                   key={task.id}
+                  onClick={() => onSelectTask(task)}
                   style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer', transition: 'background 0.12s' }}
                   onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-elevated)')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
@@ -939,12 +944,94 @@ function ListView({ tasks: allTasks }: { tasks: Task[] }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+function TaskDetailView({ task, onClose }: { task: Task; onClose: () => void }) {
+  const { queues } = useTaskQueue();
+  const q = queues.find(x => x.id === task.queueId);
+  const taskType = TASK_TYPES.find(t => t.id === task.taskTypeId);
+
+  return (
+    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* ── Breadcrumb Header ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, fontSize: 13, color: 'var(--text-tertiary)', fontWeight: 600 }}>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--brand-400)', cursor: 'pointer', padding: 0, fontWeight: 600 }}>Queues</button>
+        <span>/</span>
+        <span style={{ color: 'var(--text-primary)' }}>{task.title}</span>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 400px', gap: 24, flex: 1, minHeight: 0 }}>
+        {/* Left Col: Task Details */}
+        <div style={{ paddingRight: 8, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+              {taskType && <span style={{ fontSize: 24 }}>{taskType.icon}</span>}
+              <h2 style={{ margin: 0, fontSize: 24, fontWeight: 900 }}>{task.title}</h2>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <StatusBadge status={task.status} />
+              <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: `${PRIORITY_COLOR[task.priority]}18`, color: PRIORITY_COLOR[task.priority], border: `1px solid ${PRIORITY_COLOR[task.priority]}44`, textTransform: 'capitalize' }}>
+                {task.priority} Priority
+              </span>
+              {q && (
+                <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: `${q.color}18`, color: q.color, border: `1px solid ${q.color}44` }}>
+                  {q.icon} {q.name}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 20 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: 'var(--text-secondary)' }}>Description</h3>
+            <div style={{ fontSize: 14, color: 'var(--text-primary)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+              {task.description || <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>No description provided.</span>}
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 20 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: 'var(--text-secondary)' }}>Details</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 24px' }}>
+              <div>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Family</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--brand-400)' }}>{task.familyName}</span>
+              </div>
+              <div>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Assignee</span>
+                <span style={{ fontSize: 14, fontWeight: 500 }}>{task.assignedUserName || 'Unassigned'}</span>
+              </div>
+              <div>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Due Date</span>
+                <span style={{ fontSize: 14, fontWeight: 500 }}>{task.dueDate ? new Date(task.dueDate).toLocaleDateString() : '—'}</span>
+              </div>
+              <div>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Created</span>
+                <span style={{ fontSize: 14, fontWeight: 500 }}>{new Date(task.createdAt).toLocaleDateString()}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Col: Communication Panel */}
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+          <CommunicationPanel 
+            familyId={task.familyId} 
+            familyName={task.familyName} 
+            linkedRecordType="ticket" 
+            linkedRecordId={task.id} 
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
 type ViewMode = 'board' | 'queue' | 'list' | 'analytics';
 
 export default function TasksPage() {
   const { tasks, queues } = useTaskQueue();
 
   const [view,           setView]           = useState<ViewMode>('board');
+  const [selectedTask,   setSelectedTask]   = useState<Task | null>(null);
   const [search,         setSearch]         = useState('');
   const [familyFilter,   setFamilyFilter]   = useState('All');
   const [queueFilter,    setQueueFilter]    = useState('All');
@@ -971,6 +1058,17 @@ export default function TasksPage() {
   const families    = [...new Set(tasks.map(t => t.familyName))];
 
   const hasGlobalFilters = search || familyFilter !== 'All' || queueFilter !== 'All' || priorityFilter !== 'All';
+
+  // Views — Board & Queue get priority-sorted list; List manages its own sort
+  if (selectedTask) {
+    return (
+      <LiveModeGate emptyState={<TasksEmptyState />}>
+        <div className="page animate-fade-in" style={{ maxWidth: 1440, margin: '0 auto', height: 'calc(100vh - 84px)' }}>
+          <TaskDetailView task={selectedTask} onClose={() => setSelectedTask(null)} />
+        </div>
+      </LiveModeGate>
+    );
+  }
 
   return (
     <LiveModeGate emptyState={<TasksEmptyState />}>
@@ -1041,10 +1139,9 @@ export default function TasksPage() {
         </div>
       )}
 
-      {/* Views — Board & Queue get priority-sorted list; List manages its own sort */}
-      {view === 'board'     && <BoardView     tasks={filteredSorted} />}
-      {view === 'queue'     && <QueueView     tasks={filteredSorted} />}
-      {view === 'list'      && <ListView      tasks={filtered} />}
+      {view === 'board'     && <BoardView     tasks={filteredSorted} onSelectTask={setSelectedTask} />}
+      {view === 'queue'     && <QueueView     tasks={filteredSorted} onSelectTask={setSelectedTask} />}
+      {view === 'list'      && <ListView      tasks={filtered} onSelectTask={setSelectedTask} />}
       {view === 'analytics' && <AnalyticsView />}
     </div>
     </LiveModeGate>

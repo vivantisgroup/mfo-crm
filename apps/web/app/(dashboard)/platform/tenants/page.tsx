@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+import { useSearchParams } from 'next/navigation';
 import {
   SUBSCRIPTION_PLANS, getAllSubscriptions, upsertSubscription, extendTrial,
   changePlan, updateSeats, generateInvoice, getInvoices, markInvoicePaid,
@@ -21,13 +22,16 @@ import {
 } from '@/lib/crmService';
 import { OrgCombobox, ContactCombobox } from '../crm/page';
 import {
-  getTenantMembers, addMemberToTenant, removeMemberFromTenant,
+  getTenantMembers, addMemberToTenant,
+  addPlaceholderMember,
+  removeMemberFromTenant,
   updateMemberRole, setMemberStatus,
   createInvitation, getInvitationsForTenant, revokeInvitation,
   ROLE_LABELS, ROLE_DESCRIPTIONS, TENANT_ROLES,
   type TenantMember, type TenantInvitation,
 } from '@/lib/tenantMemberService';
 import { getAllUsers, deleteTenant, type UserProfile } from '@/lib/platformService';
+import { CommunicationPanel } from '@/components/CommunicationPanel';
 
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -123,7 +127,7 @@ function SeedProgressModal({ progress, total, done, tenant, onClose }: { progres
 
 // ─── Tenant Detail Modal ──────────────────────────────────────────────────────
 
-type DetailTab = 'overview' | 'billing' | 'invoices' | 'members' | 'demo' | 'events' | 'delete';
+type DetailTab = 'overview' | 'communications' | 'billing' | 'invoices' | 'members' | 'demo' | 'events' | 'delete';
 
 function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onDeleted }: {
   sub: TenantSubscription;
@@ -144,11 +148,10 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
   const [invitations, setInvitations] = useState<TenantInvitation[]>([]);
   const [membersLoaded, setMembersLoaded] = useState(false);
   const [allUsers,    setAllUsers]    = useState<UserProfile[]>([]);
-  const [memberSearch, setMemberSearch] = useState('');
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole,  setInviteRole]  = useState<import('@/lib/platformService').PlatformRole>('report_viewer');
+  const [memberInput, setMemberInput] = useState('');
+  const [memberRole,  setMemberRole]  = useState<import('@/lib/platformService').PlatformRole>('report_viewer');
+  const [sendInvite,  setSendInvite]  = useState(true);
   const [addingMember, setAddingMember] = useState(false);
-  const [showInviteForm, setShowInviteForm] = useState(false);
 
   // Extension UI
   const [extDays, setExtDays]   = useState(14);
@@ -263,30 +266,81 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
   }
 
   // ── Member actions ────────────────────────────────────────────────────────
-  async function doAddUserByEmail() {
-    const target = allUsers.find(u => u.email.toLowerCase() === memberSearch.toLowerCase());
-    if (!target) { setMsg('❌ No platform user found with that email.'); return; }
-    if (members.find(m => m.uid === target.uid)) { setMsg('⚠ User is already a member.'); return; }
+  async function doSmartAdd() {
+    if (!memberInput) return;
+    const input = memberInput.trim().toLowerCase();
+    
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(input)) {
+      setMsg('❌ Please enter a valid email address.');
+      return;
+    }
+
     setAddingMember(true); setMsg(null);
     try {
-      await addMemberToTenant(sub.tenantId, sub.tenantName, target, inviteRole, performer);
-      const [m] = await Promise.all([getTenantMembers(sub.tenantId)]);
-      setMembers(m); setMemberSearch(''); setMsg(`✅ ${target.displayName} added as ${ROLE_LABELS[inviteRole]}.`);
-    } catch (e: any) { setMsg(`❌ ${e.message}`); }
-    finally { setAddingMember(false); }
-  }
+      const existingUser = allUsers.find(u => u.email.toLowerCase() === input);
+      if (existingUser) {
+        if (members.find(m => m.uid === existingUser.uid)) {
+          setMsg('⚠ User is already a member.');
+          setAddingMember(false);
+          return;
+        }
+        await addMemberToTenant(sub.tenantId, sub.tenantName, existingUser, memberRole, performer);
+        setMsg(`✅ Existing user ${existingUser.displayName} added to tenant.`);
+      } else {
+        // Dynamically import the Next.js Server Action
+        const { adminCreateFirebaseUser, adminGeneratePasswordResetLink } = await import('@/lib/usersAdmin');
+        
+        const result = await adminCreateFirebaseUser(input, input.split('@')[0]);
+        if (!result.success || !result.userRecord) {
+          setMsg(`❌ Error creating user: ${result.error}`);
+          setAddingMember(false);
+          return;
+        }
+        
+        const uid = result.userRecord.uid;
+        const newProfile = { uid, email: input, displayName: input.split('@')[0], tenantIds: [] };
 
-  async function doSendInvitation() {
-    if (!inviteEmail) return;
-    setLoading(true); setMsg(null);
-    try {
-      const inv = await createInvitation(sub.tenantId, sub.tenantName, inviteEmail, inviteRole as any, performer);
-      const invLink = `${window.location.origin}/invite/${inv.token}`;
-      setInvitations(prev => [inv, ...prev]);
-      setInviteEmail(''); setShowInviteForm(false);
-      setMsg(`✅ Invitation created. Link: ${invLink}`);
-    } catch (e: any) { setMsg(`❌ ${e.message}`); }
-    finally { setLoading(false); }
+        // Ensure base UserProfile exists in Firestore before linking tenant
+        const { doc, setDoc, getFirestore } = await import('firebase/firestore');
+        const { firebaseApp } = await import('@mfo-crm/config');
+        const db = getFirestore(firebaseApp);
+        
+        await setDoc(doc(db, 'users', uid), {
+          uid,
+          email: input,
+          displayName: input.split('@')[0],
+          role: 'report_viewer',
+          mfaEnabled: false,
+          status: 'active',
+          createdAt: new Date().toISOString(),
+          tenantIds: []
+        }, { merge: true });
+
+        // Add them to the tenant using true UID instead of a fake placeholder UID
+        await addMemberToTenant(sub.tenantId, sub.tenantName, newProfile, memberRole, performer);
+        
+        let successMsg = `✅ User ${input} created and added.`;
+        if (sendInvite) {
+          const linkRes = await adminGeneratePasswordResetLink(input);
+          if (linkRes.success) {
+            // In a real app we'd trigger SendGrid. For demonstration we use the reset link as the invite link.
+            successMsg += ` (Reset link generated for invite).`;
+          }
+        } else {
+          successMsg += ` Temp Password: ${result.tempPassword}`;
+        }
+        
+        setMsg(successMsg);
+      }
+      setMemberInput('');
+      const [m] = await Promise.all([getTenantMembers(sub.tenantId)]);
+      setMembers(m);
+    } catch (e: any) {
+      setMsg(`❌ ${e.message}`);
+    } finally {
+      setAddingMember(false);
+    }
   }
 
   async function doChangeRole(member: TenantMember, newRole: any) {
@@ -326,6 +380,7 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
 
   const TABS: { id: DetailTab; label: string }[] = [
     { id: 'overview', label: '📋 Overview' },
+    { id: 'communications', label: '💬 Communications' },
     { id: 'billing',  label: '💳 Subscription' },
     { id: 'invoices', label: '🧾 Invoices' },
     { id: 'members',  label: `👥 Members (${members.length})` },
@@ -335,16 +390,23 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
   ];
 
   return (
-    <Modal onClose={onClose} width={800}>
+    <div className="animate-fade-in">
+      {/* Breadcrumbs */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, fontSize: 13, color: 'var(--text-tertiary)', fontWeight: 600 }}>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--brand-400)', cursor: 'pointer', padding: 0, fontWeight: 600 }}>Tenants</button>
+        <span>/</span>
+        <span style={{ color: 'var(--text-primary)' }}>{sub.tenantName}</span>
+      </div>
+
       {seeding && (
         <SeedProgressModal progress={seedProgress} total={buildSeedManifest().length} done={seedDone}
           tenant={seedTenant} onClose={() => setSeeding(false)} />
       )}
       {/* Header */}
-      <div style={{ padding: '24px 28px 0', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ padding: '0 0 0', borderBottom: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
           <div>
-            <div style={{ fontSize: 20, fontWeight: 900 }}>{sub.tenantName}</div>
+            <div style={{ fontSize: 24, fontWeight: 900 }}>{sub.tenantName}</div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 3 }}>{sub.contactName} · {sub.contactEmail}</div>
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
               <Chip label={sub.status} status={sub.status} />
@@ -352,7 +414,6 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
               {daysLeft !== null && <Chip label={daysLeft === 0 ? 'Trial expired' : `${daysLeft}d trial left`} status={daysLeft <= 3 ? 'overdue' : 'trial'} />}
             </div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--text-tertiary)', padding: '4px 8px' }}>✕</button>
         </div>
         {/* Tabs */}
         <div style={{ display: 'flex', gap: 0, borderBottom: 'none' }}>
@@ -398,6 +459,18 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
             <Field label="Next Invoice"     value={sub.nextInvoiceDate?.slice(0,10) ?? '—'} />
             <Field label="Currency"         value={sub.currency} />
             <Field label="Subscribed"       value={new Date(sub.subscriptionStart).toLocaleDateString()} />
+          </div>
+        )}
+
+        {/* ── COMMUNICATIONS ── */}
+        {tab === 'communications' && (
+          <div style={{ height: 600 }}>
+            <CommunicationPanel
+              familyId={sub.tenantId} // tenant acts as the logical entity
+              familyName={sub.tenantName}
+              linkedRecordType="crm" // The "crm" equivalent at platform level is handling tenant records
+              linkedRecordId={sub.tenantId}
+            />
           </div>
         )}
 
@@ -672,56 +745,34 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
             <div>
               {/* Add Member panel */}
               <div style={{ marginBottom: 20, padding: '16px 18px', background: 'var(--bg-canvas)', borderRadius: 10, border: '1px solid var(--border)' }}>
-                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12 }}>➕ Add Member</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'flex-end' }}>
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>➕ Add Member</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 2fr) 1fr auto', gap: 10, alignItems: 'flex-end' }}>
                   <div>
-                    <Label>Email (existing platform user)</Label>
-                    <input className="input" style={{ width: '100%' }} placeholder="user@firm.com"
-                      value={memberSearch} onChange={e => setMemberSearch(e.target.value)} list="user-suggestions" />
+                    <Label>User Email (or select existing)</Label>
+                    <input className="input" type="email" style={{ width: '100%' }} placeholder="user@firm.com"
+                      value={memberInput} onChange={e => setMemberInput(e.target.value)} list="user-suggestions" />
                     <datalist id="user-suggestions">
                       {allUsers.filter(u => !members.find(m => m.uid === u.uid))
-                        .map(u => <option key={u.uid} value={u.email}>{u.displayName}</option>)}
+                        .map(u => <option key={u.uid} value={u.email}>{u.displayName || u.email}</option>)}
                     </datalist>
                   </div>
                   <div>
                     <Label>Role</Label>
-                    <select className="input" style={{ width: '100%' }} value={inviteRole}
-                      onChange={e => setInviteRole(e.target.value as any)}>
+                    <select className="input" style={{ width: '100%' }} value={memberRole}
+                      onChange={e => setMemberRole(e.target.value as any)}>
                       {TENANT_ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
                     </select>
                   </div>
-                  <button className="btn btn-primary btn-sm" onClick={doAddUserByEmail}
-                    disabled={!memberSearch || addingMember} style={{ height: 40, whiteSpace: 'nowrap' }}>
-                    {addingMember ? '…' : 'Add User'}
+                  <button className="btn btn-primary btn-sm" onClick={doSmartAdd}
+                    disabled={!memberInput || addingMember} style={{ height: 40, padding: '0 20px', whiteSpace: 'nowrap' }}>
+                    {addingMember ? '…' : 'Add to Tenant'}
                   </button>
                 </div>
-                <div style={{ marginTop: 10, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
-                  {!showInviteForm ? (
-                    <button onClick={() => setShowInviteForm(true)}
-                      style={{ fontSize: 12, color: 'var(--brand-400)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                      📧 Send invitation to a new user (not yet on the platform)
-                    </button>
-                  ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 8, alignItems: 'flex-end', marginTop: 4 }}>
-                      <div>
-                        <Label>Email to invite</Label>
-                        <input className="input" style={{ width: '100%' }} type="email" placeholder="new@firm.com"
-                          value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} />
-                      </div>
-                      <div>
-                        <Label>Role</Label>
-                        <select className="input" style={{ width: '100%' }} value={inviteRole}
-                          onChange={e => setInviteRole(e.target.value as any)}>
-                          {TENANT_ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
-                        </select>
-                      </div>
-                      <button className="btn btn-primary btn-sm" onClick={doSendInvitation}
-                        disabled={!inviteEmail || loading} style={{ height: 40 }}>
-                        {loading ? '…' : 'Send Invite'}
-                      </button>
-                      <button className="btn btn-ghost btn-sm" onClick={() => setShowInviteForm(false)} style={{ height: 40 }}>✕</button>
-                    </div>
-                  )}
+                <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input type="checkbox" id="sendInv2" checked={sendInvite} onChange={e => setSendInvite(e.target.checked)} style={{ cursor: 'pointer', accentColor: 'var(--brand-500)', width: 14, height: 14 }} />
+                  <label htmlFor="sendInv2" style={{ fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}>
+                    Generate an invitation link (if user is completely new to platform)
+                  </label>
                 </div>
               </div>
 
@@ -1022,7 +1073,7 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
           );
         })()}
       </div>
-    </Modal>
+    </div>
   );
 }
 
@@ -1226,6 +1277,7 @@ type MainTab = 'tenants' | 'invoices' | 'plans' | 'events';
 export default function TenantManagementPage() {
   const { user } = useAuth();
   const performer = { uid: user?.uid ?? 'unknown', name: user?.name ?? 'Admin' };
+  const searchParams = useSearchParams();
 
   const [mainTab,    setMainTab]    = useState<MainTab>('tenants');
   const [subs,       setSubs]       = useState<TenantSubscription[]>([]);
@@ -1240,7 +1292,7 @@ export default function TenantManagementPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, inv, ev] = await Promise.all([getAllSubscriptions(), getAllInvoices(), [] as SubscriptionEvent[]]);
+      const [s, inv] = await Promise.all([getAllSubscriptions(), getAllInvoices()]);
       setSubs(s);
       setAllInvoices(inv);
     } catch {}
@@ -1251,6 +1303,15 @@ export default function TenantManagementPage() {
   useEffect(() => {
     if (mainTab === 'invoices') getAllInvoices().then(setAllInvoices);
   }, [mainTab]);
+
+  // Auto-open tenant modal when navigated from /platform/users with ?open=tenantId
+  useEffect(() => {
+    const openId = searchParams?.get('open');
+    if (openId && subs.length > 0) {
+      const match = subs.find(s => s.tenantId === openId);
+      if (match) setSelected(match);
+    }
+  }, [searchParams, subs]);
 
   const filtered = useMemo(() => subs.filter(s => {
     const q = search.toLowerCase();
@@ -1274,16 +1335,21 @@ export default function TenantManagementPage() {
     { id: 'events',   label: '📜 Global Audit' },
   ];
 
-  return (
-    <div className="page animate-fade-in">
-      {selected && (
+  if (selected) {
+    return (
+      <div className="page animate-fade-in" style={{ maxWidth: 1200, margin: '0 auto', paddingBottom: 60 }}>
         <TenantDetailModal
           sub={selected} performer={performer}
           onClose={() => setSelected(null)}
           onRefresh={() => { load(); setSelected(null); }}
           onDeleted={id => { setSubs(prev => prev.filter(s => s.tenantId !== id)); setSelected(null); }}
         />
-      )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="page animate-fade-in">
       {showNew && (
         <NewSubscriptionModal
           performer={performer}

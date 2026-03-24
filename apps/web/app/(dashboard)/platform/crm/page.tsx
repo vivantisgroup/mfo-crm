@@ -8,6 +8,7 @@ import {
   type PlatformOrg, type PlatformContact, type DealStage, type OrgSize,
 } from '@/lib/crmService';
 import { getAllSubscriptions, type TenantSubscription } from '@/lib/subscriptionService';
+import { CommunicationPanel } from '@/components/CommunicationPanel';
 
 // ─── Shared Helpers ───────────────────────────────────────────────────────────
 
@@ -42,7 +43,7 @@ function OrgPanel({ org, allOrgs, subscriptions, onClose, onUpdated }: {
 }) {
   const [contacts, setContacts] = useState<PlatformContact[]>([]);
   const [loadingC, setLoadingC] = useState(true);
-  const [tab, setTab] = useState<'info' | 'contacts' | 'tenants'>('info');
+  const [tab, setTab] = useState<'info' | 'communications' | 'contacts' | 'tenants'>('info');
   const [editStage, setEditStage] = useState(org.stage);
   const [saving, setSaving] = useState(false);
 
@@ -81,8 +82,8 @@ function OrgPanel({ org, allOrgs, subscriptions, onClose, onUpdated }: {
           {org.tags.map(t => <Chip key={t} label={t} color={t === 'hot' ? '#ef4444' : t === 'warm' ? '#f59e0b' : '#6366f1'} />)}
         </div>
         {/* Tabs */}
-        <div style={{ display: 'flex', gap: 0 }}>
-          {[{ id: 'info', label: '📋 Info' }, { id: 'contacts', label: `👤 Contacts (${contacts.length})` }, { id: 'tenants', label: `🏢 Tenants (${linkedSubs.length})` }].map(t => (
+        <div style={{ display: 'flex', gap: 0, overflowX: 'auto', paddingBottom: 2 }}>
+          {[{ id: 'info', label: '📋 Info' }, { id: 'communications', label: '💬 Comms' }, { id: 'contacts', label: `👤 Contacts (${contacts.length})` }, { id: 'tenants', label: `🏢 Tenants (${linkedSubs.length})` }].map(t => (
             <button key={t.id} onClick={() => setTab(t.id as any)} style={{
               padding: '8px 14px', fontSize: 12, background: 'none', border: 'none', cursor: 'pointer',
               fontWeight: tab === t.id ? 700 : 500,
@@ -127,6 +128,18 @@ function OrgPanel({ org, allOrgs, subscriptions, onClose, onUpdated }: {
                 {org.notes}
               </div>
             )}
+          </div>
+        )}
+
+        {/* COMMUNICATIONS */}
+        {tab === 'communications' && (
+          <div style={{ height: 600 }}>
+            <CommunicationPanel
+              familyId={org.id} // Re-using familyId context for orgId on platform side
+              familyName={org.name}
+              linkedRecordType="crm"
+              linkedRecordId={org.id}
+            />
           </div>
         )}
 
