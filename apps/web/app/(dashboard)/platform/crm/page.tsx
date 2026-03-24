@@ -12,7 +12,6 @@ import { CommunicationPanel } from '@/components/CommunicationPanel';
 
 // ─── Shared Helpers ───────────────────────────────────────────────────────────
 
-function fmt(n: number) { return '$' + n.toLocaleString(); }
 function fmtAum(n: number) {
   if (!n) return '—';
   if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
@@ -32,14 +31,14 @@ function Label({ children }: { children: React.ReactNode }) {
   return <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>{children}</div>;
 }
 
-// ─── Org Detail Side Panel ─────────────────────────────────────────────────────
+// ─── Org Detail — Inline Breadcrumb view ──────────────────────────────────────
 
-function OrgPanel({ org, allOrgs, subscriptions, onClose, onUpdated }: {
+function OrgDetail({ org, subscriptions, onBack, onUpdated, performer }: {
   org: PlatformOrg;
-  allOrgs: PlatformOrg[];
   subscriptions: TenantSubscription[];
-  onClose: () => void;
+  onBack: () => void;
   onUpdated: () => void;
+  performer: { uid: string };
 }) {
   const [contacts, setContacts] = useState<PlatformContact[]>([]);
   const [loadingC, setLoadingC] = useState(true);
@@ -47,7 +46,14 @@ function OrgPanel({ org, allOrgs, subscriptions, onClose, onUpdated }: {
   const [editStage, setEditStage] = useState(org.stage);
   const [saving, setSaving] = useState(false);
 
+  // Add-contact form
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [nc, setNc] = useState({ name: '', email: '', role: '', phone: '', isPrimary: false, notes: '' });
+  const [addingContact, setAddingContact] = useState(false);
+  const [contactMsg, setContactMsg] = useState('');
+
   useEffect(() => {
+    setLoadingC(true);
     getContactsForOrg(org.id).then(c => { setContacts(c); setLoadingC(false); });
   }, [org.id]);
 
@@ -62,30 +68,64 @@ function OrgPanel({ org, allOrgs, subscriptions, onClose, onUpdated }: {
     setSaving(false);
   }
 
+  async function handleAddContact(e: React.FormEvent) {
+    e.preventDefault();
+    if (!nc.name || !nc.email) return;
+    setAddingContact(true); setContactMsg('');
+    try {
+      const created = await createContact(
+        { orgId: org.id, name: nc.name, email: nc.email, role: nc.role, phone: nc.phone, isPrimary: nc.isPrimary, notes: nc.notes, createdBy: performer.uid },
+        performer,
+      );
+      setContacts(prev => [...prev, created]);
+      setNc({ name: '', email: '', role: '', phone: '', isPrimary: false, notes: '' });
+      setShowAddContact(false);
+      setContactMsg('✅ Contact added.');
+    } catch (err: any) {
+      setContactMsg(`❌ ${err.message}`);
+    } finally { setAddingContact(false); }
+  }
+
+  const field = (k: keyof typeof nc) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    setNc(p => ({ ...p, [k]: e.target.type === 'checkbox' ? (e.target as HTMLInputElement).checked : e.target.value }));
+
+  const TABS = [
+    { id: 'info',           label: '📋 Info' },
+    { id: 'communications', label: '💬 Comms' },
+    { id: 'contacts',       label: `👤 Contacts (${contacts.length})` },
+    { id: 'tenants',        label: `🏢 Tenants (${linkedSubs.length})` },
+  ];
+
   return (
-    <div style={{
-      position: 'fixed', right: 0, top: 0, bottom: 0, width: 440, zIndex: 200,
-      background: 'var(--bg-elevated)', borderLeft: '1px solid var(--border)',
-      overflowY: 'auto', boxShadow: '-12px 0 40px rgba(0,0,0,0.3)',
-    }}>
+    <div className="animate-fade-in">
+      {/* Breadcrumb */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, fontSize: 13, color: 'var(--text-tertiary)', fontWeight: 600 }}>
+        <button onClick={onBack} style={{ background: 'none', border: 'none', color: 'var(--brand-400)', cursor: 'pointer', padding: 0, fontWeight: 600 }}>
+          Platform CRM
+        </button>
+        <span>/</span>
+        <span style={{ color: 'var(--text-primary)' }}>{org.name}</span>
+      </div>
+
       {/* Header */}
-      <div style={{ padding: '24px 24px 0', borderBottom: '1px solid var(--border)', paddingBottom: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+      <div style={{ borderBottom: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
           <div>
-            <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 3 }}>{org.name}</div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{org.country} · {ORG_SIZE_LABELS[org.size]}</div>
+            <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>{org.name}</h1>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>{org.country} · {ORG_SIZE_LABELS[org.size]}</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Chip label={STAGE_LABELS[org.stage].replace(/^.+ /, '')} color={stageColor} />
+              {org.tags.map(t => <Chip key={t} label={t} color={t === 'hot' ? '#ef4444' : t === 'warm' ? '#f59e0b' : '#6366f1'} />)}
+            </div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--text-tertiary)', padding: '2px 6px' }}>✕</button>
+          <div style={{ fontSize: 28, fontWeight: 900, color: '#a78bfa' }}>{fmtAum(org.estAumUsd)}</div>
         </div>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <Chip label={STAGE_LABELS[org.stage].replace(/^.+ /, '')} color={stageColor} />
-          {org.tags.map(t => <Chip key={t} label={t} color={t === 'hot' ? '#ef4444' : t === 'warm' ? '#f59e0b' : '#6366f1'} />)}
-        </div>
+
         {/* Tabs */}
-        <div style={{ display: 'flex', gap: 0, overflowX: 'auto', paddingBottom: 2 }}>
-          {[{ id: 'info', label: '📋 Info' }, { id: 'communications', label: '💬 Comms' }, { id: 'contacts', label: `👤 Contacts (${contacts.length})` }, { id: 'tenants', label: `🏢 Tenants (${linkedSubs.length})` }].map(t => (
+        <div style={{ display: 'flex', gap: 0 }}>
+          {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id as any)} style={{
-              padding: '8px 14px', fontSize: 12, background: 'none', border: 'none', cursor: 'pointer',
+              padding: '10px 18px', fontSize: 13, background: 'none', border: 'none', cursor: 'pointer',
               fontWeight: tab === t.id ? 700 : 500,
               borderBottom: `2px solid ${tab === t.id ? 'var(--brand-500)' : 'transparent'}`,
               color: tab === t.id ? 'var(--brand-500)' : 'var(--text-secondary)',
@@ -94,26 +134,27 @@ function OrgPanel({ org, allOrgs, subscriptions, onClose, onUpdated }: {
         </div>
       </div>
 
-      <div style={{ padding: '16px 24px 24px' }}>
+      <div style={{ padding: '24px 0' }}>
+
         {/* INFO */}
         {tab === 'info' && (
-          <div>
+          <div style={{ maxWidth: 620 }}>
             {[
-              { label: 'Est. AUM', value: fmtAum(org.estAumUsd) },
-              { label: 'Assigned To', value: org.assignedTo },
-              { label: 'Org ID', value: <code style={{ fontSize: 11 }}>{org.id}</code> },
+              { label: 'Est. AUM',       value: fmtAum(org.estAumUsd) },
+              { label: 'Assigned To',    value: org.assignedTo },
+              { label: 'Website',        value: org.website || '—' },
               { label: 'Linked Tenants', value: org.tenantIds.length },
-              { label: 'Website', value: org.website || '—' },
+              { label: 'Org ID',         value: <code style={{ fontSize: 11 }}>{org.id}</code> },
             ].map(f => (
-              <div key={f.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+              <div key={f.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
                 <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{f.label}</span>
                 <span style={{ fontWeight: 600 }}>{f.value}</span>
               </div>
             ))}
-            <div style={{ marginTop: 14 }}>
+            <div style={{ marginTop: 20 }}>
               <Label>Stage</Label>
               <div style={{ display: 'flex', gap: 8 }}>
-                <select className="input" style={{ flex: 1 }} value={editStage} onChange={e => setEditStage(e.target.value as DealStage)}>
+                <select className="input" style={{ maxWidth: 260 }} value={editStage} onChange={e => setEditStage(e.target.value as DealStage)}>
                   {STAGES.map(s => <option key={s} value={s}>{STAGE_LABELS[s].replace(/^.+ /, '')}</option>)}
                 </select>
                 {editStage !== org.stage && (
@@ -124,7 +165,7 @@ function OrgPanel({ org, allOrgs, subscriptions, onClose, onUpdated }: {
               </div>
             </div>
             {org.notes && (
-              <div style={{ marginTop: 14, padding: '10px 12px', background: 'var(--bg-canvas)', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              <div style={{ marginTop: 16, padding: '12px 14px', background: 'var(--bg-canvas)', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
                 {org.notes}
               </div>
             )}
@@ -133,61 +174,119 @@ function OrgPanel({ org, allOrgs, subscriptions, onClose, onUpdated }: {
 
         {/* COMMUNICATIONS */}
         {tab === 'communications' && (
-          <div style={{ height: 600 }}>
-            <CommunicationPanel
-              familyId={org.id} // Re-using familyId context for orgId on platform side
-              familyName={org.name}
-              linkedRecordType="crm"
-              linkedRecordId={org.id}
-            />
+          <div style={{ height: 600, maxWidth: 900 }}>
+            <CommunicationPanel familyId={org.id} familyName={org.name} linkedRecordType="crm" linkedRecordId={org.id} />
           </div>
         )}
 
         {/* CONTACTS */}
         {tab === 'contacts' && (
-          <div>
-            {loadingC ? <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-tertiary)' }}>Loading…</div>
-              : contacts.length === 0 ? <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-tertiary)' }}>No contacts yet.</div>
-              : contacts.map(c => (
-                <div key={c.id} style={{ padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: 14 }}>
-                        {c.name} {c.isPrimary && <span style={{ fontSize: 10, color: '#6366f1', fontWeight: 700, background: '#6366f115', padding: '2px 6px', borderRadius: 5, marginLeft: 6 }}>PRIMARY</span>}
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{c.role}</div>
-                      <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{c.email} {c.phone && `· ${c.phone}`}</div>
-                    </div>
+          <div style={{ maxWidth: 720 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>Contacts ({contacts.length})</div>
+              <button className="btn btn-primary btn-sm" onClick={() => { setShowAddContact(v => !v); setContactMsg(''); }}>
+                {showAddContact ? '✕ Cancel' : '+ Add Contact'}
+              </button>
+            </div>
+
+            {contactMsg && (
+              <div style={{ marginBottom: 14, padding: '9px 14px', borderRadius: 8, fontSize: 13,
+                background: contactMsg.startsWith('✅') ? '#22c55e15' : '#ef444415',
+                color: contactMsg.startsWith('✅') ? '#22c55e' : '#ef4444' }}>
+                {contactMsg}
+              </div>
+            )}
+
+            {/* Add Contact Form */}
+            {showAddContact && (
+              <form onSubmit={handleAddContact} style={{ marginBottom: 20, padding: '16px 18px', background: 'var(--bg-canvas)', borderRadius: 12, border: '1px solid var(--border)' }}>
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>👤 New Contact</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <Label>Full Name *</Label>
+                    <input required className="input" style={{ width: '100%' }} value={nc.name} onChange={field('name')} placeholder="Felipe Andrade" />
+                  </div>
+                  <div>
+                    <Label>Email *</Label>
+                    <input required type="email" className="input" style={{ width: '100%' }} value={nc.email} onChange={field('email')} placeholder="contact@firm.com" />
+                  </div>
+                  <div>
+                    <Label>Role / Title</Label>
+                    <input className="input" style={{ width: '100%' }} value={nc.role} onChange={field('role')} placeholder="CIO / CEO / Partner" />
+                  </div>
+                  <div>
+                    <Label>Phone</Label>
+                    <input className="input" style={{ width: '100%' }} value={nc.phone} onChange={field('phone')} placeholder="+55 11 99988-7766" />
                   </div>
                 </div>
-              ))}
+                <div style={{ marginTop: 10 }}>
+                  <Label>Notes</Label>
+                  <textarea className="input" rows={2} style={{ width: '100%', resize: 'vertical', fontFamily: 'inherit', fontSize: 13 }} value={nc.notes} onChange={field('notes')} />
+                </div>
+                <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input type="checkbox" id="ncIsPrimary" checked={nc.isPrimary}
+                    onChange={e => setNc(p => ({ ...p, isPrimary: e.target.checked }))}
+                    style={{ accentColor: 'var(--brand-500)', width: 14, height: 14, cursor: 'pointer' }} />
+                  <label htmlFor="ncIsPrimary" style={{ fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                    Primary billing / admin contact
+                  </label>
+                </div>
+                <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowAddContact(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary btn-sm" disabled={addingContact || !nc.name || !nc.email}>
+                    {addingContact ? '…' : '✅ Save Contact'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Contact List */}
+            {loadingC ? (
+              <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-tertiary)' }}>Loading…</div>
+            ) : contacts.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '40px 20px', border: '1px dashed var(--border)', borderRadius: 12, color: 'var(--text-tertiary)' }}>
+                No contacts yet. Add the first one above.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {contacts.map(c => (
+                  <div key={c.id} style={{ padding: '14px 16px', background: 'var(--bg-elevated)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>
+                      {c.name}
+                      {c.isPrimary && <span style={{ fontSize: 10, color: '#6366f1', fontWeight: 700, background: '#6366f115', padding: '2px 6px', borderRadius: 5, marginLeft: 8 }}>★ PRIMARY</span>}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{c.role}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{c.email}{c.phone ? ` · ${c.phone}` : ''}</div>
+                    {c.notes && <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 6, fontStyle: 'italic' }}>{c.notes}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
         {/* TENANTS */}
         {tab === 'tenants' && (
-          <div>
+          <div style={{ maxWidth: 680 }}>
             <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 14 }}>
               Tenant subscriptions associated with <strong>{org.name}</strong>.
             </div>
             {linkedSubs.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-tertiary)' }}>
+              <div style={{ textAlign: 'center', padding: '40px 20px', border: '1px dashed var(--border)', borderRadius: 12, color: 'var(--text-tertiary)' }}>
                 <div style={{ fontSize: 28, marginBottom: 10 }}>🏢</div>
                 <div>No tenants linked yet.</div>
                 <div style={{ fontSize: 12, marginTop: 6 }}>Link a tenant via Tenant Management → New Tenant.</div>
               </div>
             ) : linkedSubs.map(sub => {
-              const statusColor = { trial: '#f59e0b', active: '#22c55e', past_due: '#ef4444', suspended: '#94a3b8', cancelled: '#64748b' }[sub.status] ?? '#94a3b8';
+              const statusColor: Record<string, string> = { trial: '#f59e0b', active: '#22c55e', past_due: '#ef4444', suspended: '#94a3b8', cancelled: '#64748b' };
               return (
-                <div key={sub.tenantId} style={{ padding: '12px 14px', border: '1px solid var(--border)', borderRadius: 10, marginBottom: 8 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div key={sub.tenantId} style={{ padding: '14px 16px', border: '1px solid var(--border)', borderRadius: 10, marginBottom: 8, background: 'var(--bg-elevated)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                      <div style={{ fontWeight: 700, fontSize: 13 }}>{sub.tenantName}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
-                        <code style={{ fontSize: 10 }}>{sub.tenantId}</code>
-                      </div>
+                      <div style={{ fontWeight: 700, fontSize: 14 }}>{sub.tenantName}</div>
+                      <code style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{sub.tenantId}</code>
                     </div>
-                    <Chip label={sub.status} color={statusColor} />
+                    <Chip label={sub.status} color={statusColor[sub.status] ?? '#94a3b8'} />
                   </div>
                   <div style={{ marginTop: 8, display: 'flex', gap: 12, fontSize: 11, color: 'var(--text-secondary)' }}>
                     <span>📋 {sub.planId}</span>
@@ -212,9 +311,8 @@ function NewOrgModal({ onClose, onCreated, performer }: {
   performer: { uid: string };
 }) {
   const [form, setForm] = useState({
-    name: '', country: '', size: 'small' as OrgSize,
-    estAumUsd: 0, stage: 'lead' as DealStage,
-    assignedTo: '', tags: '', notes: '', website: '',
+    name: '', country: '', size: 'small' as OrgSize, estAumUsd: 0,
+    stage: 'lead' as DealStage, assignedTo: '', tags: '', notes: '', website: '',
     contactName: '', contactEmail: '', contactRole: '', contactPhone: '',
   });
   const [loading, setLoading] = useState(false);
@@ -259,44 +357,25 @@ function NewOrgModal({ onClose, onCreated, performer }: {
               <input required className="input" style={{ width: '100%' }} value={form.name} onChange={f('name')} placeholder="Andrade Family Office" />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div>
-                <Label>Country</Label>
-                <input className="input" style={{ width: '100%' }} value={form.country} onChange={f('country')} placeholder="Brazil" />
-              </div>
+              <div><Label>Country</Label><input className="input" style={{ width: '100%' }} value={form.country} onChange={f('country')} placeholder="Brazil" /></div>
               <div>
                 <Label>Size</Label>
                 <select className="input" style={{ width: '100%' }} value={form.size} onChange={f('size')}>
                   {(Object.keys(ORG_SIZE_LABELS) as OrgSize[]).map(s => <option key={s} value={s}>{ORG_SIZE_LABELS[s]}</option>)}
                 </select>
               </div>
-              <div>
-                <Label>Est. AUM (USD)</Label>
-                <input type="number" min={0} className="input" style={{ width: '100%' }} value={form.estAumUsd} onChange={f('estAumUsd')} />
-              </div>
+              <div><Label>Est. AUM (USD)</Label><input type="number" min={0} className="input" style={{ width: '100%' }} value={form.estAumUsd} onChange={f('estAumUsd')} /></div>
               <div>
                 <Label>Deal Stage</Label>
                 <select className="input" style={{ width: '100%' }} value={form.stage} onChange={f('stage')}>
                   {STAGES.map(s => <option key={s} value={s}>{STAGE_LABELS[s].replace(/^.+ /, '')}</option>)}
                 </select>
               </div>
-              <div>
-                <Label>Assigned To</Label>
-                <input className="input" style={{ width: '100%' }} value={form.assignedTo} onChange={f('assignedTo')} placeholder="Sales Rep name" />
-              </div>
-              <div>
-                <Label>Website</Label>
-                <input className="input" style={{ width: '100%' }} value={form.website} onChange={f('website')} placeholder="https://…" />
-              </div>
+              <div><Label>Assigned To</Label><input className="input" style={{ width: '100%' }} value={form.assignedTo} onChange={f('assignedTo')} placeholder="Sales Rep name" /></div>
+              <div><Label>Website</Label><input className="input" style={{ width: '100%' }} value={form.website} onChange={f('website')} placeholder="https://…" /></div>
             </div>
-            <div>
-              <Label>Tags (comma-separated)</Label>
-              <input className="input" style={{ width: '100%' }} value={form.tags} onChange={f('tags')} placeholder="hot, enterprise, brazil" />
-            </div>
-            <div>
-              <Label>Notes</Label>
-              <textarea className="input" rows={2} style={{ width: '100%', resize: 'vertical', fontFamily: 'inherit', fontSize: 13 }} value={form.notes} onChange={f('notes')} />
-            </div>
-            {/* Primary contact */}
+            <div><Label>Tags (comma-separated)</Label><input className="input" style={{ width: '100%' }} value={form.tags} onChange={f('tags')} placeholder="hot, enterprise, brazil" /></div>
+            <div><Label>Notes</Label><textarea className="input" rows={2} style={{ width: '100%', resize: 'vertical', fontFamily: 'inherit', fontSize: 13 }} value={form.notes} onChange={f('notes')} /></div>
             <div style={{ marginTop: 4, padding: '14px 16px', background: 'var(--bg-canvas)', borderRadius: 10, border: '1px solid var(--border)' }}>
               <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>👤 Primary Contact (optional)</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -309,9 +388,7 @@ function NewOrgModal({ onClose, onCreated, performer }: {
           </div>
           <div style={{ padding: '0 28px 24px', display: 'flex', gap: 10 }}>
             <button type="button" className="btn btn-ghost" onClick={onClose} style={{ flex: 1 }}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={loading || !form.name} style={{ flex: 2 }}>
-              {loading ? '…' : '✅ Create Organization'}
-            </button>
+            <button type="submit" className="btn btn-primary" disabled={loading || !form.name} style={{ flex: 2 }}>{loading ? '…' : '✅ Create Organization'}</button>
           </div>
         </form>
       </div>
@@ -319,25 +396,21 @@ function NewOrgModal({ onClose, onCreated, performer }: {
   );
 }
 
-// ─── Smart Org/Contact Combobox (used in New Tenant form) ─────────────────────
+// ─── Comboboxes (used by New Tenant form in tenants/page.tsx) ─────────────────
 
 export function OrgCombobox({ orgs, value, onChange, placeholder = 'Search organizations…' }: {
   orgs: PlatformOrg[];
-  value: string;             // orgId
+  value: string;
   onChange: (orgId: string, orgName: string) => void;
   placeholder?: string;
 }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-
   const selected = orgs.find(o => o.id === value);
 
-  // Close on outside click
   useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
+    function handler(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
@@ -349,43 +422,29 @@ export function OrgCombobox({ orgs, value, onChange, placeholder = 'Search organ
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      <div
-        className="input"
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}
-        onClick={() => setOpen(v => !v)}
-      >
-        {selected
-          ? <span style={{ fontWeight: 600 }}>{selected.name} <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 400 }}>· {selected.country}</span></span>
-          : <span style={{ color: 'var(--text-tertiary)' }}>{placeholder}</span>
-        }
+      <div className="input" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }} onClick={() => setOpen(v => !v)}>
+        {selected ? <span style={{ fontWeight: 600 }}>{selected.name} <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 400 }}>· {selected.country}</span></span>
+          : <span style={{ color: 'var(--text-tertiary)' }}>{placeholder}</span>}
         <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>▾</span>
       </div>
       {open && (
         <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, marginTop: 4, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
           <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
-            <input
-              className="input" autoFocus
-              style={{ width: '100%', padding: '7px 10px', fontSize: 13 }}
-              placeholder="Type to filter…" value={q} onChange={e => setQ(e.target.value)}
-            />
+            <input className="input" autoFocus style={{ width: '100%', padding: '7px 10px', fontSize: 13 }} placeholder="Type to filter…" value={q} onChange={e => setQ(e.target.value)} />
           </div>
           <div style={{ maxHeight: 240, overflowY: 'auto' }}>
-            {filtered.length === 0
-              ? <div style={{ padding: '16px', textAlign: 'center', fontSize: 13, color: 'var(--text-tertiary)' }}>No matches</div>
+            {filtered.length === 0 ? <div style={{ padding: '16px', textAlign: 'center', fontSize: 13, color: 'var(--text-tertiary)' }}>No matches</div>
               : filtered.map(o => (
-                <div key={o.id}
-                  onClick={() => { onChange(o.id, o.name); setOpen(false); setQ(''); }}
+                <div key={o.id} onClick={() => { onChange(o.id, o.name); setOpen(false); setQ(''); }}
                   style={{ padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                  className="hover-lift"
-                >
+                  className="hover-lift">
                   <div>
                     <div style={{ fontWeight: 700, fontSize: 13 }}>{o.name}</div>
                     <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{o.country} · {ORG_SIZE_LABELS[o.size]}</div>
                   </div>
                   <div style={{ fontSize: 11, color: STAGE_COLORS[o.stage] }}>{STAGE_LABELS[o.stage].replace(/^.+ /, '')}</div>
                 </div>
-              ))
-            }
+              ))}
           </div>
         </div>
       )}
@@ -395,20 +454,17 @@ export function OrgCombobox({ orgs, value, onChange, placeholder = 'Search organ
 
 export function ContactCombobox({ contacts, value, onChange, disabled = false }: {
   contacts: PlatformContact[];
-  value: string;             // contactId
+  value: string;
   onChange: (contactId: string, contactName: string, contactEmail: string) => void;
   disabled?: boolean;
 }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-
   const selected = contacts.find(c => c.id === value);
 
   useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
+    function handler(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
@@ -417,39 +473,29 @@ export function ContactCombobox({ contacts, value, onChange, disabled = false }:
 
   return (
     <div ref={ref} style={{ position: 'relative', opacity: disabled ? 0.5 : 1, pointerEvents: disabled ? 'none' : undefined }}>
-      <div
-        className="input"
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: disabled ? 'default' : 'pointer', userSelect: 'none' }}
-        onClick={() => !disabled && setOpen(v => !v)}
-      >
-        {selected
-          ? <span style={{ fontWeight: 600 }}>{selected.name} <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 400 }}>· {selected.role}</span></span>
-          : <span style={{ color: 'var(--text-tertiary)' }}>{disabled ? 'Select an organization first' : 'Select contact…'}</span>
-        }
+      <div className="input" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: disabled ? 'default' : 'pointer', userSelect: 'none' }}
+        onClick={() => !disabled && setOpen(v => !v)}>
+        {selected ? <span style={{ fontWeight: 600 }}>{selected.name} <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 400 }}>· {selected.role}</span></span>
+          : <span style={{ color: 'var(--text-tertiary)' }}>{disabled ? 'Select an organization first' : 'Select contact…'}</span>}
         <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>▾</span>
       </div>
       {open && !disabled && (
         <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, marginTop: 4, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
           <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
-            <input className="input" autoFocus style={{ width: '100%', padding: '7px 10px', fontSize: 13 }}
-              placeholder="Filter contacts…" value={q} onChange={e => setQ(e.target.value)} />
+            <input className="input" autoFocus style={{ width: '100%', padding: '7px 10px', fontSize: 13 }} placeholder="Filter contacts…" value={q} onChange={e => setQ(e.target.value)} />
           </div>
           <div style={{ maxHeight: 200, overflowY: 'auto' }}>
-            {filtered.length === 0
-              ? <div style={{ padding: '16px', textAlign: 'center', fontSize: 13, color: 'var(--text-tertiary)' }}>No contacts</div>
+            {filtered.length === 0 ? <div style={{ padding: '16px', textAlign: 'center', fontSize: 13, color: 'var(--text-tertiary)' }}>No contacts</div>
               : filtered.map(c => (
-                <div key={c.id}
-                  onClick={() => { onChange(c.id, c.name, c.email); setOpen(false); setQ(''); }}
+                <div key={c.id} onClick={() => { onChange(c.id, c.name, c.email); setOpen(false); setQ(''); }}
                   style={{ padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between' }}
-                  className="hover-lift"
-                >
+                  className="hover-lift">
                   <div>
                     <div style={{ fontWeight: 700, fontSize: 13 }}>{c.name} {c.isPrimary && <span style={{ fontSize: 10, color: '#6366f1' }}>★ primary</span>}</div>
                     <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{c.role} · {c.email}</div>
                   </div>
                 </div>
-              ))
-            }
+              ))}
           </div>
         </div>
       )}
@@ -463,22 +509,19 @@ export default function CrmPage() {
   const { user } = useAuth();
   const performer = { uid: user?.uid ?? 'unknown' };
 
-  const [orgs,  setOrgs]  = useState<PlatformOrg[]>([]);
-  const [subs,  setSubs]  = useState<TenantSubscription[]>([]);
-  const [loading, setL]   = useState(true);
-  const [search, setSearch] = useState('');
-  const [stageF, setStageF] = useState<DealStage | 'all'>('all');
-  const [view,   setView]  = useState<'pipeline' | 'list'>('pipeline');
+  const [orgs,    setOrgs]    = useState<PlatformOrg[]>([]);
+  const [subs,    setSubs]    = useState<TenantSubscription[]>([]);
+  const [loading, setL]       = useState(true);
+  const [search,  setSearch]  = useState('');
+  const [stageF,  setStageF]  = useState<DealStage | 'all'>('all');
+  const [view,    setView]    = useState<'pipeline' | 'list'>('pipeline');
   const [selected, setSelected] = useState<PlatformOrg | null>(null);
-  const [showNew, setShowNew]   = useState(false);
+  const [showNew,  setShowNew]  = useState(false);
 
   const load = useCallback(async () => {
     setL(true);
-    try {
-      const [o, s] = await Promise.all([getAllOrgs(), getAllSubscriptions()]);
-      setOrgs(o); setSubs(s);
-    } catch {}
-    finally { setL(false); }
+    try { const [o, s] = await Promise.all([getAllOrgs(), getAllSubscriptions()]); setOrgs(o); setSubs(s); }
+    catch {} finally { setL(false); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -505,16 +548,20 @@ export default function CrmPage() {
     estAum:  orgs.reduce((sum, o) => sum + o.estAumUsd, 0),
   }), [orgs, subs]);
 
+  // ── Org detail — breadcrumb inline view ─────────────────────────────────────
+  if (selected) {
+    return (
+      <div style={{ maxWidth: 1400, margin: '0 auto' }}>
+        {showNew && <NewOrgModal performer={performer} onClose={() => setShowNew(false)} onCreated={org => { setOrgs(prev => [org, ...prev]); setShowNew(false); }} />}
+        <OrgDetail org={selected} subscriptions={subs} onBack={() => setSelected(null)} onUpdated={load} performer={performer} />
+      </div>
+    );
+  }
+
+  // ── Main list / kanban view ──────────────────────────────────────────────────
   return (
     <div className="animate-fade-in" style={{ maxWidth: 1400, margin: '0 auto' }}>
-      {selected && (
-        <OrgPanel org={selected} allOrgs={orgs} subscriptions={subs}
-          onClose={() => setSelected(null)} onUpdated={load} />
-      )}
-      {showNew && (
-        <NewOrgModal performer={performer} onClose={() => setShowNew(false)}
-          onCreated={org => { setOrgs(prev => [org, ...prev]); setShowNew(false); }} />
-      )}
+      {showNew && <NewOrgModal performer={performer} onClose={() => setShowNew(false)} onCreated={org => { setOrgs(prev => [org, ...prev]); setShowNew(false); }} />}
 
       {/* Header */}
       <header style={{ marginBottom: 28 }}>
@@ -523,9 +570,7 @@ export default function CrmPage() {
             <h1 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4 }}>
               Platform <span style={{ color: 'var(--brand-500)', fontWeight: 400 }}>CRM</span>
             </h1>
-            <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
-              Manage customer organizations and link them to tenant subscriptions.
-            </p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Manage customer organizations and link them to tenant subscriptions.</p>
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
             <button className="btn btn-ghost btn-sm" onClick={handleSeed}>↑ Seed</button>
@@ -538,11 +583,11 @@ export default function CrmPage() {
       {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, marginBottom: 24 }}>
         {[
-          { label: 'Organizations', value: kpis.total,   color: '#6366f1' },
-          { label: 'Open Deals',    value: kpis.open,    color: '#f59e0b' },
-          { label: 'Closed Won',    value: kpis.won,     color: '#22c55e' },
-          { label: 'Active Tenants',value: kpis.tenants, color: '#22d3ee' },
-          { label: 'Total Est. AUM', value: fmtAum(kpis.estAum), color: '#a78bfa' },
+          { label: 'Organizations',  value: kpis.total,           color: '#6366f1' },
+          { label: 'Open Deals',     value: kpis.open,            color: '#f59e0b' },
+          { label: 'Closed Won',     value: kpis.won,             color: '#22c55e' },
+          { label: 'Active Tenants', value: kpis.tenants,         color: '#22d3ee' },
+          { label: 'Total Est. AUM', value: fmtAum(kpis.estAum),  color: '#a78bfa' },
         ].map(k => (
           <div key={k.label} style={{ padding: '14px 18px', background: 'var(--bg-elevated)', border: `1px solid ${k.color}33`, borderRadius: 'var(--radius-lg)' }}>
             <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.07em', marginBottom: 4 }}>{k.label}</div>
@@ -580,7 +625,6 @@ export default function CrmPage() {
           </div>
         </div>
       ) : view === 'pipeline' ? (
-        /* ── Kanban ── */
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(${pipelineStages.length}, 1fr)`, gap: 14, overflowX: 'auto', minWidth: 900 }}>
           {pipelineStages.map(stage => {
             const cards = filtered.filter(o => o.stage === stage);
@@ -592,34 +636,26 @@ export default function CrmPage() {
                   <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 600 }}>{cards.length}</span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {cards.map(org => {
-                    const linkedCount = org.tenantIds.length;
-                    return (
-                      <div key={org.id} onClick={() => setSelected(org)}
-                        style={{ padding: '14px 16px', background: 'var(--bg-elevated)', border: `1px solid ${c}44`, borderLeft: `3px solid ${c}`, borderRadius: 'var(--radius-lg)', cursor: 'pointer', transition: 'transform 0.15s' }}
-                        onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; }}
-                        onMouseLeave={e => { e.currentTarget.style.transform = ''; }}>
-                        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{org.name}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>{org.country} · {fmtAum(org.estAumUsd)}</div>
-                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-                          {org.tags.slice(0,3).map(t => <Chip key={t} label={t} color={t === 'hot' ? '#ef4444' : t === 'warm' ? '#f59e0b' : '#6366f1'} />)}
-                        </div>
-                        {linkedCount > 0 && (
-                          <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 600 }}>🏢 {linkedCount} tenant{linkedCount !== 1 ? 's' : ''}</div>
-                        )}
+                  {cards.map(org => (
+                    <div key={org.id} onClick={() => setSelected(org)}
+                      style={{ padding: '14px 16px', background: 'var(--bg-elevated)', border: `1px solid ${c}44`, borderLeft: `3px solid ${c}`, borderRadius: 'var(--radius-lg)', cursor: 'pointer', transition: 'transform 0.15s' }}
+                      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.transform = ''; }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{org.name}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>{org.country} · {fmtAum(org.estAumUsd)}</div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                        {org.tags.slice(0,3).map(t => <Chip key={t} label={t} color={t === 'hot' ? '#ef4444' : t === 'warm' ? '#f59e0b' : '#6366f1'} />)}
                       </div>
-                    );
-                  })}
-                  {cards.length === 0 && (
-                    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12, border: '1px dashed var(--border)', borderRadius: 8 }}>Empty</div>
-                  )}
+                      {org.tenantIds.length > 0 && <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 600 }}>🏢 {org.tenantIds.length} tenant{org.tenantIds.length !== 1 ? 's' : ''}</div>}
+                    </div>
+                  ))}
+                  {cards.length === 0 && <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12, border: '1px dashed var(--border)', borderRadius: 8 }}>Empty</div>}
                 </div>
               </div>
             );
           })}
         </div>
       ) : (
-        /* ── List view ── */
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-xl)', overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
@@ -634,19 +670,12 @@ export default function CrmPage() {
                 const c = STAGE_COLORS[org.stage];
                 return (
                   <tr key={org.id} onClick={() => setSelected(org)} style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }} className="hover-lift">
-                    <td style={{ padding: '14px 14px' }}>
-                      <div style={{ fontWeight: 700, fontSize: 13, borderLeft: `3px solid ${c}`, paddingLeft: 8 }}>{org.name}</div>
-                    </td>
-                    <td style={{ padding: '14px 14px' }}>
-                      <Chip label={STAGE_LABELS[org.stage].replace(/^.+ /, '')} color={c} />
-                    </td>
+                    <td style={{ padding: '14px 14px' }}><div style={{ fontWeight: 700, fontSize: 13, borderLeft: `3px solid ${c}`, paddingLeft: 8 }}>{org.name}</div></td>
+                    <td style={{ padding: '14px 14px' }}><Chip label={STAGE_LABELS[org.stage].replace(/^.+ /, '')} color={c} /></td>
                     <td style={{ padding: '14px 14px', fontSize: 13 }}>{org.country}</td>
                     <td style={{ padding: '14px 14px', fontSize: 13, fontWeight: 700, color: '#a78bfa' }}>{fmtAum(org.estAumUsd)}</td>
                     <td style={{ padding: '14px 14px', fontSize: 13 }}>
-                      {org.tenantIds.length > 0
-                        ? <span style={{ color: '#22c55e', fontWeight: 700 }}>🏢 {org.tenantIds.length}</span>
-                        : <span style={{ color: 'var(--text-tertiary)' }}>—</span>
-                      }
+                      {org.tenantIds.length > 0 ? <span style={{ color: '#22c55e', fontWeight: 700 }}>🏢 {org.tenantIds.length}</span> : <span style={{ color: 'var(--text-tertiary)' }}>—</span>}
                     </td>
                     <td style={{ padding: '14px 14px', fontSize: 12, color: 'var(--text-secondary)' }}>{org.assignedTo}</td>
                     <td style={{ padding: '14px 14px' }}>

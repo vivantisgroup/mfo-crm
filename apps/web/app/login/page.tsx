@@ -289,11 +289,26 @@ function LoginContent() {
   // ── Forgot Password ──────────────────────────────────────────────────────────
   async function handlePasswordReset(e: React.FormEvent) {
     e.preventDefault();
-    if (!resetEmail) { setError('Please enter your email address.'); return; }
+    const trimmedEmail = resetEmail.trim().toLowerCase();
+    if (!trimmedEmail) { setError('Please enter your email address.'); return; }
+
     setLoading(true);
     setError('');
     try {
-      await sendPasswordResetEmail(auth, resetEmail);
+      // Validate the email exists in our platform before sending a reset link.
+      // Firebase silently ignores unknown emails — we want to surface this to the user.
+      const { getFirestore, collection, query, where, getDocs } = await import('firebase/firestore');
+      const db   = getFirestore(firebaseApp);
+      const snap = await getDocs(
+        query(collection(db, 'users'), where('email', '==', trimmedEmail))
+      );
+      if (snap.empty) {
+        setError(`No account found for ${trimmedEmail}. Check the email address or contact your administrator.`);
+        return;
+      }
+
+      // Account confirmed — ask Firebase to send the reset email
+      await sendPasswordResetEmail(auth, trimmedEmail);
       setResetSent(true);
     } catch (err: any) {
       setError(friendlyAuthError(err.code ?? err.message));
