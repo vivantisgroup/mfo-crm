@@ -168,6 +168,10 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
   const [seedDone,     setSeedDone]     = useState(false);
   const [seeding,      setSeeding]      = useState(false);
   const [seedTenant,   setSeedTenant]   = useState<DemoTenant | null>(null);
+  // Demo tab confirmation wizard state (hoisted to avoid hooks-in-IIFE violation)
+  const [demoConfirmed1,  setDemoConfirmed1]  = useState(false);
+  const [demoConfirmText, setDemoConfirmText] = useState('');
+  const demoNameMatch = demoConfirmText.trim().toLowerCase() === sub.tenantName.trim().toLowerCase();
 
   useEffect(() => {
     if (tab === 'invoices') getInvoices(sub.tenantId).then(setInvoices);
@@ -645,117 +649,111 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
         )}
 
         {/* ── DEMO DATA ── */}
-        {tab === 'demo' && (() => {
-          const [confirmed1, setConfirmed1] = React.useState(false);
-          const [confirmText, setConfirmText] = React.useState('');
-          const nameMatch = confirmText.trim().toLowerCase() === sub.tenantName.trim().toLowerCase();
+        {tab === 'demo' && (
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>🌱 Demo Data Provisioner</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20 }}>
+              Seeds {totalDemoRecords().toLocaleString()} realistic records across {totalDemoCollections()} collections in <strong>{sub.tenantName}</strong>.
+            </div>
 
-          return (
-            <div>
-              <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>🌱 Demo Data Provisioner</div>
-              <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20 }}>
-                Seeds {totalDemoRecords().toLocaleString()} realistic records across {totalDemoCollections()} collections in <strong>{sub.tenantName}</strong>.
-              </div>
-
-              {/* Big danger banner — always visible */}
-              <div style={{
-                padding: '16px 20px', borderRadius: 12, marginBottom: 20,
-                background: '#ef444410', border: '2px solid #ef444440',
-              }}>
-                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 10 }}>
-                  <span style={{ fontSize: 24, flexShrink: 0 }}>🚨</span>
-                  <div>
-                    <div style={{ fontWeight: 800, fontSize: 14, color: '#ef4444', marginBottom: 4 }}>
-                      DESTRUCTIVE OPERATION — ALL DATA WILL BE RESET
-                    </div>
-                    <div style={{ fontSize: 13, color: '#fca5a5', lineHeight: 1.6 }}>
-                      Provisioning demo data will <strong>permanently delete and replace all existing data</strong> in this tenant, including:
-                    </div>
+            {/* Big danger banner — always visible */}
+            <div style={{
+              padding: '16px 20px', borderRadius: 12, marginBottom: 20,
+              background: '#ef444410', border: '2px solid #ef444440',
+            }}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 10 }}>
+                <span style={{ fontSize: 24, flexShrink: 0 }}>🚨</span>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 14, color: '#ef4444', marginBottom: 4 }}>
+                    DESTRUCTIVE OPERATION — ALL DATA WILL BE RESET
+                  </div>
+                  <div style={{ fontSize: 13, color: '#fca5a5', lineHeight: 1.6 }}>
+                    Provisioning demo data will <strong>permanently delete and replace all existing data</strong> in this tenant, including:
                   </div>
                 </div>
-                <ul style={{ margin: '0 0 0 36px', padding: 0, fontSize: 13, color: '#fca5a5', lineHeight: 1.8 }}>
-                  <li>All family records, contacts, and CRM notes</li>
-                  <li>All tasks, queues, and time entries</li>
-                  <li>All portfolio data, holdings, and account balances</li>
-                  <li>All documents, compliance records, and suitability assessments</li>
-                  <li>All activities and calendar events</li>
-                </ul>
-                <div style={{ marginTop: 12, padding: '10px 14px', background: '#ef444420', borderRadius: 8, fontSize: 12, color: '#fca5a5', fontWeight: 700 }}>
-                  ⚠️ This action cannot be undone. Real client data entered into this tenant will be permanently lost.
-                </div>
               </div>
+              <ul style={{ margin: '0 0 0 36px', padding: 0, fontSize: 13, color: '#fca5a5', lineHeight: 1.8 }}>
+                <li>All family records, contacts, and CRM notes</li>
+                <li>All tasks, queues, and time entries</li>
+                <li>All portfolio data, holdings, and account balances</li>
+                <li>All documents, compliance records, and suitability assessments</li>
+                <li>All activities and calendar events</li>
+              </ul>
+              <div style={{ marginTop: 12, padding: '10px 14px', background: '#ef444420', borderRadius: 8, fontSize: 12, color: '#fca5a5', fontWeight: 700 }}>
+                ⚠️ This action cannot be undone. Real client data entered into this tenant will be permanently lost.
+              </div>
+            </div>
 
-              {/* Step 1 — acknowledge */}
-              {!confirmed1 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 4 }}>
-                    {[
-                      { label: 'Collections', value: totalDemoCollections() },
-                      { label: 'Records to seed', value: totalDemoRecords().toLocaleString() },
-                      { label: 'Est. duration', value: `~${Math.ceil(totalDemoCollections() * 0.12)}s` },
-                    ].map(s => (
-                      <div key={s.label} style={{ padding: '12px 14px', background: 'var(--bg-canvas)', borderRadius: 10, border: '1px solid var(--border)', textAlign: 'center' }}>
-                        <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--brand-500)' }}>{s.value}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginTop: 3 }}>{s.label}</div>
-                      </div>
-                    ))}
+            {/* Step 1 — acknowledge */}
+            {!demoConfirmed1 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 4 }}>
+                  {[
+                    { label: 'Collections', value: totalDemoCollections() },
+                    { label: 'Records to seed', value: totalDemoRecords().toLocaleString() },
+                    { label: 'Est. duration', value: `~${Math.ceil(totalDemoCollections() * 0.12)}s` },
+                  ].map(s => (
+                    <div key={s.label} style={{ padding: '12px 14px', background: 'var(--bg-canvas)', borderRadius: 10, border: '1px solid var(--border)', textAlign: 'center' }}>
+                      <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--brand-500)' }}>{s.value}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginTop: 3 }}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  className="btn btn-secondary"
+                  style={{ borderColor: '#ef4444', color: '#ef4444' }}
+                  onClick={() => setDemoConfirmed1(true)}
+                >
+                  I understand — this will reset all tenant data. Continue →
+                </button>
+              </div>
+            ) : (
+              /* Step 2 — type tenant name to confirm */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ padding: '14px 16px', background: 'var(--bg-canvas)', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 8 }}>Final confirmation required</div>
+                  <div style={{ color: 'var(--text-secondary)', marginBottom: 12 }}>
+                    Type the tenant name exactly as shown to enable the seed button:
                   </div>
+                  <code style={{ display: 'block', padding: '8px 12px', background: 'var(--bg-elevated)', borderRadius: 6, marginBottom: 12, fontSize: 13, fontWeight: 700, letterSpacing: '0.02em' }}>
+                    {sub.tenantName}
+                  </code>
+                  <input
+                    className="input"
+                    style={{ width: '100%', borderColor: demoNameMatch ? '#22c55e' : demoConfirmText ? '#ef4444' : undefined }}
+                    placeholder={`Type "${sub.tenantName}" to confirm…`}
+                    value={demoConfirmText}
+                    onChange={e => setDemoConfirmText(e.target.value)}
+                    autoFocus
+                  />
+                  {demoConfirmText && !demoNameMatch && (
+                    <div style={{ fontSize: 12, color: '#ef4444', marginTop: 6 }}>Name does not match. Check capitalisation and spacing.</div>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => { setDemoConfirmed1(false); setDemoConfirmText(''); }}>
+                    ← Back
+                  </button>
                   <button
-                    className="btn btn-secondary"
-                    style={{ borderColor: '#ef4444', color: '#ef4444' }}
-                    onClick={() => setConfirmed1(true)}
+                    className="btn btn-sm"
+                    style={{
+                      background: demoNameMatch ? '#ef4444' : 'var(--bg-elevated)',
+                      color: demoNameMatch ? 'white' : 'var(--text-tertiary)',
+                      border: `1px solid ${demoNameMatch ? '#ef4444' : 'var(--border)'}`,
+                      cursor: demoNameMatch ? 'pointer' : 'not-allowed',
+                      flex: 1,
+                      fontWeight: 700,
+                    }}
+                    disabled={!demoNameMatch || loading}
+                    onClick={doSeedDemo}
                   >
-                    I understand — this will reset all tenant data. Continue →
+                    {loading ? '⚙️ Seeding…' : '🚀 Reset & Seed Demo Data'}
                   </button>
                 </div>
-              ) : (
-                /* Step 2 — type tenant name to confirm */
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  <div style={{ padding: '14px 16px', background: 'var(--bg-canvas)', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13 }}>
-                    <div style={{ fontWeight: 700, marginBottom: 8 }}>Final confirmation required</div>
-                    <div style={{ color: 'var(--text-secondary)', marginBottom: 12 }}>
-                      Type the tenant name exactly as shown to enable the seed button:
-                    </div>
-                    <code style={{ display: 'block', padding: '8px 12px', background: 'var(--bg-elevated)', borderRadius: 6, marginBottom: 12, fontSize: 13, fontWeight: 700, letterSpacing: '0.02em' }}>
-                      {sub.tenantName}
-                    </code>
-                    <input
-                      className="input"
-                      style={{ width: '100%', borderColor: nameMatch ? '#22c55e' : confirmText ? '#ef4444' : undefined }}
-                      placeholder={`Type "${sub.tenantName}" to confirm…`}
-                      value={confirmText}
-                      onChange={e => setConfirmText(e.target.value)}
-                      autoFocus
-                    />
-                    {confirmText && !nameMatch && (
-                      <div style={{ fontSize: 12, color: '#ef4444', marginTop: 6 }}>Name does not match. Check capitalisation and spacing.</div>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', gap: 10 }}>
-                    <button className="btn btn-ghost btn-sm" onClick={() => { setConfirmed1(false); setConfirmText(''); }}>
-                      ← Back
-                    </button>
-                    <button
-                      className="btn btn-sm"
-                      style={{
-                        background: nameMatch ? '#ef4444' : 'var(--bg-elevated)',
-                        color: nameMatch ? 'white' : 'var(--text-tertiary)',
-                        border: `1px solid ${nameMatch ? '#ef4444' : 'var(--border)'}`,
-                        cursor: nameMatch ? 'pointer' : 'not-allowed',
-                        flex: 1,
-                        fontWeight: 700,
-                      }}
-                      disabled={!nameMatch || loading}
-                      onClick={doSeedDemo}
-                    >
-                      {loading ? '⚙️ Seeding…' : '🚀 Reset & Seed Demo Data'}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })()}
+              </div>
+            )}
+          </div>
+        )}
 
 
         {/* ── MEMBERS ── */}
