@@ -34,24 +34,25 @@ async function itPost(endpoint: string, body: object) {
   return data;
 }
 
-/** Verify the idToken using Firebase Admin SDK (most reliable) */
+/** Verify the idToken — Admin SDK first, REST fallback if anything fails */
 async function verifyIdToken(idToken: string): Promise<{ uid: string } | null> {
+  // Try Admin SDK first
   try {
     const adminAuth = getAdminAuth();
-    const decoded   = await adminAuth.verifyIdToken(idToken, /* checkRevoked= */ true);
+    const decoded   = await adminAuth.verifyIdToken(idToken, false); // don't check revocation for speed
     return { uid: decoded.uid };
   } catch (err: any) {
-    // Fallback to REST API if Admin SDK is unavailable (e.g. FIREBASE_ADMIN_SDK_JSON not set)
-    if (err.message?.includes('FIREBASE_ADMIN_SDK_JSON')) {
-      return verifyIdTokenViaRest(idToken);
-    }
-    console.error('[verifyIdToken] Admin SDK error:', err.message);
-    return null;
+    // Always fall back to REST — covers misconfigured creds, network blips, revocation checks
+    console.warn('[verifyIdToken] Admin SDK failed, trying REST fallback:', err.message);
   }
+
+  // REST fallback
+  return verifyIdTokenViaRest(idToken);
 }
 
-/** Fallback REST-based token verification */
+/** REST-based token verification via Identity Toolkit accounts:lookup */
 async function verifyIdTokenViaRest(idToken: string): Promise<{ uid: string } | null> {
+  if (!FIREBASE_API_KEY) return null;
   try {
     const res = await fetch(
       `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_API_KEY}`,

@@ -32,7 +32,7 @@ import {
 } from '@/lib/tenantMemberService';
 import { getAllUsers, deleteTenant, createTenant, type UserProfile } from '@/lib/platformService';
 import { CommunicationPanel } from '@/components/CommunicationPanel';
-import { usePageTitle } from '@/lib/PageTitleContext';
+import { usePageTitle, useBreadcrumb } from '@/lib/PageTitleContext';
 
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -138,6 +138,9 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
   performer: { uid: string; name: string };
   onDeleted?: (tenantId: string) => void;
 }) {
+  // Push breadcrumb to header bar
+  useBreadcrumb([{ label: 'Tenants', onClick: onClose }, { label: sub.tenantName }]);
+
   const [tab, setTab] = useState<DetailTab>('overview');
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [events,   setEvents]   = useState<SubscriptionEvent[]>([]);
@@ -490,12 +493,6 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
 
   return (
     <div className="animate-fade-in">
-      {/* Breadcrumbs */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, fontSize: 13, color: 'var(--text-tertiary)', fontWeight: 600 }}>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--brand-400)', cursor: 'pointer', padding: 0, fontWeight: 600 }}>Tenants</button>
-        <span>/</span>
-        <span style={{ color: 'var(--text-primary)' }}>{sub.tenantName}</span>
-      </div>
 
       {seeding && (
         <SeedProgressModal progress={seedProgress} total={buildSeedManifest().length} done={seedDone}

@@ -168,11 +168,12 @@ export async function addPlaceholderMember(
     uid:         tempUid,
     email:       email,
     displayName: email.split('@')[0],
-    role:        'report_viewer', // base role
+    role:        role,          // use the requested role, not a hardcoded base
     mfaEnabled:  false,
     status:      'invited',
     createdAt:   now,
-    tenantIds:   arrayUnion(tenantId)
+    tenantId:    tenantId,      // ← primary tenant (was missing — kritical fix!)
+    tenantIds:   [tenantId],    // static array on create (arrayUnion only works on update)
   }, { merge: true });
 
   // 2. Add to members collection
