@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+import { useBreadcrumb, usePageTitle } from '@/lib/PageTitleContext';
 import {
   getAllOrgs, getContactsForOrg, createOrg, createContact, updateOrg, seedCrmIfEmpty,
   STAGE_COLORS, STAGE_LABELS, STAGES, ORG_SIZE_LABELS,
@@ -23,20 +24,7 @@ function Chip({ label, color }: { label: string; color: string }) {
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>{children}</div>;
 }
-function Breadcrumb({ crumbs }: { crumbs: { label: string; onClick?: () => void }[] }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, fontSize: 13, fontWeight: 600, color: 'var(--text-tertiary)' }}>
-      {crumbs.map((c, i) => (
-        <React.Fragment key={i}>
-          {i > 0 && <span>/</span>}
-          {c.onClick
-            ? <button onClick={c.onClick} style={{ background: 'none', border: 'none', color: 'var(--brand-400)', cursor: 'pointer', padding: 0, fontWeight: 600 }}>{c.label}</button>
-            : <span style={{ color: 'var(--text-primary)' }}>{c.label}</span>}
-        </React.Fragment>
-      ))}
-    </div>
-  );
-}
+
 
 // ─── New Org — Inline Breadcrumb Form ────────────────────────────────────────
 
@@ -80,9 +68,10 @@ function NewOrgView({ onBack, onCreated, performer }: {
     } finally { setLoading(false); }
   }
 
+  useBreadcrumb([{ label: 'Platform CRM', onClick: onBack }, { label: 'New Organization' }]);
+
   return (
     <div className="animate-fade-in">
-      <Breadcrumb crumbs={[{ label: 'Platform CRM', onClick: onBack }, { label: 'New Organization' }]} />
       <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 6 }}>🏢 New Organization</h1>
       <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 28 }}>Create a new CRM customer and optionally add a primary contact.</p>
 
@@ -239,9 +228,10 @@ function OrgDetail({ org: initialOrg, subscriptions, onBack, onUpdated, performe
     { id: 'tenants',        label: `🏢 Tenants (${linkedSubs.length})` },
   ];
 
+  useBreadcrumb([{ label: 'Platform CRM', onClick: onBack }, { label: org.name }]);
+
   return (
     <div className="animate-fade-in">
-      <Breadcrumb crumbs={[{ label: 'Platform CRM', onClick: onBack }, { label: org.name }]} />
 
       {/* Header */}
       <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>

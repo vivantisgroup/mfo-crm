@@ -653,7 +653,7 @@ function TenantSwitcher() {
 // ─── Header ───────────────────────────────────────────────────────────────────
 
 export default function Header() {
-  const { title, subtitle } = usePageTitle();
+  const { title, subtitle, crumbs } = usePageTitle();
   const router = useRouter();
   const [menuOpen,     setMenuOpen]     = useState(false);
   const [notifOpen,    setNotifOpen]    = useState(false);
@@ -699,13 +699,44 @@ export default function Header() {
       )}
 
       <header className="header" style={{ position: 'relative' }}>
-        {/* Breadcrumb / title */}
-        <div className="header-breadcrumb" style={{ flex: 1 }}>
-          {title && <span className="header-breadcrumb-current">{title}</span>}
-          {subtitle && (
+        {/* Breadcrumb / title — fed via PageTitleContext */}
+        <div className="header-breadcrumb" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
+          {crumbs.length > 0 ? (
+            crumbs.map((crumb, i) => (
+              <React.Fragment key={i}>
+                {i > 0 && <span style={{ color: 'var(--text-tertiary)', fontSize: 13, margin: '0 2px' }}>›</span>}
+                {crumb.onClick ? (
+                  <button
+                    onClick={crumb.onClick}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
+                      fontSize: 13, fontWeight: 500,
+                      color: i === crumbs.length - 1 ? 'var(--text-primary)' : 'var(--brand-400)',
+                      borderRadius: 4,
+                    }}
+                  >
+                    {crumb.label}
+                  </button>
+                ) : (
+                  <span style={{
+                    fontSize: 13, fontWeight: i === crumbs.length - 1 ? 600 : 500,
+                    color: i === crumbs.length - 1 ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    padding: '2px 4px',
+                  }}>
+                    {crumb.label}
+                  </span>
+                )}
+              </React.Fragment>
+            ))
+          ) : (
             <>
-              <span style={{ color: 'var(--text-tertiary)' }}>/</span>
-              <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>{subtitle}</span>
+              {title && <span className="header-breadcrumb-current">{title}</span>}
+              {subtitle && (
+                <>
+                  <span style={{ color: 'var(--text-tertiary)' }}>/</span>
+                  <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>{subtitle}</span>
+                </>
+              )}
             </>
           )}
         </div>

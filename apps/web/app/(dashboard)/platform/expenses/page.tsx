@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+import { useBreadcrumb, usePageTitle } from '@/lib/PageTitleContext';
 import {
   getAllExpenses, createExpense, updateExpense, deleteExpense, seedExpensesIfEmpty,
   EXPENSE_CATEGORIES, FREQ_LABELS, monthlyEquivalent,
@@ -26,20 +27,7 @@ function CatBadge({ cat }: { cat: ExpenseCategory }) {
   return <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 10, background: `${color}18`, color, display: 'inline-flex', alignItems: 'center', gap: 5 }}>{icon} {label}</span>;
 }
 
-function Breadcrumb({ crumbs }: { crumbs: { label: string; onClick?: () => void }[] }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, fontSize: 13, fontWeight: 600, color: 'var(--text-tertiary)' }}>
-      {crumbs.map((c, i) => (
-        <React.Fragment key={i}>
-          {i > 0 && <span>/</span>}
-          {c.onClick
-            ? <button onClick={c.onClick} style={{ background: 'none', border: 'none', color: 'var(--brand-400)', cursor: 'pointer', padding: 0, fontWeight: 600 }}>{c.label}</button>
-            : <span style={{ color: 'var(--text-primary)' }}>{c.label}</span>}
-        </React.Fragment>
-      ))}
-    </div>
-  );
-}
+
 
 // ─── Blank expense form ────────────────────────────────────────────────────────
 
@@ -188,10 +176,10 @@ function ExpenseDetail({
 
   const monthly = monthlyEquivalent(expense);
 
+  useBreadcrumb([{ label: 'Expenses', onClick: onBack }, { label: expense.name }]);
+
   return (
     <div className="animate-fade-in">
-      <Breadcrumb crumbs={[{ label: 'Expenses', onClick: onBack }, { label: expense.name }]} />
-
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 }}>
         <div>
@@ -274,6 +262,7 @@ type PageView = 'list' | 'new' | 'detail';
 
 export default function ExpensesPage() {
   const { user } = useAuth();
+  usePageTitle('Expenses');
   const performer = { uid: user?.uid ?? 'unknown' };
 
   const [expenses, setExpenses] = useState<PlatformExpense[]>([]);
@@ -318,30 +307,40 @@ export default function ExpensesPage() {
   function openDetail(e: PlatformExpense) { setSelected(e); setView('detail'); }
   function goList() { setSelected(null); setView('list'); }
 
+  // ── New expense view ─────────────────────────────────────────────
+function NewExpenseView({ goList, setExpenses, openDetail, performer }: {
+  goList: () => void,
+  setExpenses: React.Dispatch<React.SetStateAction<PlatformExpense[]>>,
+  openDetail: (e: PlatformExpense) => void,
+  performer: { uid: string },
+}) {
+  useBreadcrumb([{ label: 'Expenses', onClick: goList }, { label: 'New Expense' }]);
+  return (
+    <div style={{ maxWidth: 1400, margin: '0 auto' }}>
+      <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 6 }}>💸 New Expense</h1>
+      <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 28 }}>Add a recurring or one-time business expense to track platform profitability.</p>
+      <ExpenseForm
+        title="Expense Details"
+        initial={BLANK}
+        onSave={async (form) => {
+          const created = await createExpense({
+            name: form.name, category: form.category, frequency: form.frequency,
+            amountUsd: form.amountUsd, vendor: form.vendor, description: form.description,
+            startDate: form.startDate, endDate: form.endDate || undefined, active: form.active,
+            tags: form.tags.split(',').map(t => t.trim()).filter(Boolean), createdBy: performer.uid,
+          }, performer);
+          setExpenses(prev => [created, ...prev]);
+          openDetail(created);
+        }}
+        onCancel={goList}
+      />
+    </div>
+  );
+}
+
   // ── New expense view ────────────────────────────────────────────────────────
   if (view === 'new') {
-    return (
-      <div style={{ maxWidth: 1400, margin: '0 auto' }}>
-        <Breadcrumb crumbs={[{ label: 'Expenses', onClick: goList }, { label: 'New Expense' }]} />
-        <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 6 }}>💸 New Expense</h1>
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 28 }}>Add a recurring or one-time business expense to track platform profitability.</p>
-        <ExpenseForm
-          title="Expense Details"
-          initial={BLANK}
-          onSave={async (form) => {
-            const created = await createExpense({
-              name: form.name, category: form.category, frequency: form.frequency,
-              amountUsd: form.amountUsd, vendor: form.vendor, description: form.description,
-              startDate: form.startDate, endDate: form.endDate || undefined, active: form.active,
-              tags: form.tags.split(',').map(t => t.trim()).filter(Boolean), createdBy: performer.uid,
-            }, performer);
-            setExpenses(prev => [created, ...prev]);
-            openDetail(created);
-          }}
-          onCancel={goList}
-        />
-      </div>
-    );
+    return <NewExpenseView goList={goList} setExpenses={setExpenses} openDetail={openDetail} performer={performer} />;
   }
 
   // ── Detail view ─────────────────────────────────────────────────────────────
