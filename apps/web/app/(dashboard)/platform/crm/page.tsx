@@ -213,7 +213,7 @@ function OrgDetail({ org: initialOrg, subscriptions, onBack, onUpdated, performe
     try {
       const created = await createContact(
         { orgId: org.id, name: nc.name, email: nc.email,
-          role: nc.role || undefined, phone: nc.phone || undefined,
+          role: nc.role || '', phone: nc.phone || '',
           isPrimary: nc.isPrimary, notes: nc.notes || '', createdBy: performer.uid },
         performer,
       );
