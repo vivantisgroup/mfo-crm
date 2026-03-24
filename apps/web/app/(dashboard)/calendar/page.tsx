@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import Header from '@/components/Header';
+import { usePageTitle } from '@/lib/PageTitleContext';
+
 import { 
   format, 
   addMonths, 
@@ -29,6 +30,7 @@ const EVENT_COLORS = {
 
 export default function CalendarPage() {
   const { t, language } = useTranslation();
+  usePageTitle('Calendar');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [isSyncing, setIsSyncing]     = useState(false);
   const [activeSync, setActiveSync]   = useState<'outlook' | 'google' | null>('outlook');
@@ -110,30 +112,6 @@ export default function CalendarPage() {
 
   return (
     <div className="page" style={{ padding: 0 }}>
-      <Header
-        title={t('nav.calendar')}
-        subtitle="Unified Scheduling & Cloud Integration"
-        actions={
-          <div style={{ display: 'flex', gap: 12 }}>
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-md)', padding: '4px 12px', fontSize: 13,
-            }}>
-              <Cloud size={14} style={{ color: activeSync === 'outlook' ? '#3b82f6' : 'var(--text-tertiary)' }} />
-              <span style={{ color: 'var(--text-secondary)' }}>Last sync: 10m ago</span>
-              <button
-                onClick={handleSync}
-                style={{ display: 'flex', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--brand-400)' }}
-              >
-                <RefreshCw size={14} style={{ animation: isSyncing ? 'spin 1s linear infinite' : 'none' }} />
-              </button>
-            </div>
-            <button className="btn btn-primary btn-sm">+ Event</button>
-          </div>
-        }
-      />
-
       {/* Layout */}
       <div style={{ display: 'flex', height: 'calc(100vh - var(--header-height))', overflow: 'hidden' }}>
 
