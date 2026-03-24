@@ -1297,6 +1297,7 @@ function NewSubscriptionModal({ onClose, onCreated, performer }: {
         status:     form.planId === 'trial' ? 'trial' : 'active',
         isInternal: false,
         brandColor: '#6366f1',
+        createdBy:  performer.uid,
       });
       // Bidirectional CRM link
       if (form.crmOrgId) {
