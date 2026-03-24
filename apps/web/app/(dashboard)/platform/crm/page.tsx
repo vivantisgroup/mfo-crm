@@ -33,24 +33,41 @@ function Label({ children }: { children: React.ReactNode }) {
 
 // ─── Org Detail — Inline Breadcrumb view ──────────────────────────────────────
 
-function OrgDetail({ org, subscriptions, onBack, onUpdated, performer }: {
+function OrgDetail({ org: initialOrg, subscriptions, onBack, onUpdated, performer }: {
   org: PlatformOrg;
   subscriptions: TenantSubscription[];
   onBack: () => void;
   onUpdated: () => void;
   performer: { uid: string };
 }) {
+  // Keep local copy so edits immediately update the header
+  const [org, setOrg] = useState<PlatformOrg>(initialOrg);
+
   const [contacts, setContacts] = useState<PlatformContact[]>([]);
   const [loadingC, setLoadingC] = useState(true);
   const [tab, setTab] = useState<'info' | 'communications' | 'contacts' | 'tenants'>('info');
-  const [editStage, setEditStage] = useState(org.stage);
-  const [saving, setSaving] = useState(false);
 
   // Add-contact form
   const [showAddContact, setShowAddContact] = useState(false);
   const [nc, setNc] = useState({ name: '', email: '', role: '', phone: '', isPrimary: false, notes: '' });
   const [addingContact, setAddingContact] = useState(false);
   const [contactMsg, setContactMsg] = useState('');
+
+  // Edit org form
+  const [editMode, setEditMode] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name:       org.name,
+    country:    org.country,
+    size:       org.size,
+    estAumUsd:  org.estAumUsd,
+    stage:      org.stage,
+    assignedTo: org.assignedTo,
+    website:    org.website ?? '',
+    tags:       org.tags.join(', '),
+    notes:      org.notes,
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editMsg, setEditMsg] = useState('');
 
   useEffect(() => {
     setLoadingC(true);
@@ -60,21 +77,43 @@ function OrgDetail({ org, subscriptions, onBack, onUpdated, performer }: {
   const linkedSubs = subscriptions.filter(s => org.tenantIds.includes(s.tenantId));
   const stageColor = STAGE_COLORS[org.stage];
 
-  async function saveStage() {
-    if (editStage === org.stage) return;
-    setSaving(true);
-    await updateOrg(org.id, { stage: editStage });
-    onUpdated();
-    setSaving(false);
+  async function saveOrgEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!org.id) { setEditMsg('❌ Org ID is missing — please reload the page.'); return; }
+    setSavingEdit(true); setEditMsg('');
+    try {
+      const patch = {
+        name:       editForm.name,
+        country:    editForm.country,
+        size:       editForm.size as OrgSize,
+        estAumUsd:  Number(editForm.estAumUsd),
+        stage:      editForm.stage as DealStage,
+        assignedTo: editForm.assignedTo,
+        website:    editForm.website,
+        tags:       editForm.tags.split(',').map(t => t.trim()).filter(Boolean),
+        notes:      editForm.notes,
+      };
+      await updateOrg(org.id, patch);
+      setOrg(prev => ({ ...prev, ...patch }));
+      setEditMode(false);
+      setEditMsg('✅ Organization updated.');
+      onUpdated();
+    } catch (err: any) {
+      setEditMsg(`❌ ${err.message}`);
+    } finally { setSavingEdit(false); }
   }
 
   async function handleAddContact(e: React.FormEvent) {
     e.preventDefault();
     if (!nc.name || !nc.email) return;
+    if (!org.id) {
+      setContactMsg('❌ Cannot add contact: org ID is missing. Please close and reopen this record, then try again.');
+      return;
+    }
     setAddingContact(true); setContactMsg('');
     try {
       const created = await createContact(
-        { orgId: org.id, name: nc.name, email: nc.email, role: nc.role, phone: nc.phone, isPrimary: nc.isPrimary, notes: nc.notes, createdBy: performer.uid },
+        { orgId: org.id, name: nc.name, email: nc.email, role: nc.role || undefined, phone: nc.phone || undefined, isPrimary: nc.isPrimary, notes: nc.notes || '', createdBy: performer.uid },
         performer,
       );
       setContacts(prev => [...prev, created]);
@@ -88,6 +127,8 @@ function OrgDetail({ org, subscriptions, onBack, onUpdated, performer }: {
 
   const field = (k: keyof typeof nc) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setNc(p => ({ ...p, [k]: e.target.type === 'checkbox' ? (e.target as HTMLInputElement).checked : e.target.value }));
+  const ef = (k: keyof typeof editForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    setEditForm(p => ({ ...p, [k]: e.target.type === 'number' ? Number(e.target.value) : e.target.value }));
 
   const TABS = [
     { id: 'info',           label: '📋 Info' },
@@ -118,7 +159,13 @@ function OrgDetail({ org, subscriptions, onBack, onUpdated, performer }: {
               {org.tags.map(t => <Chip key={t} label={t} color={t === 'hot' ? '#ef4444' : t === 'warm' ? '#f59e0b' : '#6366f1'} />)}
             </div>
           </div>
-          <div style={{ fontSize: 28, fontWeight: 900, color: '#a78bfa' }}>{fmtAum(org.estAumUsd)}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ fontSize: 28, fontWeight: 900, color: '#a78bfa' }}>{fmtAum(org.estAumUsd)}</div>
+            <button className={`btn btn-sm ${editMode ? 'btn-ghost' : 'btn-secondary'}`}
+              onClick={() => { setEditMode(v => !v); setEditMsg(''); }}>
+              {editMode ? '✕ Cancel Edit' : '✏️ Edit'}
+            </button>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -136,8 +183,70 @@ function OrgDetail({ org, subscriptions, onBack, onUpdated, performer }: {
 
       <div style={{ padding: '24px 0' }}>
 
-        {/* INFO */}
-        {tab === 'info' && (
+        {/* EDIT FORM */}
+        {editMode && tab === 'info' && (
+          <form onSubmit={saveOrgEdit} style={{ maxWidth: 680, marginBottom: 24, padding: '20px 24px', background: 'var(--bg-canvas)', borderRadius: 14, border: '1px solid var(--border)' }}>
+            <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 18 }}>✏️ Edit Organization</div>
+            {editMsg && (
+              <div style={{ marginBottom: 14, padding: '9px 14px', borderRadius: 8, fontSize: 13,
+                background: editMsg.startsWith('✅') ? '#22c55e15' : '#ef444415',
+                color: editMsg.startsWith('✅') ? '#22c55e' : '#ef4444' }}>
+                {editMsg}
+              </div>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <Label>Organization Name *</Label>
+                <input required className="input" style={{ width: '100%' }} value={editForm.name} onChange={ef('name')} />
+              </div>
+              <div>
+                <Label>Country</Label>
+                <input className="input" style={{ width: '100%' }} value={editForm.country} onChange={ef('country')} />
+              </div>
+              <div>
+                <Label>Size</Label>
+                <select className="input" style={{ width: '100%' }} value={editForm.size} onChange={ef('size')}>
+                  {(Object.keys(ORG_SIZE_LABELS) as OrgSize[]).map(s => <option key={s} value={s}>{ORG_SIZE_LABELS[s]}</option>)}
+                </select>
+              </div>
+              <div>
+                <Label>Est. AUM (USD)</Label>
+                <input type="number" min={0} className="input" style={{ width: '100%' }} value={editForm.estAumUsd} onChange={ef('estAumUsd')} />
+              </div>
+              <div>
+                <Label>Deal Stage</Label>
+                <select className="input" style={{ width: '100%' }} value={editForm.stage} onChange={ef('stage')}>
+                  {STAGES.map(s => <option key={s} value={s}>{STAGE_LABELS[s].replace(/^.+ /, '')}</option>)}
+                </select>
+              </div>
+              <div>
+                <Label>Assigned To</Label>
+                <input className="input" style={{ width: '100%' }} value={editForm.assignedTo} onChange={ef('assignedTo')} placeholder="Sales rep" />
+              </div>
+              <div>
+                <Label>Website</Label>
+                <input className="input" style={{ width: '100%' }} value={editForm.website} onChange={ef('website')} placeholder="https://…" />
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <Label>Tags (comma-separated)</Label>
+                <input className="input" style={{ width: '100%' }} value={editForm.tags} onChange={ef('tags')} placeholder="hot, enterprise, brazil" />
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <Label>Notes</Label>
+                <textarea className="input" rows={3} style={{ width: '100%', resize: 'vertical', fontFamily: 'inherit', fontSize: 13 }} value={editForm.notes} onChange={ef('notes')} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setEditMode(false); setEditMsg(''); }}>Cancel</button>
+              <button type="submit" className="btn btn-primary btn-sm" disabled={savingEdit || !editForm.name}>
+                {savingEdit ? '…' : '✅ Save Changes'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* INFO (read-only fields) */}
+        {tab === 'info' && !editMode && (
           <div style={{ maxWidth: 620 }}>
             {[
               { label: 'Est. AUM',       value: fmtAum(org.estAumUsd) },
