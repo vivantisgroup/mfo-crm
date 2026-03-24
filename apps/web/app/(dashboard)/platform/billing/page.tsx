@@ -289,7 +289,7 @@ export default function BillingPage() {
             <h1 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4 }}>
               Billing <span style={{ color: 'var(--brand-500)', fontWeight: 400 }}>& Subscriptions</span>
             </h1>
-            <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>SaaS revenue management, plan configuration, invoicing, and ROI analytics.</p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Subscription revenue, invoicing, plan management, and financial analytics.</p>
           </div>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: 28, fontWeight: 900, color: '#22c55e' }}>{fmt(totalMRR)}<span style={{ fontSize: 13, color: 'var(--text-tertiary)', fontWeight: 400 }}>/mo MRR</span></div>

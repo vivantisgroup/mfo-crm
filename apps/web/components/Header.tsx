@@ -711,9 +711,9 @@ export default function Header({ title, subtitle, actions }: HeaderProps) {
         </div>
 
         {/* Search */}
-        <div className="header-search" style={{ cursor: 'text' }}>
+        <div className="header-search" style={{ cursor: 'text', minWidth: 380 }}>
           <span style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>🔍</span>
-          <input type="text" placeholder={t('header.search')} readOnly />
+          <input type="text" placeholder={t('header.search')} readOnly style={{ minWidth: 300 }} />
           <span style={{ fontSize: 11, color: 'var(--text-tertiary)', background: 'var(--bg-canvas)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px' }}>⌘K</span>
         </div>
 

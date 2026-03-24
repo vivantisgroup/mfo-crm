@@ -72,21 +72,25 @@ export default function Sidebar({ collapsed, toggle }: SidebarProps) {
       {
         section: 'SaaS Operations',
         items: [
-          { href: '/platform/tenants', icon: '🏢', labelKey: 'nav.tenants'  as TranslationKey },
-          { href: '/platform/users',   icon: '👤', labelKey: 'nav.users'    as TranslationKey },
-          { href: '/platform/plans',   icon: '📋', labelKey: 'nav.plans'    as TranslationKey },
-          { href: '/platform/billing', icon: '💳', labelKey: 'nav.billing'  as TranslationKey },
-          { href: '/platform/crm',     icon: '🎯', labelKey: 'nav.crm'      as TranslationKey },
-          { href: '/platform/support', icon: '🎫', labelKey: 'nav.support'  as TranslationKey, badge: '12' },
+          { href: '/platform/tenants',  icon: '🏢', labelKey: 'nav.tenants'  as TranslationKey },
+          { href: '/platform/users',    icon: '👤', labelKey: 'nav.users'    as TranslationKey },
+          { href: '/platform/plans',    icon: '📋', labelKey: 'nav.plans'    as TranslationKey },
+          { href: '/platform/billing',  icon: '💳', labelKey: 'nav.billing'  as TranslationKey },
+          { href: '/platform/expenses', icon: '💸', labelKey: 'nav.expenses' as TranslationKey },
+          { href: '/platform/crm',      icon: '🎯', labelKey: 'nav.crm'      as TranslationKey },
+          { href: '/platform/support',  icon: '🎫', labelKey: 'nav.support'  as TranslationKey, badge: '12' },
         ],
       },
-
-
-
+      {
+        section: 'Intelligence',
+        items: [
+          { href: '/platform/analytics', icon: '📊', labelKey: 'nav.analytics' as TranslationKey },
+        ],
+      },
       {
         section: 'Compliance',
         items: [
-          { href: '/platform/audit',      icon: '🔍', labelKey: 'nav.audit'      as TranslationKey },
+          { href: '/platform/audit', icon: '🔍', labelKey: 'nav.audit' as TranslationKey },
         ],
       },
       {
