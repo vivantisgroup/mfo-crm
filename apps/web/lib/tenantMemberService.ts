@@ -371,7 +371,7 @@ export async function acceptInvitation(
  * (Firestore doesn't support cross-collection queries).
  */
 export async function getAuthorizedTenants(
-  profile: Pick<UserProfile, 'tenantId' | 'tenantIds'>,
+  profile: Pick<UserProfile, 'uid' | 'tenantId' | 'tenantIds'>,
 ): Promise<{ tenantId: string; role: PlatformRole; status: TenantMember['status'] }[]> {
   const ids = Array.from(new Set([
     ...(profile.tenantIds ?? []),
@@ -381,7 +381,14 @@ export async function getAuthorizedTenants(
 
   const results = await Promise.all(
     ids.map(async tenantId => {
-      // We'd need the uid here — this is called with profile so caller passes uid separately
+      try {
+        const memberSnap = await getDoc(doc(db, 'tenants', tenantId, 'members', profile.uid));
+        if (memberSnap.exists()) {
+          const m = memberSnap.data() as TenantMember;
+          return { tenantId, role: m.role, status: m.status };
+        }
+      } catch {}
+      // Fallback: return with default role if member doc not found (e.g. master admin)
       return { tenantId, role: 'report_viewer' as PlatformRole, status: 'active' as const };
     })
   );

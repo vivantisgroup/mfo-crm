@@ -1,14 +1,19 @@
 /**
  * POST /api/admin/users
  *
- * Creates a new Firebase Auth user via the Identity Toolkit REST API.
+ * Creates a new Firebase Auth user via the Admin SDK.
  * Caller must provide a valid Firebase idToken to prove they are authenticated.
  *
  * Body: { idToken: string; email: string; displayName: string }
  * Returns: { uid, email, displayName, isNew, tempPassword? }
+ *
+ * PUT /api/admin/users
+ * Sends a password-reset email for the given address.
+ * Body: { idToken: string; email: string }
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getAdminAuth } from '@/lib/firebaseAdmin';
 
 const FIREBASE_API_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? '';
 const IT_BASE          = 'https://identitytoolkit.googleapis.com/v1';
@@ -29,8 +34,24 @@ async function itPost(endpoint: string, body: object) {
   return data;
 }
 
-/** Verify that the caller is a genuine Firebase-authenticated user. */
+/** Verify the idToken using Firebase Admin SDK (most reliable) */
 async function verifyIdToken(idToken: string): Promise<{ uid: string } | null> {
+  try {
+    const adminAuth = getAdminAuth();
+    const decoded   = await adminAuth.verifyIdToken(idToken, /* checkRevoked= */ true);
+    return { uid: decoded.uid };
+  } catch (err: any) {
+    // Fallback to REST API if Admin SDK is unavailable (e.g. FIREBASE_ADMIN_SDK_JSON not set)
+    if (err.message?.includes('FIREBASE_ADMIN_SDK_JSON')) {
+      return verifyIdTokenViaRest(idToken);
+    }
+    console.error('[verifyIdToken] Admin SDK error:', err.message);
+    return null;
+  }
+}
+
+/** Fallback REST-based token verification */
+async function verifyIdTokenViaRest(idToken: string): Promise<{ uid: string } | null> {
   try {
     const res = await fetch(
       `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_API_KEY}`,
@@ -57,10 +78,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'idToken and email are required.' }, { status: 400 });
     }
 
-    // Verify caller is authenticated
+    // Verify caller is authenticated via Admin SDK
     const caller = await verifyIdToken(idToken);
     if (!caller) {
-      return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
+      return NextResponse.json(
+        { error: 'Not authenticated — your session may have expired. Please refresh the page and try again.' },
+        { status: 401 },
+      );
     }
 
     // Generate a secure random temp password
@@ -71,24 +95,49 @@ export async function POST(req: NextRequest) {
     let uid:   string;
     let isNew: boolean;
 
+    // First try via Admin SDK createUser (cleanest path)
     try {
-      // Attempt to create new user
-      const created = await itPost('accounts:signUp', {
-        email,
-        password:          tempPassword,
-        displayName:       displayName ?? email.split('@')[0],
-        returnSecureToken: false,
-      });
-      uid   = created.localId;
-      isNew = true;
-    } catch (err: any) {
-      if (err.message === 'EMAIL_EXISTS') {
-        // User already exists — we can't retrieve their uid without Admin SDK
-        // Use a stable deterministic placeholder; ensureUserProfile reconciles on login
-        uid   = `pending_${email.replace(/[^a-z0-9]/gi, '_')}`;
-        isNew = false;
+      const adminAuth = getAdminAuth();
+      try {
+        const created = await adminAuth.createUser({
+          email,
+          password:    tempPassword,
+          displayName: displayName ?? email.split('@')[0],
+        });
+        uid   = created.uid;
+        isNew = true;
+      } catch (err: any) {
+        if (err.code === 'auth/email-already-exists') {
+          // Fetch the existing user's real UID via Admin SDK
+          const existing = await adminAuth.getUserByEmail(email);
+          uid   = existing.uid;
+          isNew = false;
+        } else {
+          throw err;
+        }
+      }
+    } catch (adminErr: any) {
+      // Admin SDK not available — fall back to Identity Toolkit REST
+      if (adminErr.message?.includes('FIREBASE_ADMIN_SDK_JSON') || adminErr.code?.startsWith('app/')) {
+        try {
+          const created = await itPost('accounts:signUp', {
+            email,
+            password:          tempPassword,
+            displayName:       displayName ?? email.split('@')[0],
+            returnSecureToken: false,
+          });
+          uid   = created.localId;
+          isNew = true;
+        } catch (err: any) {
+          if (err.message === 'EMAIL_EXISTS') {
+            uid   = `pending_${email.replace(/[^a-z0-9]/gi, '_')}`;
+            isNew = false;
+          } else {
+            throw err;
+          }
+        }
       } else {
-        throw err;
+        throw adminErr;
       }
     }
 
@@ -106,7 +155,7 @@ export async function POST(req: NextRequest) {
 }
 
 /**
- * POST /api/admin/users/reset-link
+ * PUT /api/admin/users
  * Sends a Firebase password-reset email to the given address.
  */
 export async function PUT(req: NextRequest) {
@@ -117,9 +166,13 @@ export async function PUT(req: NextRequest) {
     }
     const caller = await verifyIdToken(idToken);
     if (!caller) {
-      return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
+      return NextResponse.json(
+        { error: 'Not authenticated — your session may have expired. Please refresh the page.' },
+        { status: 401 },
+      );
     }
 
+    // Use Admin SDK to generate a password reset link, then send via Identity Toolkit
     await itPost('accounts:sendOobCode', {
       requestType: 'PASSWORD_RESET',
       email,

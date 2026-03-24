@@ -199,27 +199,38 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
         setMembersLoaded(true);
       }).catch(() => {});
     }
-    // Fetch audit_logs for this tenant from Firestore
-    if (tab === 'events' && !auditLoaded) {
-      (async () => {
-        try {
-          const { getFirestore, collection, query, where, orderBy, getDocs } = await import('firebase/firestore');
-          const { firebaseApp } = await import('@mfo-crm/config');
-          const db = getFirestore(firebaseApp);
-          const q  = query(
-            collection(db, 'audit_logs'),
-            where('tenantId', '==', sub.tenantId),
-            orderBy('occurredAt', 'desc'),
-          );
-          const snap = await getDocs(q);
-          setAuditLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-          setAuditLoaded(true);
-        } catch (e) {
-          console.error('[audit_logs]', e);
-        }
-      })();
-    }
-  }, [tab, sub.tenantId, membersLoaded, auditLoaded]);
+  }, [tab, sub.tenantId, membersLoaded]);
+
+  // Load members count & audit log eagerly on mount
+  useEffect(() => {
+    // Pre-load member count so the tab badge is live immediately
+    getTenantMembers(sub.tenantId)
+      .then(m => setMembers(m))
+      .catch(() => {});
+
+    // Pre-load audit log — use simple query without orderBy to avoid composite index requirement
+    (async () => {
+      try {
+        const { getFirestore, collection, query, where, getDocs } = await import('firebase/firestore');
+        const { firebaseApp } = await import('@mfo-crm/config');
+        const _db = getFirestore(firebaseApp);
+        const q   = query(
+          collection(_db, 'audit_logs'),
+          where('tenantId', '==', sub.tenantId),
+        );
+        const snap = await getDocs(q);
+        const logs = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .sort((a: any, b: any) => (b.occurredAt ?? '').localeCompare(a.occurredAt ?? ''));
+        setAuditLogs(logs);
+        setAuditLoaded(true);
+      } catch (e) {
+        console.error('[audit_logs eager]', e);
+        setAuditLoaded(true); // mark loaded even on error so UI shows empty state
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sub.tenantId]);
 
   const plan = SUBSCRIPTION_PLANS[sub.planId];
   const daysLeft = trialDaysLeft(sub);
@@ -330,8 +341,21 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
         // (Server Actions cannot call auth.currentUser — it's always null server-side)
         const { getAuth } = await import('firebase/auth');
         const { firebaseApp } = await import('@mfo-crm/config');
-        const auth    = getAuth(firebaseApp);
-        const idToken = await auth.currentUser?.getIdToken();
+        const auth = getAuth(firebaseApp);
+
+        // Wait for auth state to be fully ready, then get a fresh token
+        const idToken = await new Promise<string | null>((resolve) => {
+          if (auth.currentUser) {
+            auth.currentUser.getIdToken(true).then(resolve).catch(() => resolve(null));
+          } else {
+            const unsub = auth.onAuthStateChanged(u => {
+              unsub();
+              if (u) u.getIdToken(true).then(resolve).catch(() => resolve(null));
+              else resolve(null);
+            });
+          }
+        });
+
         if (!idToken) {
           setMsg('❌ Session expired — please refresh the page and sign in again.');
           setAddingMember(false);
@@ -353,35 +377,34 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
           return;
         }
 
-        const uid         = createData.uid as string;
-        const isNew       = createData.isNew as boolean;
-        const tempPassword= createData.tempPassword as string | undefined;
-        const newProfile  = { uid, email: input, displayName, tenantIds: [] as string[] };
+        const uid          = createData.uid as string;
+        const isNew        = createData.isNew as boolean;
+        const tempPassword = createData.tempPassword as string | undefined;
+        const newProfile   = { uid, email: input, displayName, tenantIds: [] as string[] };
 
         // Write user profile to Firestore via client SDK
-        const { doc, setDoc, getFirestore } = await import('firebase/firestore');
-        const db = getFirestore(firebaseApp);
+        // IMPORTANT: use arrayUnion for tenantIds so we don't clobber any existing tenantIds
+        const { doc, setDoc, arrayUnion: au, getFirestore } = await import('firebase/firestore');
+        const _db = getFirestore(firebaseApp);
 
-        // Sanitise key — Firestore doc IDs can't contain "/"
-        const firestoreKey = uid.startsWith('pending_') ? uid : uid;
-
-        await setDoc(doc(db, 'users', firestoreKey), {
-          uid:         firestoreKey,
+        await setDoc(doc(_db, 'users', uid), {
+          uid:         uid,
           email:       input,
           displayName,
           role:        'report_viewer',
           mfaEnabled:  false,
           status:      'active',
           createdAt:   new Date().toISOString(),
-          tenantIds:   [],
+          // Use arrayUnion so we merge with any existing tenantIds — do NOT write []
+          tenantIds:   au(sub.tenantId),
           ...(uid.startsWith('pending_') ? { pendingActivation: true } : {}),
         }, { merge: true });
 
-        // Link user to tenant
+        // Link user to tenant (also updates tenantIds via arrayUnion in batch)
         await addMemberToTenant(
           sub.tenantId,
           sub.tenantName,
-          { ...newProfile, uid: firestoreKey },
+          { ...newProfile, uid },
           memberRole,
           performer,
         );
@@ -924,11 +947,35 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
         {/* ── AUDIT LOG ── */}
         {tab === 'events' && (
           <div>
-            <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 16 }}>📜 Tenant Audit Log</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ fontWeight: 800, fontSize: 15 }}>📜 Tenant Audit Log</div>
+              <button className="btn btn-ghost btn-sm" onClick={() => {
+                setAuditLoaded(false);
+                setAuditLogs([]);
+                // Re-trigger the eager effect by temporarily changing a dep — just refetch directly
+                (async () => {
+                  try {
+                    const { getFirestore, collection, query, where, getDocs } = await import('firebase/firestore');
+                    const { firebaseApp } = await import('@mfo-crm/config');
+                    const _db = getFirestore(firebaseApp);
+                    const q   = query(collection(_db, 'audit_logs'), where('tenantId', '==', sub.tenantId));
+                    const snap = await getDocs(q);
+                    const logs = snap.docs
+                      .map(d => ({ id: d.id, ...d.data() }))
+                      .sort((a: any, b: any) => (b.occurredAt ?? '').localeCompare(a.occurredAt ?? ''));
+                    setAuditLogs(logs);
+                  } catch (e) { console.error(e); }
+                  finally { setAuditLoaded(true); }
+                })();
+              }}>↻ Refresh</button>
+            </div>
             {!auditLoaded ? (
               <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-tertiary)' }}>⏳ Loading audit log…</div>
             ) : auditLogs.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-tertiary)' }}>No audit events recorded for this tenant yet.</div>
+              <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-tertiary)', border: '1px dashed var(--border)', borderRadius: 10 }}>
+                No audit events recorded for this tenant yet.
+                <div style={{ fontSize: 12, marginTop: 8, color: 'var(--text-tertiary)' }}>Events are logged when members are added, plans changed, and invoices generated.</div>
+              </div>
             ) : auditLogs.map((ev: any) => (
               <div key={ev.id} style={{ display: 'flex', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ flexShrink: 0, fontSize: 10, fontFamily: 'monospace', color: 'var(--text-tertiary)', paddingTop: 3, width: 145 }}>
