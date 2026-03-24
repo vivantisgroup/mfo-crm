@@ -11,7 +11,7 @@
     :root {
       --toolbar-h: 38px;
       --divider-w: 5px;
-      --panel-whatsapp-default: 420px;
+      --panel-whatsapp-default: 560px;
       --bg: #0f1117;
       --border: #1e2333;
       --brand: #6366f1;
@@ -97,8 +97,8 @@
     /* ── WhatsApp panel ──────────────────────────────────────────────── */
     #wa-panel {
       width: var(--panel-whatsapp-default);
-      min-width: 300px;
-      max-width: 800px;
+      min-width: 400px;
+      max-width: 900px;
       display: flex;
       flex-direction: column;
       border-left: 1px solid var(--border);
@@ -207,8 +207,11 @@
   const divider   = document.getElementById('divider');
   const STORAGE_KEY = 'mfo-wa-width';
 
-  // Restore saved WhatsApp width
-  const savedWaWidth = parseInt(localStorage.getItem(STORAGE_KEY) || '420', 10);
+  // Restore saved WhatsApp width — ignore any saved value below min
+  const MIN_WA_W = 400;
+  const DEFAULT_WA_W = 560;
+  const savedRaw = parseInt(localStorage.getItem(STORAGE_KEY) || '0', 10);
+  const savedWaWidth = savedRaw >= MIN_WA_W ? savedRaw : DEFAULT_WA_W;
   waPanel.style.width = savedWaWidth + 'px';
 
   // Drag-to-resize divider
@@ -233,6 +236,12 @@
     dragging = false;
     divider.classList.remove('dragging');
     localStorage.setItem(STORAGE_KEY, parseInt(waPanel.style.width, 10));
+  });
+
+  // Double-click divider → reset WhatsApp panel to default width
+  divider.addEventListener('dblclick', () => {
+    waPanel.style.width = DEFAULT_WA_W + 'px';
+    localStorage.setItem(STORAGE_KEY, DEFAULT_WA_W);
   });
 
   // ── Toolbar buttons ─────────────────────────────────────────────────────────
