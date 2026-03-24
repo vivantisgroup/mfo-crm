@@ -17,7 +17,7 @@ import {
 } from '@/lib/timezones';
 import { saveUserProfile, uploadAvatar } from '@/lib/userProfileService';
 import { MailIntegrationSection } from '@/components/MailIntegrationSection';
-import { getTenantsForUser, type TenantRecord } from '@/lib/platformService';
+import { getTenantsForUser, getUserProfile, type TenantRecord } from '@/lib/platformService';
 
 interface HeaderProps {
   title?: string;
@@ -550,15 +550,27 @@ function Toggle({ label, desc, defaultOn }: { label: string; desc: string; defau
 
 function TenantSwitcher() {
   const { userProfile, tenant, switchTenant } = useAuth();
-  const [tenants, setTenants] = useState<TenantRecord[]>([]);
-  const [open, setOpen] = useState(false);
+  const [tenants,  setTenants]  = useState<TenantRecord[]>([]);
+  const [loading,  setLoading]  = useState(false);
+  const [open,     setOpen]     = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Re-fetch fresh from Firestore every time the dropdown opens.
+  // We intentionally bypass the cached userProfile.tenantIds because it was
+  // set at login and may not reflect memberships added in the same session.
   useEffect(() => {
-    if (userProfile && open && tenants.length === 0) {
-      getTenantsForUser(userProfile).then(setTenants).catch(console.error);
-    }
-  }, [userProfile, open, tenants.length]);
+    if (!userProfile || !open) return;
+    setLoading(true);
+    // Re-read the user doc so we always have the latest tenantIds array
+    getUserProfile(userProfile.uid)
+      .then(freshProfile => {
+        const profile = freshProfile ?? userProfile;
+        return getTenantsForUser(profile);
+      })
+      .then(setTenants)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [userProfile, open]); // intentionally omit tenants — re-fetch on every open
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -602,9 +614,9 @@ function TenantSwitcher() {
           borderRadius: 'var(--radius-md)', padding: '6px', width: 220,
           boxShadow: 'var(--shadow-lg)', zIndex: 100,
         }}>
-          {tenants.length === 0 ? (
+          {loading ? (
             <div style={{ padding: '12px', fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'center' }}>
-              Loading...
+              ⏳ Loading workspaces…
             </div>
           ) : (
             tenants.map(t => (
