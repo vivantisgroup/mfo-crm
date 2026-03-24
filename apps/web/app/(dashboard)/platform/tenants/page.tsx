@@ -173,6 +173,19 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
   const [demoConfirmText, setDemoConfirmText] = useState('');
   const demoNameMatch = demoConfirmText.trim().toLowerCase() === sub.tenantName.trim().toLowerCase();
 
+  // Delete tab state (hoisted — hooks cannot live inside IIFEs)
+  const [delStep,       setDelStep]       = useState<1|2|3>(1);
+  const [delExported,   setDelExported]   = useState(false);
+  const [delAckChecked, setDelAckChecked] = useState(false);
+  const [delConfirmName,setDelConfirmName]= useState('');
+  const [deleting,      setDeleting]      = useState(false);
+  const [delError,      setDelError]      = useState('');
+  const delNameOk = delConfirmName.trim() === sub.tenantName.trim();
+
+  // Audit log state
+  const [auditLogs,     setAuditLogs]     = useState<any[]>([]);
+  const [auditLoaded,   setAuditLoaded]   = useState(false);
+
   useEffect(() => {
     if (tab === 'invoices') getInvoices(sub.tenantId).then(setInvoices);
     if (tab === 'events')   getSubscriptionEvents(sub.tenantId).then(setEvents);
@@ -186,7 +199,27 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
         setMembersLoaded(true);
       }).catch(() => {});
     }
-  }, [tab, sub.tenantId, membersLoaded]);
+    // Fetch audit_logs for this tenant from Firestore
+    if (tab === 'events' && !auditLoaded) {
+      (async () => {
+        try {
+          const { getFirestore, collection, query, where, orderBy, getDocs } = await import('firebase/firestore');
+          const { firebaseApp } = await import('@mfo-crm/config');
+          const db = getFirestore(firebaseApp);
+          const q  = query(
+            collection(db, 'audit_logs'),
+            where('tenantId', '==', sub.tenantId),
+            orderBy('occurredAt', 'desc'),
+          );
+          const snap = await getDocs(q);
+          setAuditLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+          setAuditLoaded(true);
+        } catch (e) {
+          console.error('[audit_logs]', e);
+        }
+      })();
+    }
+  }, [tab, sub.tenantId, membersLoaded, auditLoaded]);
 
   const plan = SUBSCRIPTION_PLANS[sub.planId];
   const daysLeft = trialDaysLeft(sub);
@@ -293,30 +326,44 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
         await addMemberToTenant(sub.tenantId, sub.tenantName, existingUser, memberRole, performer);
         setMsg(`✅ ${existingUser.displayName} (existing user) added to ${sub.tenantName}.`);
       } else {
-        // ── Case 2: new user — create via Firebase Auth REST API ─────────────
-        const { adminCreateFirebaseUser, adminGeneratePasswordResetLink } = await import('@/lib/usersAdmin');
-
-        const result = await adminCreateFirebaseUser(input, input.split('@')[0]);
-        if (!result.success || !result.userRecord) {
-          setMsg(`❌ Error creating user: ${result.error}`);
+        // ── Case 2: new user — get idToken client-side, call API route directly ──
+        // (Server Actions cannot call auth.currentUser — it's always null server-side)
+        const { getAuth } = await import('firebase/auth');
+        const { firebaseApp } = await import('@mfo-crm/config');
+        const auth    = getAuth(firebaseApp);
+        const idToken = await auth.currentUser?.getIdToken();
+        if (!idToken) {
+          setMsg('❌ Session expired — please refresh the page and sign in again.');
           setAddingMember(false);
           return;
         }
 
-        const uid         = result.userRecord.uid;
         const displayName = input.split('@')[0];
+
+        // Create Firebase Auth user via API route
+        const createRes = await fetch('/api/admin/users', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ idToken, email: input, displayName }),
+        });
+        const createData = await createRes.json();
+        if (!createRes.ok) {
+          setMsg(`❌ Error creating user: ${createData.error ?? 'Unknown error'}`);
+          setAddingMember(false);
+          return;
+        }
+
+        const uid         = createData.uid as string;
+        const isNew       = createData.isNew as boolean;
+        const tempPassword= createData.tempPassword as string | undefined;
         const newProfile  = { uid, email: input, displayName, tenantIds: [] as string[] };
 
         // Write user profile to Firestore via client SDK
-        // (uid may be "email:xxx" placeholder if Firebase Auth lookup wasn't possible)
         const { doc, setDoc, getFirestore } = await import('firebase/firestore');
-        const { firebaseApp } = await import('@mfo-crm/config');
         const db = getFirestore(firebaseApp);
 
-        // Use a sanitised key — Firestore doc IDs can't contain "/"
-        const firestoreKey = uid.startsWith('email:')
-          ? `pending_${input.replace(/[^a-z0-9]/g, '_')}`
-          : uid;
+        // Sanitise key — Firestore doc IDs can't contain "/"
+        const firestoreKey = uid.startsWith('pending_') ? uid : uid;
 
         await setDoc(doc(db, 'users', firestoreKey), {
           uid:         firestoreKey,
@@ -327,8 +374,7 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
           status:      'active',
           createdAt:   new Date().toISOString(),
           tenantIds:   [],
-          // Flag so ensureUserProfile can reconcile on first real login
-          ...(uid.startsWith('email:') ? { pendingActivation: true } : {}),
+          ...(uid.startsWith('pending_') ? { pendingActivation: true } : {}),
         }, { merge: true });
 
         // Link user to tenant
@@ -340,17 +386,22 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
           performer,
         );
 
-        // Send invite / password reset email
-        let successMsg = `✅ User ${input} ${result.isNew ? 'created' : 'found'} and added to ${sub.tenantName}.`;
+        // Send invite email if requested
+        let successMsg = `✅ User ${input} ${isNew ? 'created' : 'found'} and added to ${sub.tenantName}.`;
         if (sendInvite) {
-          const linkRes = await adminGeneratePasswordResetLink(input);
-          if (linkRes.success) {
+          const invRes = await fetch('/api/admin/users', {
+            method:  'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ idToken, email: input }),
+          });
+          const invData = await invRes.json();
+          if (invRes.ok) {
             successMsg += ' 📧 Password-reset invitation email sent.';
           } else {
-            successMsg += ` (Could not send invite email: ${linkRes.error ?? 'unknown error'})`;
+            successMsg += ` (Invite email failed: ${invData.error ?? 'unknown'})`;
           }
-        } else if (result.isNew && result.tempPassword) {
-          successMsg += ` Temp password: ${result.tempPassword}`;
+        } else if (isNew && tempPassword) {
+          successMsg += ` Temp password: ${tempPassword}`;
         }
 
         setMsg(successMsg);
@@ -873,18 +924,25 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
         {/* ── AUDIT LOG ── */}
         {tab === 'events' && (
           <div>
-            <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 16 }}>📜 Subscription Audit Log</div>
-            {events.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-tertiary)' }}>No events recorded</div>
-            ) : events.map(ev => (
+            <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 16 }}>📜 Tenant Audit Log</div>
+            {!auditLoaded ? (
+              <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-tertiary)' }}>⏳ Loading audit log…</div>
+            ) : auditLogs.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-tertiary)' }}>No audit events recorded for this tenant yet.</div>
+            ) : auditLogs.map((ev: any) => (
               <div key={ev.id} style={{ display: 'flex', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ flexShrink: 0, fontSize: 10, fontFamily: 'monospace', color: 'var(--text-tertiary)', paddingTop: 3, width: 145 }}>
                   {new Date(ev.occurredAt).toLocaleString()}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{ev.description}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>by {ev.userName} · {ev.type}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{ev.resourceName ?? ev.action}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>by {ev.userName} · {ev.action}</div>
                 </div>
+                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6,
+                  background: ev.status === 'success' ? '#22c55e15' : '#ef444415',
+                  color:      ev.status === 'success' ? '#22c55e'   : '#ef4444' }}>
+                  {ev.status}
+                </span>
               </div>
             ))}
           </div>
@@ -892,13 +950,12 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
 
         {/* ── DELETE TENANT ── */}
         {tab === 'delete' && (() => {
-          const [step, setStep]             = React.useState<1|2|3>(1);
-          const [exported, setExported]     = React.useState(false);
-          const [ackChecked, setAckChecked] = React.useState(false);
-          const [confirmName, setConfirmName] = React.useState('');
-          const [deleting, setDeleting]     = React.useState(false);
-          const [delError, setDelError]     = React.useState('');
-          const nameOk = confirmName.trim() === sub.tenantName.trim();
+          // State hoisted to parent — only scoped fns live here
+          const step        = delStep;
+          const exported    = delExported;
+          const ackChecked  = delAckChecked;
+          const confirmName = delConfirmName;
+          const nameOk      = delNameOk;
 
           function handleExport() {
             const payload = {
@@ -928,7 +985,7 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
             a.download = `tenant-export-${sub.tenantId}-${new Date().toISOString().slice(0,10)}.json`;
             a.click();
             URL.revokeObjectURL(url);
-            setExported(true);
+            setDelExported(true);
           }
 
           async function handleDelete() {
@@ -940,7 +997,7 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
               onClose();
             } catch (e: any) {
               setDelError(e.message ?? 'Deletion failed. Please try again.');
-              setDeleting(false);
+              setDeleting(false); // don't set to false on success (already closed)
             }
           }
 
@@ -995,7 +1052,7 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
                   <button
                     className="btn btn-sm"
                     style={{ alignSelf: 'flex-end', borderColor: '#ef4444', color: '#ef4444', background: 'none', border: '1px solid #ef444466' }}
-                    onClick={() => setStep(2)}
+                    onClick={() => setDelStep(2)}
                   >
                     {exported ? 'Continue to Confirmation →' : 'Skip export and continue →'}
                   </button>
@@ -1013,7 +1070,7 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
                       <input
                         type="checkbox"
                         checked={ackChecked}
-                        onChange={e => setAckChecked(e.target.checked)}
+                        onChange={e => setDelAckChecked(e.target.checked)}
                         style={{ width: 18, height: 18, marginTop: 2, accentColor: '#ef4444', flexShrink: 0 }}
                       />
                       <span style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text-secondary)' }}>
@@ -1024,12 +1081,12 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
                     </label>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <button className="btn btn-ghost btn-sm" onClick={() => setStep(1)}>← Back</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setDelStep(1)}>← Back</button>
                     <button
                       className="btn btn-sm"
                       style={{ borderColor: '#ef4444', color: ackChecked ? '#fff' : '#ef444488', background: ackChecked ? '#ef4444' : 'none', border: `1px solid ${ackChecked ? '#ef4444' : '#ef444433'}`, cursor: ackChecked ? 'pointer' : 'not-allowed' }}
                       disabled={!ackChecked}
-                      onClick={() => setStep(3)}
+                      onClick={() => setDelStep(3)}
                     >
                       I Understand — Continue →
                     </button>
@@ -1055,7 +1112,7 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
                       autoFocus
                       placeholder={`Type "${sub.tenantName}" to confirm…`}
                       value={confirmName}
-                      onChange={e => setConfirmName(e.target.value)}
+                      onChange={e => setDelConfirmName(e.target.value)}
                       style={{ width: '100%', borderColor: nameOk ? '#ef4444' : confirmName ? '#ef444466' : undefined }}
                     />
                     {confirmName && !nameOk && (
@@ -1068,7 +1125,7 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
                     )}
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <button className="btn btn-ghost btn-sm" onClick={() => setStep(2)} disabled={deleting}>← Back</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setDelStep(2)} disabled={deleting}>← Back</button>
                     <button
                       onClick={handleDelete}
                       disabled={!nameOk || deleting}
