@@ -5,10 +5,12 @@
   "engines": { "node": ">=20" },
   "workspaces": ["apps/*", "packages/*", "functions", "run-jobs"],
   "scripts": {
-    "dev":           "pnpm -C apps/web dev",
-    "build":         "pnpm --filter @mfo-crm/web build",
-    "deploy:rules":  "firebase deploy --only firestore:rules,storage",
-    "deploy:all":    "pnpm deploy:rules"
+    "dev":            "pnpm -C apps/web dev",
+    "build":          "pnpm --filter @mfo-crm/web build",
+    "desktop":        "pnpm -C apps/desktop start",
+    "desktop:build":  "pnpm -C apps/desktop build:win",
+    "deploy:rules":   "firebase deploy --only firestore:rules,storage",
+    "deploy:all":     "pnpm deploy:rules"
   },
   "pnpm": {
     "overrides": {

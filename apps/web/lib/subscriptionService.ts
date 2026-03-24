@@ -355,8 +355,16 @@ export async function getAllSubscriptions(): Promise<TenantSubscription[]> {
   return snap.docs.map(d => d.data() as TenantSubscription);
 }
 
+/** Strip keys whose value is undefined — Firestore rejects them */
+function stripUndefined<T extends object>(obj: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => v !== undefined)
+  ) as Partial<T>;
+}
+
 export async function upsertSubscription(sub: TenantSubscription): Promise<void> {
-  await setDoc(doc(db, 'subscriptions', sub.tenantId), { ...sub, updatedAt: new Date().toISOString() });
+  const payload = stripUndefined({ ...sub, updatedAt: new Date().toISOString() });
+  await setDoc(doc(db, 'subscriptions', sub.tenantId), payload);
 }
 
 export async function extendTrial(
