@@ -193,7 +193,7 @@
       id="wa-webview"
       src="https://web.whatsapp.com"
       allowpopups
-      useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+      partition="persist:whatsapp"
     ></webview>
   </div>
 
@@ -256,6 +256,28 @@
   crmWebview.addEventListener('did-finish-load', () => {
     crmLoading.classList.add('hidden');
     setTimeout(() => crmLoading.remove(), 600);
+  });
+
+  // ── WhatsApp: hide "Get WhatsApp for Windows" download banner ────────────────
+  // WhatsApp injects this when it detects a non-standard browser. We inject CSS
+  // to hide it, giving a full-screen experience like a real browser.
+  waWebview.addEventListener('did-finish-load', () => {
+    waWebview.insertCSS(`
+      /* Hide the "Get WhatsApp for Windows" app-download banner */
+      [data-testid="app-download-banner"],
+      [data-testid="intro-md-beta-logo-dark"],
+      ._ajv6, ._akau, ._akaw,
+      div[class*="_app-download"],
+      div[class*="download-app"],
+      div[class*="get-app"],
+      div[class*="app-badge"],
+      a[href*="whatsapp.com/dl"],
+      a[href*="whatsapp.com/android"],
+      a[href*="whatsapp.com/iphone"],
+      footer[class*="download"] {
+        display: none !important;
+      }
+    `).catch(() => {});
   });
 
   // ── Keyboard shortcuts ──────────────────────────────────────────────────────
