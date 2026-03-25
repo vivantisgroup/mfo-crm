@@ -4,8 +4,12 @@
  * Creates the browser window and loads the CRM web app.
  */
 
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, session } = require('electron');
 const path = require('path');
+
+// Spoof a standard Chrome user-agent so webviews aren't blocked by sites
+// that detect Electron's default UA (e.g. WhatsApp Web, some SSO providers)
+const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 // Enforce single instance — focus existing window if already running
 const gotLock = app.requestSingleInstanceLock();
@@ -26,6 +30,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration:  false,
       contextIsolation: true,
+      webviewTag:       true,   // required for <webview> in index.html
       preload: path.join(__dirname, 'preload.js'),
     },
   });
@@ -34,6 +39,13 @@ function createWindow() {
   win.setMenuBarVisibility(false);
 
   win.loadFile(path.join(__dirname, 'index.html'));
+
+  // Apply spoofed UA to every request in the default session
+  // (covers both the BrowserWindow and any <webview> spawned inside it)
+  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    details.requestHeaders['User-Agent'] = CHROME_UA;
+    callback({ requestHeaders: details.requestHeaders });
+  });
 
   // Open external links in the system browser
   win.webContents.setWindowOpenHandler(({ url }) => {
