@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type FontFamily = 'Inter' | 'Outfit' | 'DM Sans' | 'Nunito' | 'Lato' | 'Roboto' | 'Geist';
+export type FontFamily = 'Inter' | 'IBM Plex Sans' | 'Geist' | 'Roboto' | 'Public Sans' | 'Playfair Display' | 'Outfit' | 'DM Sans' | 'Nunito' | 'Lato';
 
 export interface TenantBranding {
   firmName: string;
@@ -332,14 +332,18 @@ export const PRESET_THEMES: Theme[] = [
   },
 ];
 
-export const FONTS: { id: FontFamily; label: string; stack: string }[] = [
-  { id: 'Inter',   label: 'Inter',    stack: "'Inter', system-ui, sans-serif" },
-  { id: 'Outfit',  label: 'Outfit',   stack: "'Outfit', system-ui, sans-serif" },
-  { id: 'DM Sans', label: 'DM Sans',  stack: "'DM Sans', system-ui, sans-serif" },
-  { id: 'Nunito',  label: 'Nunito',   stack: "'Nunito', system-ui, sans-serif" },
-  { id: 'Lato',    label: 'Lato',     stack: "'Lato', system-ui, sans-serif" },
-  { id: 'Roboto',  label: 'Roboto',   stack: "'Roboto', system-ui, sans-serif" },
-  { id: 'Geist',   label: 'Geist',    stack: "'Geist', 'Geist Sans', system-ui, sans-serif" },
+export const FONTS: { id: FontFamily; label: string; stack: string; description: string }[] = [
+  { id: 'Inter',          label: 'Inter',          description: 'Clean',        stack: "'Inter', system-ui, sans-serif" },
+  { id: 'IBM Plex Sans',  label: 'IBM Plex Sans',  description: 'Technical',    stack: "'IBM Plex Sans', system-ui, sans-serif" },
+  { id: 'Geist',          label: 'Geist',          description: 'Sleek',        stack: "'Geist', 'Geist Sans', system-ui, sans-serif" },
+  { id: 'Roboto',         label: 'Roboto',         description: 'Standard',     stack: "'Roboto', system-ui, sans-serif" },
+  { id: 'Public Sans',    label: 'Public Sans',    description: 'Institutional', stack: "'Public Sans', system-ui, sans-serif" },
+  { id: 'Playfair Display', label: 'Playfair Display', description: 'Editorial', stack: "'Playfair Display', Georgia, serif" },
+  // Legacy options
+  { id: 'Outfit',         label: 'Outfit',         description: 'Modern',       stack: "'Outfit', system-ui, sans-serif" },
+  { id: 'DM Sans',        label: 'DM Sans',        description: 'Rounded',      stack: "'DM Sans', system-ui, sans-serif" },
+  { id: 'Nunito',         label: 'Nunito',         description: 'Friendly',     stack: "'Nunito', system-ui, sans-serif" },
+  { id: 'Lato',           label: 'Lato',           description: 'Classic',      stack: "'Lato', system-ui, sans-serif" },
 ];
 
 // ─── Context ──────────────────────────────────────────────────────────────────

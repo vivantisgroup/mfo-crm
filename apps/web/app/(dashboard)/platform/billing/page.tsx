@@ -376,12 +376,11 @@ export default function BillingPage() {
 
   return (
     <div className="animate-fade-in" style={{ maxWidth: 1400, margin: '0 auto' }}>
-      {/* MRR summary strip */}
-      <div style={{ marginBottom: 24, padding: '16px 20px', background: 'var(--bg-elevated)', borderRadius: 12, border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Subscription revenue, invoicing, plan management, and financial analytics.</div>
+      {/* MRR summary strip — compact */}
+      <div style={{ marginBottom: 20, padding: '12px 18px', background: 'var(--bg-elevated)', borderRadius: 10, border: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 16 }}>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 24, fontWeight: 900, color: '#22c55e' }}>{fmt(totalMRR)}<span style={{ fontSize: 13, color: 'var(--text-tertiary)', fontWeight: 400 }}>/mo MRR</span></div>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{fmt(totalMRR * 12)} ARR</div>
+          <div style={{ fontSize: 22, fontWeight: 900, color: '#22c55e', lineHeight: 1 }}>{fmt(totalMRR)}<span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 400 }}>/mo MRR</span></div>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{fmt(totalMRR * 12)} ARR</div>
         </div>
       </div>
 

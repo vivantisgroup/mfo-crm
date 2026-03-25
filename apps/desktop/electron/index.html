@@ -3,15 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';" />
+        content="default-src 'self' https://mfo-crm-web.vercel.app https://*.firebaseapp.com https://*.googleapis.com; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;" />
   <title>MFO Nexus</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     :root {
       --toolbar-h: 38px;
-      --divider-w: 5px;
-      --panel-whatsapp-default: 560px;
       --bg: #0f1117;
       --border: #1e2333;
       --brand: #6366f1;
@@ -36,7 +34,7 @@
       align-items: center;
       gap: 12px;
       padding: 0 14px;
-      -webkit-app-region: drag;   /* draggable title bar area */
+      -webkit-app-region: drag;
       user-select: none;
     }
 
@@ -65,63 +63,19 @@
       border-color: var(--brand);
       color: var(--text);
     }
-    #toolbar button.active {
-      border-color: var(--brand);
-      background: #6366f115;
-      color: var(--brand);
-    }
 
-    /* ── Panel container ─────────────────────────────────────────────── */
-    #panels {
-      display: flex;
-      height: calc(100vh - var(--toolbar-h));
-      overflow: hidden;
-    }
-
-    /* ── CRM webview ─────────────────────────────────────────────────── */
-    #crm-panel { flex: 1; min-width: 400px; position: relative; }
-    #crm-webview { width: 100%; height: 100%; }
-
-    /* ── Resizable divider ───────────────────────────────────────────── */
-    #divider {
-      width: var(--divider-w);
-      background: var(--border);
-      cursor: col-resize;
-      flex-shrink: 0;
-      transition: background 0.15s;
+    /* ── CRM Panel ───────────────────────────────────────────────────── */
+    #crm-panel {
       position: relative;
-      z-index: 10;
-    }
-    #divider:hover, #divider.dragging { background: var(--brand); }
-
-    /* ── WhatsApp panel ──────────────────────────────────────────────── */
-    #wa-panel {
-      width: var(--panel-whatsapp-default);
-      min-width: 400px;
-      max-width: 900px;
-      display: flex;
-      flex-direction: column;
-      border-left: 1px solid var(--border);
-      flex-shrink: 0;
-    }
-    #wa-panel.hidden { display: none; }
-
-    #wa-label {
-      height: 28px;
-      background: #080b12;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      padding: 0 12px;
-      font-size: 11px;
-      font-weight: 700;
-      color: #25d366;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      gap: 6px;
+      width: 100%;
+      height: calc(100vh - var(--toolbar-h));
     }
 
-    #wa-webview { flex: 1; width: 100%; }
+    #crm-webview {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
 
     /* ── Loading overlay ─────────────────────────────────────────────── */
     .loading-overlay {
@@ -137,8 +91,9 @@
       color: var(--text-dim);
       pointer-events: none;
       transition: opacity 0.5s;
+      z-index: 10;
     }
-    .loading-overlay.hidden { opacity: 0; }
+    .loading-overlay.hidden { opacity: 0; pointer-events: none; }
     .spinner {
       width: 32px; height: 32px;
       border: 3px solid var(--border);
@@ -155,160 +110,40 @@
 <div id="toolbar">
   <div class="logo">⬡ MFO Nexus</div>
   <div class="spacer"></div>
-  <button id="btn-reload-crm" title="Reload CRM (Ctrl+R)">↺ CRM</button>
-  <button id="btn-toggle-wa" class="active" title="Toggle WhatsApp panel (Ctrl+W)">
-    💬 WhatsApp
-  </button>
-  <button id="btn-reload-wa" title="Reload WhatsApp">↺ WA</button>
+  <button id="btn-reload-crm" title="Reload (Ctrl+R)">↺ Reload</button>
 </div>
 
-<!-- ── Panels ──────────────────────────────────────────────────────────────── -->
-<div id="panels">
-
-  <!-- CRM -->
-  <div id="crm-panel">
-    <div class="loading-overlay" id="crm-loading">
-      <div class="spinner"></div>
-      <span>Loading MFO Nexus…</span>
-    </div>
-    <webview
-      id="crm-webview"
-      src="https://mfo-crm-web.vercel.app"
-      allowpopups
-    ></webview>
+<!-- ── CRM Panel ──────────────────────────────────────────────────────────── -->
+<div id="crm-panel">
+  <div class="loading-overlay" id="crm-loading">
+    <div class="spinner"></div>
+    <span>Loading MFO Nexus…</span>
   </div>
-
-  <!-- Drag divider -->
-  <div id="divider"></div>
-
-  <!-- WhatsApp -->
-  <div id="wa-panel">
-    <div id="wa-label">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="#25d366">
-        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347"/>
-      </svg>
-      WhatsApp Web
-    </div>
-    <webview
-      id="wa-webview"
-      src="https://web.whatsapp.com"
-      allowpopups
-      partition="persist:whatsapp"
-    ></webview>
-  </div>
-
+  <webview
+    id="crm-webview"
+    src="https://mfo-crm-web.vercel.app"
+    allowpopups
+  ></webview>
 </div>
 
 <script>
-  // ── Panel sizing ────────────────────────────────────────────────────────────
-  const panels    = document.getElementById('panels');
-  const crmPanel  = document.getElementById('crm-panel');
-  const waPanel   = document.getElementById('wa-panel');
-  const divider   = document.getElementById('divider');
-  const STORAGE_KEY = 'mfo-wa-width';
-
-  // Restore saved WhatsApp width — ignore any saved value below min
-  const MIN_WA_W = 400;
-  const DEFAULT_WA_W = 560;
-  const savedRaw = parseInt(localStorage.getItem(STORAGE_KEY) || '0', 10);
-  const savedWaWidth = savedRaw >= MIN_WA_W ? savedRaw : DEFAULT_WA_W;
-  waPanel.style.width = savedWaWidth + 'px';
-
-  // Drag-to-resize divider
-  let dragging = false;
-  divider.addEventListener('mousedown', e => {
-    dragging = true;
-    divider.classList.add('dragging');
-    e.preventDefault();
-  });
-  document.addEventListener('mousemove', e => {
-    if (!dragging) return;
-    const totalW    = panels.offsetWidth;
-    const dividerW  = divider.offsetWidth;
-    const minCrm    = 400;
-    const minWa     = 300;
-    // Distance from the right edge
-    const newWaW = Math.max(minWa, Math.min(totalW - minCrm - dividerW, totalW - e.clientX));
-    waPanel.style.width = newWaW + 'px';
-  });
-  document.addEventListener('mouseup', () => {
-    if (!dragging) return;
-    dragging = false;
-    divider.classList.remove('dragging');
-    localStorage.setItem(STORAGE_KEY, parseInt(waPanel.style.width, 10));
-  });
-
-  // Double-click divider → reset WhatsApp panel to default width
-  divider.addEventListener('dblclick', () => {
-    waPanel.style.width = DEFAULT_WA_W + 'px';
-    localStorage.setItem(STORAGE_KEY, DEFAULT_WA_W);
-  });
-
-  // ── Toolbar buttons ─────────────────────────────────────────────────────────
   const crmWebview = document.getElementById('crm-webview');
-  const waWebview  = document.getElementById('wa-webview');
-  const btnToggle  = document.getElementById('btn-toggle-wa');
+  const crmLoading = document.getElementById('crm-loading');
 
   document.getElementById('btn-reload-crm').addEventListener('click', () => crmWebview.reload());
-  document.getElementById('btn-reload-wa').addEventListener('click',  () => waWebview.reload());
 
-  let waVisible = true;
-  btnToggle.addEventListener('click', () => {
-    waVisible = !waVisible;
-    waPanel.classList.toggle('hidden', !waVisible);
-    divider.style.display = waVisible ? '' : 'none';
-    btnToggle.classList.toggle('active', waVisible);
-  });
-
-  // ── Loading overlay ─────────────────────────────────────────────────────────
-  const crmLoading = document.getElementById('crm-loading');
   crmWebview.addEventListener('did-finish-load', () => {
     crmLoading.classList.add('hidden');
     setTimeout(() => crmLoading.remove(), 600);
   });
 
-  // ── WhatsApp: hide "Get WhatsApp for Windows" download banner ────────────────
-  // WhatsApp injects this when it detects a non-standard browser. We inject CSS
-  // to hide it, giving a full-screen experience like a real browser.
-  waWebview.addEventListener('did-finish-load', () => {
-    waWebview.insertCSS(`
-      /* Hide the "Get WhatsApp for Windows" app-download banner */
-      [data-testid="app-download-banner"],
-      [data-testid="intro-md-beta-logo-dark"],
-      ._ajv6, ._akau, ._akaw,
-      div[class*="_app-download"],
-      div[class*="download-app"],
-      div[class*="get-app"],
-      div[class*="app-badge"],
-      a[href*="whatsapp.com/dl"],
-      a[href*="whatsapp.com/android"],
-      a[href*="whatsapp.com/iphone"],
-      footer[class*="download"] {
-        display: none !important;
-      }
-    `).catch(() => {});
-  });
-
-  // ── Keyboard shortcuts ──────────────────────────────────────────────────────
+  // Keyboard shortcut: Ctrl+R → reload CRM
   document.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
-      e.preventDefault(); crmWebview.reload();
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
-      e.preventDefault(); btnToggle.click();
-    }
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'R') {
-      e.preventDefault(); waWebview.reload();
+      e.preventDefault();
+      crmWebview.reload();
     }
   });
-
-  // ── IPC: navigate WhatsApp to a phone number (called from CRM via preload) ──
-  if (window.electronAPI) {
-    window.electronAPI.onNavigateWhatsApp(url => {
-      waWebview.src = url;
-      if (!waVisible) btnToggle.click(); // auto-show WhatsApp panel
-    });
-  }
 </script>
 
 </body>

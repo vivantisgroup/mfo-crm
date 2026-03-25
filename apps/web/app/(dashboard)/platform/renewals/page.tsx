@@ -504,32 +504,21 @@ export default function RenewalsPage() {
   return (
     <div className="animate-fade-in" style={{ maxWidth: 1400, margin: '0 auto' }}>
 
-      {/* Page header strip */}
-      <div style={{
-        marginBottom: 24, padding: '16px 22px',
-        background: 'var(--bg-elevated)', borderRadius: 14, border: '1px solid var(--border)',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16,
-      }}>
-        <div>
-          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-            Track, manage, and close subscription renewals. Linked opportunities are auto-created in the CRM pipeline.
+      {/* Compact action bar — KPIs + CTA */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 24, marginBottom: 16 }}>
+        {[
+          { label: 'MRR at stake', value: fmt(activeMrr),  color: '#22c55e' },
+          { label: 'Due ≤ 30d',    value: dueSoon,          color: '#f59e0b' },
+          { label: 'High risk',    value: highRiskCount,    color: '#ef4444' },
+        ].map(k => (
+          <div key={k.label} style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 18, fontWeight: 900, color: k.color, lineHeight: 1 }}>{k.value}</div>
+            <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }}>{k.label}</div>
           </div>
-        </div>
-        <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
-          {[
-            { label: 'MRR at stake', value: fmt(activeMrr),  color: '#22c55e' },
-            { label: 'Due ≤ 30d',    value: dueSoon,          color: '#f59e0b' },
-            { label: 'High risk',    value: highRiskCount,    color: '#ef4444' },
-          ].map(k => (
-            <div key={k.label} style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 20, fontWeight: 900, color: k.color }}>{k.value}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{k.label}</div>
-            </div>
-          ))}
-          <button className="btn btn-primary btn-sm" style={{ fontSize: 13, marginLeft: 8 }}>
-            + New Renewal
-          </button>
-        </div>
+        ))}
+        <button className="btn btn-primary btn-sm" style={{ fontSize: 13 }}>
+          + New Renewal
+        </button>
       </div>
 
       {/* Tabs */}
