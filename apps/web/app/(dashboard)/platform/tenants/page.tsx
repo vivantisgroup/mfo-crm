@@ -1407,7 +1407,7 @@ function NewSubscriptionModal({ onClose, onCreated, performer }: {
 type MainTab = 'tenants' | 'invoices' | 'plans' | 'events';
 
 export default function TenantManagementPage() {
-  const { user } = useAuth();
+  const { user, isSaasMasterAdmin } = useAuth();
   usePageTitle('Tenant Management');
   const performer = { uid: user?.uid ?? 'unknown', name: user?.name ?? 'Admin' };
   const searchParams = useSearchParams();
@@ -1425,12 +1425,48 @@ export default function TenantManagementPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, inv] = await Promise.all([getAllSubscriptions(), getAllInvoices()]);
+      let [s, inv] = await Promise.all([getAllSubscriptions(), getAllInvoices()]);
+
+      // Inject the master/internal tenant for SaaS Master Admins
+      // It lives in tenants/master but has no subscription record.
+      if (isSaasMasterAdmin && !s.find(x => x.tenantId === 'master')) {
+        const { getTenant } = await import('@/lib/platformService');
+        const masterTenant = await getTenant('master');
+        if (masterTenant) {
+          const masterSub: TenantSubscription = {
+            tenantId:           'master',
+            tenantName:         masterTenant.name + ' [Platform HQ]',
+            contactName:        'SaaS Master Admin',
+            contactEmail:       user?.email ?? '',
+            planId:             'enterprise',
+            billingCycle:       'annual',
+            status:             'active',
+            licensedSeats:      999,
+            activeUsers:        0,
+            currentAumUsd:      0,
+            currency:           'USD',
+            subscriptionStart:  masterTenant.createdAt,
+            currentPeriodStart: masterTenant.createdAt,
+            currentPeriodEnd:   '2099-12-31',
+            nextInvoiceDate:    'N/A',
+            trialEndsAt:        undefined,
+            customBasePrice:    undefined,
+            isDemoTenant:       false,
+            autoRenew:          false,
+            notes:              'Internal platform tenant — not billed',
+            createdAt:          masterTenant.createdAt,
+            createdBy:          masterTenant.createdBy,
+            updatedAt:          masterTenant.createdAt,
+          };
+          s = [masterSub, ...s];
+        }
+      }
+
       setSubs(s);
       setAllInvoices(inv);
     } catch {}
     finally { setLoading(false); }
-  }, []);
+  }, [isSaasMasterAdmin, user?.email]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {

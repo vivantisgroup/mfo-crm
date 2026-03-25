@@ -14,7 +14,7 @@ export const pt: Record<TranslationKey, string> = {
   'nav.concierge': 'Concierge',
   'nav.reports': 'Relatórios',
   'nav.admin': 'Administração',
-  'nav.billing': 'Receita',
+  'nav.billing': 'Receitas',
   'nav.crm': 'CRM',
   'nav.support': 'Suporte',
   'nav.audit': 'Compliance',
