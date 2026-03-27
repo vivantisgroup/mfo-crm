@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <!-- CSP for the Electron shell page only — NOT applied to webview content -->
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self' https://mfo-crm-web.vercel.app https://*.firebaseapp.com https://*.googleapis.com; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;" />
+        content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;" />
   <title>MFO Nexus</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -130,18 +131,50 @@
   const crmWebview = document.getElementById('crm-webview');
   const crmLoading = document.getElementById('crm-loading');
 
-  document.getElementById('btn-reload-crm').addEventListener('click', () => crmWebview.reload());
-
-  crmWebview.addEventListener('did-finish-load', () => {
+  function hideSpinner() {
+    if (!crmLoading) return;
     crmLoading.classList.add('hidden');
-    setTimeout(() => crmLoading.remove(), 600);
+    setTimeout(() => crmLoading && crmLoading.remove(), 600);
+  }
+
+  function showError(msg) {
+    if (!crmLoading) return;
+    crmLoading.innerHTML = `
+      <div style="text-align:center;padding:40px 24px;max-width:420px">
+        <div style="font-size:32px;margin-bottom:16px">⚠️</div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:8px;color:#f87171">Could not load MFO Nexus</div>
+        <div style="font-size:13px;color:#94a3b8;margin-bottom:24px;line-height:1.6">${msg}</div>
+        <button onclick="location.reload()" style="background:#6366f1;color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:13px;font-weight:700;cursor:pointer">↺ Retry</button>
+      </div>`;
+  }
+
+  // Hide spinner once the page finishes loading
+  crmWebview.addEventListener('did-finish-load', hideSpinner);
+
+  // Hide spinner (with error UI) if the page fails to load
+  crmWebview.addEventListener('did-fail-load', (e) => {
+    // Error code -3 is just an aborted navigation (e.g. redirect) — ignore it
+    if (e.errorCode === -3) return;
+    showError(`Network error ${e.errorCode}: ${e.errorDescription}<br><br>Make sure you are connected to the internet.`);
+  });
+
+  // Safety net: if neither event fires within 20s, hide the spinner anyway
+  const safetyTimer = setTimeout(hideSpinner, 20000);
+  crmWebview.addEventListener('did-finish-load', () => clearTimeout(safetyTimer));
+  crmWebview.addEventListener('did-fail-load',   () => clearTimeout(safetyTimer));
+
+  // Reload button
+  document.getElementById('btn-reload-crm').addEventListener('click', () => {
+    crmLoading.innerHTML = `<div class="spinner"></div><span>Loading MFO Nexus…</span>`;
+    crmLoading.classList.remove('hidden');
+    crmWebview.reload();
   });
 
   // Keyboard shortcut: Ctrl+R → reload CRM
   document.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
       e.preventDefault();
-      crmWebview.reload();
+      document.getElementById('btn-reload-crm').click();
     }
   });
 </script>

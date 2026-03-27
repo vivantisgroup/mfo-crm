@@ -6,6 +6,7 @@ import { getAllUsers, updateUserProfile, type UserProfile, type PlatformRole } f
 import { getTenantMembers, addMemberToTenant, addPlaceholderMember, removeMemberFromTenant, updateMemberRole, setMemberStatus, createInvitation, getInvitationsForTenant, revokeInvitation, ROLE_LABELS, ROLE_DESCRIPTIONS, TENANT_ROLES, type TenantMember, type TenantInvitation } from '@/lib/tenantMemberService';
 import { getTenantGroups, getGroup, createGroup, updateGroup, deleteGroup, getGroupMembers, addMemberToGroup, removeMemberFromGroup, getGroupsForUser, type TenantGroup, type GroupMember } from '@/lib/groupService';
 import { ROLE_PERMISSIONS, PERMISSION_META, PERMISSION_MODULES, permissionsByModule, effectivePermissions, setUserPermissionOverride, getUserPermissionOverride, type Permission, type AuthzContext } from '@/lib/rbacService';
+import { ConfirmDialog, type ConfirmOptions } from '@/components/ConfirmDialog';
 
 // ─── Shared UI ────────────────────────────────────────────────────────────────
 
@@ -335,7 +336,7 @@ type Tab = 'members' | 'groups' | 'invitations' | 'permissions';
 
 export default function TenantUsersPage() {
   const { user: me, tenant } = useAuth();
-  const tenantId  = tenant?.id ?? '';
+  const tenantId   = tenant?.id ?? '';
   const tenantName = tenant?.name ?? '';
   const performer  = { uid: me?.uid ?? '', name: me?.name ?? 'Admin' };
 
@@ -347,7 +348,17 @@ export default function TenantUsersPage() {
   const [loading,     setLoading]     = useState(true);
   const [search,      setSearch]      = useState('');
   const [roleF,       setRoleF]       = useState<PlatformRole | 'all'>('all');
+  const [statusF,     setStatusF]     = useState<'all' | 'active' | 'suspended' | 'invited'>('all');
+  const [joinedF,     setJoinedF]     = useState<'all' | '7d' | '30d' | '90d'>('all');
+  const [sortF,       setSortF]       = useState<'az' | 'za' | 'newest' | 'oldest'>('az');
+  const [showAdv,     setShowAdv]     = useState(false);
   const [msg,         setMsg]         = useState('');
+
+  // Read ?role= URL param on mount (set by Roles page click-through)
+  useEffect(() => {
+    const param = new URLSearchParams(window.location.search).get('role');
+    if (param) { setRoleF(param as PlatformRole); setShowAdv(true); }
+  }, []);
 
   const [selectedMember,  setSelectedMember]  = useState<TenantMember | null>(null);
   const [selectedGroup,   setSelectedGroup]   = useState<TenantGroup | null>(null);
@@ -356,6 +367,7 @@ export default function TenantUsersPage() {
   const [memberInput,     setMemberInput]     = useState('');
   const [memberRole,      setMemberRole]      = useState<PlatformRole>('report_viewer');
   const [sendInvite,      setSendInvite]      = useState(true);
+  const [confirmOpts,     setConfirmOpts]     = useState<ConfirmOptions | null>(null);
 
   const load = useCallback(async () => {
     if (!tenantId) return;
@@ -374,12 +386,22 @@ export default function TenantUsersPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const filteredMembers = useMemo(() => members.filter(m => {
-    const q = search.toLowerCase();
-    if (q && !`${m.displayName} ${m.email}`.toLowerCase().includes(q)) return false;
-    if (roleF !== 'all' && m.role !== roleF) return false;
-    return true;
-  }), [members, search, roleF]);
+  const filteredMembers = useMemo(() => {
+    const cutoff = joinedF === 'all' ? null : new Date(Date.now() - { '7d': 7, '30d': 30, '90d': 90 }[joinedF]! * 86400000);
+    let list = members.filter(m => {
+      const q = search.toLowerCase();
+      if (q && !`${m.displayName} ${m.email}`.toLowerCase().includes(q)) return false;
+      if (roleF !== 'all' && m.role !== roleF) return false;
+      if (statusF !== 'all' && m.status !== statusF) return false;
+      if (cutoff && new Date(m.joinedAt) < cutoff) return false;
+      return true;
+    });
+    if (sortF === 'az')     list = [...list].sort((a, b) => a.displayName.localeCompare(b.displayName));
+    if (sortF === 'za')     list = [...list].sort((a, b) => b.displayName.localeCompare(a.displayName));
+    if (sortF === 'newest') list = [...list].sort((a, b) => new Date(b.joinedAt).getTime() - new Date(a.joinedAt).getTime());
+    if (sortF === 'oldest') list = [...list].sort((a, b) => new Date(a.joinedAt).getTime() - new Date(b.joinedAt).getTime());
+    return list;
+  }, [members, search, roleF, statusF, joinedF, sortF]);
 
   const nonMembers = allUsers.filter(u => !members.find(m => m.uid === u.uid));
   const filteredAdd = nonMembers.filter(u => !memberInput || u.displayName?.toLowerCase().includes(memberInput.toLowerCase()) || u.email?.toLowerCase().includes(memberInput.toLowerCase()));
@@ -411,7 +433,7 @@ export default function TenantUsersPage() {
         await addMemberToTenant(tenantId, tenantName, existingUser, memberRole, performer);
         setMsg(`✅ Existing user ${existingUser.displayName} added to tenant.`);
       } else {
-        // Get caller's idToken on the CLIENT (where currentUser is defined)
+        // New user — create via Admin SDK
         const idToken = await getClientIdToken();
         if (!idToken) {
           setMsg('❌ Not authenticated — please refresh the page and try again.');
@@ -419,8 +441,7 @@ export default function TenantUsersPage() {
           return;
         }
 
-        const { adminCreateFirebaseUser, adminGeneratePasswordResetLink } = await import('@/lib/usersAdmin');
-
+        const { adminCreateFirebaseUser } = await import('@/lib/usersAdmin');
         const result = await adminCreateFirebaseUser(input, input.split('@')[0], idToken);
         if (!result.success || !result.userRecord) {
           setMsg(`❌ Error creating user: ${result.error}`);
@@ -431,32 +452,34 @@ export default function TenantUsersPage() {
         const uid = result.userRecord.uid;
         const newProfile = { uid, email: input, displayName: input.split('@')[0], tenantIds: [] };
 
-        // Ensure base UserProfile exists in Firestore before linking tenant
-        const { doc, setDoc, getFirestore } = await import('firebase/firestore');
-        const { firebaseApp } = await import('@mfo-crm/config');
-        const db = getFirestore(firebaseApp);
-
-        await setDoc(doc(db, 'users', uid), {
-          uid,
-          email: input,
-          displayName: input.split('@')[0],
-          role: 'report_viewer',
-          mfaEnabled: false,
-          status: 'active',
-          createdAt: new Date().toISOString(),
-          tenantIds: [],
-        }, { merge: true });
-
-        // Add them to the tenant
+        // Add them to the tenant (the API already wrote the base profile)
         await addMemberToTenant(tenantId, tenantName, newProfile, memberRole, performer);
 
+        // Send welcome email with temp password
         let successMsg = `✅ User ${input} created and added to ${tenantName}.`;
-        if (sendInvite) {
-          const linkRes = await adminGeneratePasswordResetLink(input, idToken);
-          if (linkRes.success) {
-            successMsg += ' A password-reset / invite email has been sent.';
+        if (sendInvite && result.tempPassword) {
+          try {
+            const emailRes = await fetch('/api/email/send-welcome', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                idToken,
+                to:           input,
+                displayName:  input.split('@')[0],
+                tempPassword: result.tempPassword,
+                tenantName,
+              }),
+            });
+            const emailData = await emailRes.json();
+            if (emailData.sent) {
+              successMsg += ' Welcome email with temporary password sent.';
+            } else if (emailData.warning) {
+              successMsg += ` ⚠️ Email not sent (SMTP not configured). Temp password: ${result.tempPassword}`;
+            }
+          } catch {
+            successMsg += ` ⚠️ Email failed. Temp password: ${result.tempPassword}`;
           }
-        } else {
+        } else if (!sendInvite && result.tempPassword) {
           successMsg += ` Temp password: ${result.tempPassword}`;
         }
 
@@ -486,12 +509,20 @@ export default function TenantUsersPage() {
     } catch (e: any) { setMsg('❌ ' + e.message); }
   }
 
-  async function doRemove(m: TenantMember) {
-    if (!confirm(`Remove ${m.displayName}?`)) return;
-    try {
-      await removeMemberFromTenant(tenantId, tenantName, m.uid, m.displayName, performer);
-      setMembers(p => p.filter(x => x.uid !== m.uid));
-    } catch (e: any) { setMsg('❌ ' + e.message); }
+  function doRemove(m: TenantMember) {
+    setConfirmOpts({
+      title:        'Remove Member',
+      message:      `Remove ${m.displayName} from the tenant? They will lose access immediately.`,
+      confirmLabel: 'Remove',
+      variant:      'danger',
+      onConfirm: async () => {
+        try {
+          await removeMemberFromTenant(tenantId, tenantName, m.uid, m.displayName, performer);
+          setMembers(p => p.filter(x => x.uid !== m.uid));
+        } catch (e: any) { setMsg('❌ ' + e.message); }
+      },
+      onCancel: () => setConfirmOpts(null),
+    });
   }
 
   const TABS: { id: Tab; label: string }[] = [
@@ -503,6 +534,7 @@ export default function TenantUsersPage() {
 
   return (
     <div className="page animate-fade-in">
+      {confirmOpts && <ConfirmDialog {...confirmOpts} />}
       {showPerms && (
         <PermissionsPanel uid={showPerms.uid} tenantId={tenantId} role={showPerms.role}
           performer={performer} onClose={() => setShowPerms(null)} />
@@ -574,17 +606,73 @@ export default function TenantUsersPage() {
             <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
               <input type="checkbox" id="sendInv" checked={sendInvite} onChange={e => setSendInvite(e.target.checked)} style={{ cursor: 'pointer', accentColor: 'var(--brand-500)', width: 14, height: 14 }} />
               <label htmlFor="sendInv" style={{ fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}>
-                Generate an invitation link (if user is completely new to platform)
+                Send welcome email with temporary password (new users only)
               </label>
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-            <input className="input" placeholder="🔍 Search members…" value={search} onChange={e => setSearch(e.target.value)} style={{ flex: 1 }} />
-            <select className="input" value={roleF} onChange={e => setRoleF(e.target.value as any)}>
-              <option value="all">All Roles</option>
-              {TENANT_ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
-            </select>
+          {/* ── Filter Bar ── */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <input className="input" placeholder="🔍 Search name or email…" value={search}
+                onChange={e => setSearch(e.target.value)} style={{ flex: 1 }} />
+              <select className="input" value={roleF} onChange={e => setRoleF(e.target.value as any)} style={{ minWidth: 160 }}>
+                <option value="all">All Roles</option>
+                {TENANT_ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+              </select>
+              <button
+                onClick={() => setShowAdv(v => !v)}
+                style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', background: showAdv ? 'var(--brand-900)' : 'var(--bg-canvas)', color: showAdv ? 'var(--brand-400)' : 'var(--text-secondary)', cursor: 'pointer', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}
+              >
+                {showAdv ? '▲' : '▼'} Advanced
+              </button>
+              {(roleF !== 'all' || statusF !== 'all' || joinedF !== 'all' || search) && (
+                <button
+                  onClick={() => { setRoleF('all'); setStatusF('all'); setJoinedF('all'); setSearch(''); }}
+                  style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #ef444444', background: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}
+                >
+                  ✕ Clear
+                </button>
+              )}
+            </div>
+
+            {/* Advanced filter panel */}
+            {showAdv && (
+              <div style={{ marginTop: 10, padding: '14px 16px', borderRadius: 10, background: 'var(--bg-canvas)', border: '1px solid var(--border)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 5 }}>Status</div>
+                  <select className="input" style={{ width: '100%' }} value={statusF} onChange={e => setStatusF(e.target.value as any)}>
+                    <option value="all">All Statuses</option>
+                    <option value="active">✅ Active</option>
+                    <option value="suspended">⛔ Suspended</option>
+                    <option value="invited">📧 Invited</option>
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 5 }}>Joined</div>
+                  <select className="input" style={{ width: '100%' }} value={joinedF} onChange={e => setJoinedF(e.target.value as any)}>
+                    <option value="all">Any time</option>
+                    <option value="7d">Last 7 days</option>
+                    <option value="30d">Last 30 days</option>
+                    <option value="90d">Last 90 days</option>
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 5 }}>Sort By</div>
+                  <select className="input" style={{ width: '100%' }} value={sortF} onChange={e => setSortF(e.target.value as any)}>
+                    <option value="az">Name A → Z</option>
+                    <option value="za">Name Z → A</option>
+                    <option value="newest">Newest First</option>
+                    <option value="oldest">Oldest First</option>
+                  </select>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '8px 0' }}>
+                    Showing <strong style={{ color: 'var(--text-primary)' }}>{filteredMembers.length}</strong> of <strong style={{ color: 'var(--text-primary)' }}>{members.length}</strong> members
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {loading ? (

@@ -19,6 +19,7 @@ import {
   getUserTimezone, groupedTimezones,
 } from '@/lib/timezones';
 import { getTenantsForUser, getUserProfile, type TenantRecord } from '@/lib/platformService';
+import { ROLE_LABELS, ROLE_DESCRIPTIONS } from '@/lib/tenantMemberService';
 
 // ─── Auto-breadcrumb from pathname ────────────────────────────────────────────
 
@@ -294,6 +295,36 @@ function ProfileSection({ onClose }: { onClose: () => void }) {
         <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? '⏳ Saving…' : '💾 Save Changes'}</button>
         <button className="btn btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
       </div>
+
+      {/* Role & Access — read-only, informational */}
+      {userProfile && (
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 18, marginTop: 4 }}>
+          <div style={labelStyle}>Role & Access</div>
+          <div style={{ padding: '14px 16px', borderRadius: 10, background: 'var(--bg-surface)', border: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+            <div style={{ fontSize: 26 }}>🛡</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 3 }}>
+                {ROLE_LABELS[userProfile.role] ?? userProfile.role}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 8 }}>
+                {ROLE_DESCRIPTIONS[userProfile.role] ?? 'Custom role assignment.'}
+              </div>
+              {(userProfile.tenantIds ?? []).length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {(userProfile.tenantIds ?? []).map(tid => (
+                    <span key={tid} style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: 'var(--bg-overlay)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                      {tid}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-tertiary)' }}>
+                Role assignments are managed by your platform administrator.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -600,9 +631,6 @@ export default function Header() {
                 <Avatar id={`user-${user.id}`} name={user.name} size="sm" />
                 <div style={{ lineHeight: 1.2 }}>
                   <div style={{ fontSize: 12, fontWeight: 600 }}>{user.name}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'capitalize' }}>
-                    {t(`role.${user.role}` as any) || user.role.replace(/_/g, ' ')}
-                  </div>
                 </div>
               </div>
             )}

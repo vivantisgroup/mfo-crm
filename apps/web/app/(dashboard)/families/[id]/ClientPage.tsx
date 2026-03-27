@@ -1,24 +1,34 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { FAMILIES, BALANCE_SHEETS, NETWORK_NODES, RELATIONSHIP_EDGES } from '@/lib/mockData';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { FAMILIES, BALANCE_SHEETS } from '@/lib/mockData';
 import { StatCard } from '@/components/StatCard';
 import { StatusBadge } from '@/components/StatusBadge';
 import { formatCurrency, getInitials, getRiskColor, formatDate } from '@/lib/utils';
 import { AssetAllocationChart } from '@/components/AssetAllocationChart';
-import { RelationshipsTab } from '@/components/RelationshipsTab';
+import { ContactRelationshipGraph } from '@/components/ContactRelationshipGraph';
 import { SuitabilityAssessment } from '@/components/SuitabilityAssessment';
 import { InvestmentAdvisory } from '@/components/InvestmentAdvisory';
 import { CommunicationPanel } from '@/components/CommunicationPanel';
 
 export default function FamilyDetailPage() {
-  const params = useParams();
-  const router = useRouter();
+  const params   = useParams();
+  const router   = useRouter();
   const familyId = params.id as string;
-  const family = FAMILIES.find(f => f.id === familyId);
-  const bs = BALANCE_SHEETS.find(b => b.familyId === familyId);
+  const family   = FAMILIES.find(f => f.id === familyId);
+  const bs       = BALANCE_SHEETS.find(b => b.familyId === familyId);
   const [activeTab, setActiveTab] = useState('overview');
+  const [tenantId, setTenantId]   = useState('');
+
+  useEffect(() => {
+    try {
+      const t = JSON.parse(localStorage.getItem('mfo_active_tenant') ?? '{}');
+      if (t?.id) setTenantId(t.id);
+    } catch { /* ignore */ }
+  }, []);
 
   if (!family) {
     return (
@@ -29,11 +39,6 @@ export default function FamilyDetailPage() {
       </div>
     );
   }
-
-  // Filter Network Nodes logic: Show nodes relevant to this family or where relation exists
-  const relevantNodes = NETWORK_NODES.filter(n => n.familyId === familyId || n.nodeType === 'provider');
-  const relevantNodeIds = new Set(relevantNodes.map(n => n.id));
-  const relevantEdges = RELATIONSHIP_EDGES.filter(e => relevantNodeIds.has(e.sourceId) || relevantNodeIds.has(e.targetId));
 
   return (
     <div className="page animate-fade-in" style={{ maxWidth: 1400, margin: '0 auto' }}>
@@ -173,12 +178,11 @@ export default function FamilyDetailPage() {
           </div>
         )}
 
-        {activeTab === 'network' && (
-          <RelationshipsTab 
-            nodes={relevantNodes} 
-            edges={relevantEdges} 
-            familyId={familyId} 
-          />
+        {activeTab === 'network' && tenantId && (
+          <ContactRelationshipGraph tenantId={tenantId} familyId={familyId} />
+        )}
+        {activeTab === 'network' && !tenantId && (
+          <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-tertiary)' }}>Loading graph…</div>
         )}
 
         {activeTab === 'suitability' && (
@@ -199,8 +203,6 @@ export default function FamilyDetailPage() {
             <CommunicationPanel
               familyId={family.id}
               familyName={family.name}
-              linkedRecordType="crm"
-              linkedRecordId={family.id}
             />
           </div>
         )}

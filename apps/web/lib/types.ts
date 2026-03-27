@@ -90,9 +90,31 @@ export interface RelationshipEdge {
   id: string;
   sourceId: string;
   targetId: string;
-  relationType: 'owns' | 'parent_of' | 'married_to' | 'advises' | 'trustee_of' | 'beneficiary_of' | 'board_member' | 'partner';
+  relationType:
+    | 'owns'
+    | 'parent_of'
+    | 'married_to'
+    | 'advises'
+    | 'trustee_of'
+    | 'beneficiary_of'
+    | 'board_member'
+    | 'partner'
+    // CRM contacts/orgs relationship types
+    | 'member_of'
+    | 'member'
+    | 'related_to'
+    | 'investor_in'
+    | 'managed_by'
+    | 'directs'
+    | 'shareholder_of'
+    | 'attorney_for'
+    | 'accountant_for'
+    | 'banker_for'
+    | string;    // fallback for Firestore-stored custom types
   note?: string;
+  weight?: number;
 }
+
 
 export interface Family {
   id: string;

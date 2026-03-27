@@ -2,367 +2,506 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { StatCard } from '@/components/StatCard';
-import { AssetAllocationChart } from '@/components/AssetAllocationChart';
-import { ActivityItem } from '@/components/ActivityItem';
-import { StatusBadge } from '@/components/StatusBadge';
-import { formatCurrency, formatPercent } from '@/lib/utils';
-import { DASHBOARD_STATS, BALANCE_SHEETS, TASKS, ACTIVITIES, PLATFORM_USERS } from '@/lib/mockData';
 import { useAuth } from '@/lib/AuthContext';
 import { useLiveMode } from '@/lib/useLiveMode';
 import { usePageTitle } from '@/lib/PageTitleContext';
 import { getPlatformConfig, getAllTenants, getAllUsers } from '@/lib/platformService';
 import type { PlatformConfig, TenantRecord, UserProfile } from '@/lib/platformService';
+import { getAllOpportunities, getAllActivities, getSalesTeams } from '@/lib/crmService';
+import type { Opportunity, CrmActivity, SalesTeam } from '@/lib/crmService';
 
-// ─── Getting-Started steps for fresh SaaS Master Admin ────────────────────────
+// ─── Utility ──────────────────────────────────────────────────────────────────
 
-const SETUP_STEPS = [
-  {
-    icon: '\u2705',
-    title: 'Platform initialized',
-    desc: 'Master tenant created, SaaS Master Admin account active.',
-    done: true,
-    link: null,
-  },
-  {
-    icon: '\uD83C\uDFE2',
-    title: 'Create your first tenant',
-    desc: 'Onboard a family office firm as a new tenant with their own workspace.',
-    done: false,
-    link: '/admin',
-  },
-  {
-    icon: '\uD83D\uDC64',
-    title: 'Invite team members',
-    desc: 'Add users and assign them roles within tenants.',
-    done: false,
-    link: '/admin',
-  },
-  {
-    icon: '\u2699\uFE0F',
-    title: 'Configure task queues & SLAs',
-    desc: 'Set up workflow queues, task types, and SLA targets.',
-    done: false,
-    link: '/admin',
-  },
-];
+function fmtUsd(n: number) {
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
+  return `$${n}`;
+}
 
-// ─── Live platform stats component ────────────────────────────────────────────
+function getGreeting() {
+  const h = new Date().getHours();
+  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+}
 
-function LivePlatformDashboard({ user, platformCfg, tenants, users }: {
-  user: ReturnType<typeof useAuth>['user'];
-  platformCfg: PlatformConfig | null;
-  tenants: TenantRecord[];
-  users: UserProfile[];
+// ─── UI Components ────────────────────────────────────────────────────────────
+
+function KPI({ label, value, sub, color = 'var(--brand-500)', icon }: {
+  label: string; value: string; sub?: string; color?: string; icon?: string;
 }) {
-  usePageTitle('Dashboard');
-  const now = new Date();
-  const greeting = now.getHours() < 12 ? 'Good morning' : now.getHours() < 17 ? 'Good afternoon' : 'Good evening';
-
   return (
-    <div className="page animate-fade-in">
-      {/* Greeting row */}
-      <div style={{ marginBottom: 24, padding: '18px 20px', background: 'var(--bg-elevated)', borderRadius: 12, border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <div style={{ fontSize: 18, fontWeight: 800 }}>{greeting}, {user?.name?.split(' ')[0] ?? 'Admin'} 👋</div>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}>
-            Platform initialized {platformCfg?.initializedAt
-              ? new Date(platformCfg.initializedAt).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-              : ''} · Version {platformCfg?.version ?? '—'}
-          </div>
-        </div>
-        <Link href="/platform/tenants" className="btn btn-primary" style={{ flexShrink: 0 }}>+ New Tenant</Link>
-      </div>
-
-      {/* Live stats */}
-      <div className="stat-grid">
-        <StatCard label="Active Tenants"  value={tenants.filter(t => t.status === 'active').length.toString()} icon="🏢" trendValue="Platform HQ included" />
-        <StatCard label="Registered Users" value={users.length.toString()} icon="👥" trendValue="Across all tenants" />
-        <StatCard label="Platform Status"  value="Healthy" icon="💚" trendValue="All systems operational" trendDirection="up" />
-        <StatCard label="Your Role"        value="SaaS Master Admin" icon="🔑" />
-      </div>
-
-      {/* Support Health metrics */}
-      <div className="card mt-6">
-        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 className="card-title">🎧 Support Center Health</h2>
-          <Link href="/platform/support" className="btn btn-secondary btn-sm" style={{ fontSize: 12 }}>Manage Support →</Link>
-        </div>
-        <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, padding: '16px 20px' }}>
-          <div>
-            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.07em' }}>Active Backlog</div>
-            <div style={{ fontSize: 28, fontWeight: 900, color: 'var(--text-primary)' }}>14</div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>tickets in queue</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.07em' }}>Unassigned</div>
-            <div style={{ fontSize: 28, fontWeight: 900, color: '#f59e0b' }}>3</div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>need assignment</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.07em' }}>SLA Breach Rate</div>
-            <div style={{ fontSize: 28, fontWeight: 900, color: '#ef4444' }}>7%</div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>of active tickets</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.07em' }}>Avg Resolution</div>
-            <div style={{ fontSize: 28, fontWeight: 900, color: 'var(--text-primary)' }}>4.2</div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>hours (last 7d)</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Getting-started checklist */}
-      <div className="card mt-6">
-        <div className="card-header">
-          <h2 className="card-title">🚀 Platform Setup Checklist</h2>
-          <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-            {SETUP_STEPS.filter(s => s.done).length} / {SETUP_STEPS.length} complete
-          </span>
-        </div>
-        <div className="card-body" style={{ padding: '8px 0' }}>
-          {SETUP_STEPS.map((step, i) => (
-            <div key={i} style={{
-              display: 'flex', alignItems: 'center', gap: 16, padding: '14px 20px',
-              borderBottom: i < SETUP_STEPS.length - 1 ? '1px solid var(--border)' : 'none',
-              opacity: step.done ? 0.6 : 1,
-            }}>
-              <div style={{ fontSize: 22, flexShrink: 0 }}>{step.icon}</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {step.title}
-                  {step.done && <span style={{ fontSize: 10, background: '#22c55e22', color: '#22c55e', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>DONE</span>}
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{step.desc}</div>
-              </div>
-              {step.link && !step.done && (
-                <Link href={step.link} className="btn btn-secondary btn-sm" style={{ flexShrink: 0, fontSize: 12 }}>
-                  Go →
-                </Link>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Quick links grid */}
-      <div className="grid-2 mt-6">
-        <div className="card">
-          <div className="card-header"><h2 className="card-title">📋 Quick Actions</h2></div>
-          <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 20px' }}>
-            {[
-              { label: 'Admin & Configuration', href: '/admin', desc: 'Tenants, users, task queues, SLAs' },
-              { label: 'Task Queue Manager', href: '/admin', desc: 'Create and manage work queues' },
-              { label: 'Audit Trail', href: '/platform/audit', desc: 'Immutable compliance log' },
-              { label: 'Demo Provisioner', href: '/platform/demo', desc: 'Seed trial environments' },
-              { label: 'Platform Support', href: '/platform/support', desc: 'Help & documentation' },
-            ].map(q => (
-              <Link key={q.href + q.label} href={q.href} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: 8, background: 'var(--bg-elevated)', border: '1px solid var(--border)', textDecoration: 'none', transition: 'background 0.15s' }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{q.label}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{q.desc}</div>
-                </div>
-                <span style={{ color: 'var(--text-tertiary)', fontSize: 16 }}>→</span>
-              </Link>
-            ))}
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-header"><h2 className="card-title">🔐 Platform Config</h2></div>
-          <div className="card-body" style={{ padding: '12px 20px' }}>
-            {[
-              ['Platform Name',    platformCfg?.platformName ?? '—'],
-              ['Version',          platformCfg?.version ?? '—'],
-              ['Initialized',      platformCfg?.initializedAt ? new Date(platformCfg.initializedAt).toLocaleString() : '—'],
-              ['Master Admin UID', platformCfg?.initializedBy ?? '—'],
-              ['Tenants',          tenants.length.toString()],
-              ['Total Users',      users.length.toString()],
-            ].map(([k, v]) => (
-              <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
-                <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{k}</span>
-                <span style={{ color: 'var(--text-primary)', fontFamily: k.includes('UID') ? 'monospace' : 'inherit', fontSize: k.includes('UID') ? 11 : 13 }}>{v}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+    <div style={{
+      padding: '20px 24px', background: 'var(--bg-elevated)',
+      borderRadius: 14, border: '1px solid var(--border)',
+    }}>
+      {icon && <div style={{ fontSize: 24, marginBottom: 8 }}>{icon}</div>}
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 28, fontWeight: 900, color }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>{sub}</div>}
     </div>
   );
 }
 
-// ─── Demo dashboard component (shown when not authenticated / demo mode) ───────
-
-function DemoDashboard() {
-  const { tenant } = useAuth();
-  const isInternal = tenant?.isInternal;
-  const stats = DASHBOARD_STATS;
-  usePageTitle(isInternal ? 'Firm Dashboard' : 'Advisor Dashboard');
-
-  const allAllocs = BALANCE_SHEETS.flatMap(b => b.allocation);
-  const aggAllocs = Array.from(
-    allAllocs.reduce((acc, curr) => {
-      acc.set(curr.assetClass, (acc.get(curr.assetClass) || 0) + curr.value);
-      return acc;
-    }, new Map<string, number>())
-  ).map(([assetClass, value], i) => {
-    const colors = ['#6366f1', '#22d3ee', '#34d399', '#f59e0b', '#a78bfa', '#94a3b8'];
-    const val = value as number;
-    return { assetClass: assetClass as string, value: val, pct: val / stats.totalAum, color: colors[i % colors.length] };
-  }).sort((a, b) => b.value - a.value);
-
+function Section({ title, link, children }: { title: string; link?: { href: string; label: string }; children: React.ReactNode }) {
   return (
-    <div className="page animate-fade-in">
-
-      <div className="stat-grid">
-        <StatCard label="Total Platform AUM" value={formatCurrency(stats.totalAum, 'USD', true)} trendValue="+8.3% YTD" trendDirection="up" icon="🏛️" />
-        <StatCard label="Total Clients" value={stats.totalFamilies.toString()} trendValue="+1 this month" trendDirection="up" icon="👥" />
-        {isInternal ? (
-          <>
-            <StatCard label="Active Users" value={PLATFORM_USERS.length.toString()} icon="👤" />
-            <StatCard label="Avg. Fee bps" value="85" icon="🧾" />
-          </>
-        ) : (
-          <>
-            <StatCard label="Capital Calls Due" value={stats.capitalCallsDue.toString()} trendValue={formatCurrency(stats.capitalCallsAmount, 'USD', true)} trendDirection="down" icon="💰" />
-            <StatCard label="Active Tasks" value={stats.activeTasksCount.toString()} trendValue="2 urgent" trendDirection="down" icon="✓" />
-          </>
-        )}
+    <div style={{ background: 'var(--bg-elevated)', borderRadius: 14, border: '1px solid var(--border)', overflow: 'hidden', marginTop: 20 }}>
+      <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ fontWeight: 800, fontSize: 15 }}>{title}</div>
+        {link && <Link href={link.href} style={{ fontSize: 12, color: 'var(--brand-500)', fontWeight: 600 }}>{link.label} →</Link>}
       </div>
+      <div style={{ padding: 20 }}>{children}</div>
+    </div>
+  );
+}
 
-      <div className={isInternal ? 'grid-1 mt-6' : 'grid-2 mt-6'}>
-        <div className="card">
-          <div className="card-header">
-            <h2 className="card-title">Aggregated Platform Allocation</h2>
-          </div>
-          <div className="card-body">
-            <AssetAllocationChart data={aggAllocs} />
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginTop: 16 }}>
-              {aggAllocs.slice(0,8).map(a => (
-                <div key={a.assetClass} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{ width: 10, height: 10, borderRadius: 2, background: a.color }} />
-                  <div style={{ flex: 1, fontSize: 11, color: 'var(--text-secondary)' }}>{a.assetClass}</div>
-                  <div style={{ fontSize: 11, fontWeight: 500 }}>{formatPercent(a.pct)}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {!isInternal && (
-          <div className="card">
-            <div className="card-header">
-              <h2 className="card-title">Priority Tasks</h2>
-              <Link href="/tasks" className="text-brand text-xs fw-600">View All →</Link>
-            </div>
-            <div className="card-body" style={{ padding: 12 }}>
-              {TASKS.filter(t => t.status !== 'completed' && (t.priority === 'urgent' || t.priority === 'high')).slice(0,5).map(task => (
-                <div key={task.id} className="task-card">
-                  <div className="task-card-title">{task.title}</div>
-                  <div className="task-card-meta">
-                    <span className="text-xs text-brand fw-600">{task.familyName}</span>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <StatusBadge status={task.priority} />
-                      <span className="text-xs text-secondary">Due {task.dueDate?.slice(5)}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+function GreetingBar({ name, role, action }: { name: string; role: string; action?: { href: string; label: string } }) {
+  return (
+    <div style={{
+      marginBottom: 24, padding: '18px 24px',
+      background: 'linear-gradient(135deg, var(--brand-500) 0%, #a78bfa 100%)',
+      borderRadius: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    }}>
+      <div>
+        <div style={{ fontSize: 20, fontWeight: 900, color: 'white' }}>{getGreeting()}, {name} 👋</div>
+        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.8)', marginTop: 4 }}>{role}</div>
       </div>
-
-      {!isInternal && (
-        <div className="card mt-6">
-          <div className="card-header">
-            <h2 className="card-title">Recent Activities</h2>
-            <Link href="/activities" className="btn btn-secondary btn-sm">View Timeline</Link>
-          </div>
-          <div className="card-body" style={{ padding: '0 20px' }}>
-            <div className="activity-list">
-              {ACTIVITIES.slice(0, 5).map(act => <ActivityItem key={act.id} activity={act} />)}
-            </div>
-          </div>
-        </div>
+      {action && (
+        <Link href={action.href} style={{
+          padding: '10px 20px', background: 'rgba(255,255,255,0.2)',
+          color: 'white', borderRadius: 10, fontWeight: 700, fontSize: 13,
+          textDecoration: 'none', border: '1px solid rgba(255,255,255,0.3)',
+        }}>{action.label}</Link>
       )}
     </div>
   );
 }
 
-// ─── Main page — switches between live and demo ────────────────────────────────
+// ─── Role Dashboards ──────────────────────────────────────────────────────────
+
+function PlatformAdminDashboard({ user, platformCfg, tenants, users }: {
+  user: ReturnType<typeof useAuth>['user'];
+  platformCfg: PlatformConfig | null;
+  tenants: TenantRecord[];
+  users: UserProfile[];
+}) {
+  usePageTitle('Platform Dashboard');
+  const active    = tenants.filter(t => t.status === 'active').length;
+  const trials    = tenants.filter(t => t.status === 'trial').length;
+  const suspended = tenants.filter(t => t.status === 'suspended').length;
+
+  return (
+    <div className="page animate-fade-in">
+      <GreetingBar
+        name={user?.name?.split(' ')[0] ?? 'Admin'}
+        role="Platform Administration"
+        action={{ href: '/platform/tenants', label: '+ New Tenant' }}
+      />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 20 }}>
+        <KPI label="Active Tenants"  value={active.toString()}        sub="Platform clients"         icon="🏢" />
+        <KPI label="Trial Tenants"   value={trials.toString()}        sub="Evaluating"               icon="⏳" color="#f59e0b" />
+        <KPI label="Total Users"     value={users.length.toString()}  sub="Across all tenants"       icon="👥" />
+        <KPI label="Platform Status" value="Healthy"                   sub="All systems operational"  icon="💚" color="#22c55e" />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <Section title="Tenant Breakdown" link={{ href: '/platform/tenants', label: 'Manage' }}>
+          {[
+            { label: 'Active',    count: active,    color: '#22c55e' },
+            { label: 'Trial',     count: trials,    color: '#f59e0b' },
+            { label: 'Suspended', count: suspended, color: '#ef4444' },
+          ].map(s => (
+            <div key={s.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+              <span>{s.label}</span>
+              <span style={{ fontWeight: 700, color: s.color }}>{s.count}</span>
+            </div>
+          ))}
+        </Section>
+
+        <Section title="Recent Tenants" link={{ href: '/platform/tenants', label: 'View All' }}>
+          {tenants.slice(-5).reverse().map(t => (
+            <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+              <span style={{ fontWeight: 600 }}>{t.name}</span>
+              <span style={{
+                fontSize: 11, padding: '2px 8px', borderRadius: 20, fontWeight: 600,
+                background: t.status === 'active' ? '#22c55e15' : '#f59e0b15',
+                color: t.status === 'active' ? '#22c55e' : '#f59e0b',
+              }}>{t.status}</span>
+            </div>
+          ))}
+        </Section>
+      </div>
+
+      <Section title="Quick Links">
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          {[
+            { href: '/platform/crm',       label: '📊 CRM Suite' },
+            { href: '/platform/users',     label: '👤 Users' },
+            { href: '/platform/roles',     label: '🔐 Roles' },
+            { href: '/platform/analytics', label: '📈 Analytics' },
+            { href: '/platform/support',   label: '🎧 Support' },
+          ].map(l => (
+            <Link key={l.href} href={l.href} style={{
+              padding: '8px 16px', background: 'var(--bg-canvas)',
+              border: '1px solid var(--border)', borderRadius: 10,
+              fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', textDecoration: 'none',
+            }}>{l.label}</Link>
+          ))}
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+function SalesLeaderDashboard({ user, opps, activities, teams }: {
+  user: ReturnType<typeof useAuth>['user'];
+  opps: Opportunity[];
+  activities: CrmActivity[];
+  teams: SalesTeam[];
+}) {
+  usePageTitle('Sales Dashboard');
+  const openOpps = opps.filter(o => !['closed_won','closed_lost'].includes(o.stage));
+  const wonOpps  = opps.filter(o => o.stage === 'closed_won');
+  const pipeline = openOpps.reduce((s, o) => s + (o.valueUsd ?? 0), 0);
+  const won      = wonOpps.reduce((s, o) => s + (o.valueUsd ?? 0), 0);
+
+  const closingSoon = openOpps.filter(o => {
+    if (!o.closeDate) return false;
+    const days = (new Date(o.closeDate).getTime() - Date.now()) / 86_400_000;
+    return days >= 0 && days <= 30;
+  });
+
+  const closedTotal = opps.filter(o => ['closed_won','closed_lost'].includes(o.stage)).length;
+  const winRate = closedTotal > 0 ? Math.round((wonOpps.length / closedTotal) * 100) : 0;
+
+  return (
+    <div className="page animate-fade-in">
+      <GreetingBar
+        name={user?.name?.split(' ')[0] ?? 'Manager'}
+        role="Sales Leadership"
+        action={{ href: '/platform/crm', label: '→ Open CRM' }}
+      />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 20 }}>
+        <KPI label="Pipeline Value" value={fmtUsd(pipeline)} sub={`${openOpps.length} active deals`}      icon="🎯" />
+        <KPI label="Won Revenue"    value={fmtUsd(won)}      sub="Closed won"                               icon="🏆" color="#22c55e" />
+        <KPI label="Win Rate"       value={`${winRate}%`}    sub="Of closed deals"                          icon="📊" color={winRate >= 30 ? '#22c55e' : '#f59e0b'} />
+        <KPI label="Closing ≤30d"  value={closingSoon.length.toString()} sub="Deals at risk if missed"    icon="⏰" color={closingSoon.length > 3 ? '#ef4444' : '#f59e0b'} />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <Section title="Closing Soon" link={{ href: '/platform/crm', label: 'View Pipeline' }}>
+          {closingSoon.length === 0 ? (
+            <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>No deals closing in the next 30 days.</div>
+          ) : closingSoon.slice(0, 6).map(o => (
+            <div key={o.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>{o.orgName}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{o.ownerName} · {o.stage}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontWeight: 700 }}>{fmtUsd(o.valueUsd ?? 0)}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{o.closeDate?.slice(0,10)}</div>
+              </div>
+            </div>
+          ))}
+        </Section>
+
+        <Section title="Sales Teams" link={{ href: '/platform/crm', label: 'View Teams' }}>
+          {teams.slice(0, 6).map(t => {
+            const won = opps.filter(o => o.stage === 'closed_won' && t.memberIds.includes(o.assignedToUid ?? o.ownerId ?? '')).reduce((s, o) => s + (o.valueUsd ?? 0), 0);
+            const pct = t.quota > 0 ? Math.min(100, Math.round((won / t.quota) * 100)) : 0;
+            return (
+              <div key={t.id} style={{ marginBottom: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
+                  <span style={{ fontWeight: 600 }}>{t.name}</span>
+                  <span style={{ fontWeight: 700, color: pct >= 80 ? '#22c55e' : '#f59e0b' }}>{pct}%</span>
+                </div>
+                <div style={{ height: 6, background: 'var(--bg-canvas)', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: pct >= 80 ? '#22c55e' : '#f59e0b', borderRadius: 3, transition: 'width 0.6s' }} />
+                </div>
+              </div>
+            );
+          })}
+        </Section>
+      </div>
+
+      <Section title="Recent Activities" link={{ href: '/platform/crm', label: 'Activity Log' }}>
+        {activities.slice(0, 5).map(a => (
+          <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ width: 34, height: 34, borderRadius: 8, background: 'var(--bg-canvas)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>
+              {a.type === 'call' ? '📞' : a.type === 'email' ? '📧' : a.type === 'meeting' ? '🤝' : '📝'}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>{a.subject}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{a.performedByName} · {new Date(a.scheduledAt).toLocaleDateString()}</div>
+            </div>
+          </div>
+        ))}
+      </Section>
+    </div>
+  );
+}
+
+function SalesRepDashboard({ user, opps, activities }: {
+  user: ReturnType<typeof useAuth>['user'];
+  opps: Opportunity[];
+  activities: CrmActivity[];
+}) {
+  usePageTitle('My Pipeline');
+  const uid   = user?.uid;
+  const name  = user?.name;
+  const myOpps = opps.filter(o => o.ownerId === uid || o.ownerName === name);
+  const openOpps = myOpps.filter(o => !['closed_won','closed_lost'].includes(o.stage));
+  const pipeline = openOpps.reduce((s, o) => s + (o.valueUsd ?? 0), 0);
+  const won = myOpps.filter(o => o.stage === 'closed_won').reduce((s, o) => s + (o.valueUsd ?? 0), 0);
+
+  const stageOrder = ['lead', 'qualification', 'demo', 'proposal', 'negotiation', 'closed_won', 'closed_lost'];
+  const byStage = stageOrder.map(s => ({
+    stage: s,
+    count: myOpps.filter(o => o.stage === s).length,
+    value: myOpps.filter(o => o.stage === s).reduce((sum, o) => sum + (o.valueUsd ?? 0), 0),
+  })).filter(s => s.count > 0);
+
+  const myActivities = activities.filter(a => a.performedByUid === uid || a.performedByName === name);
+
+  return (
+    <div className="page animate-fade-in">
+      <GreetingBar
+        name={user?.name?.split(' ')[0] ?? 'Rep'}
+        role="Account Executive"
+        action={{ href: '/platform/crm', label: '+ New Opportunity' }}
+      />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 20 }}>
+        <KPI label="My Pipeline"    value={fmtUsd(pipeline)}                  sub={`${openOpps.length} open deals`} icon="🎯" />
+        <KPI label="Won This Cycle" value={fmtUsd(won)}                        sub="Closed won"                     icon="🏆" color="#22c55e" />
+        <KPI label="Activities"     value={myActivities.length.toString()}     sub="Logged by me"                   icon="📅" />
+        <KPI label="Open Deals"     value={openOpps.length.toString()}          sub="In progress"                    icon="🔄" color="#6366f1" />
+      </div>
+
+      <Section title="My Deals by Stage" link={{ href: '/platform/crm', label: 'Open Pipeline' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10 }}>
+          {byStage.map(s => (
+            <div key={s.stage} style={{ padding: '14px 16px', background: 'var(--bg-canvas)', borderRadius: 10, border: '1px solid var(--border)', textAlign: 'center' }}>
+              <div style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, marginBottom: 6 }}>{s.stage.replace('_',' ')}</div>
+              <div style={{ fontSize: 24, fontWeight: 900, color: 'var(--brand-500)' }}>{s.count}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>{fmtUsd(s.value)}</div>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      <Section title="My Recent Activities" link={{ href: '/platform/crm', label: 'Log Activity' }}>
+        {myActivities.length === 0 ? (
+          <div style={{ color: 'var(--text-tertiary)', fontSize: 13, textAlign: 'center', padding: '20px 0' }}>
+            No activities logged yet. <Link href="/platform/crm" style={{ color: 'var(--brand-500)' }}>Log your first activity →</Link>
+          </div>
+        ) : myActivities.slice(0, 5).map(a => (
+          <div key={a.id} style={{ display: 'flex', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 13, alignItems: 'center' }}>
+            <span style={{ fontSize: 18 }}>{a.type === 'call' ? '📞' : a.type === 'email' ? '📧' : a.type === 'meeting' ? '🤝' : '📝'}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600 }}>{a.subject}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{a.orgName} · {new Date(a.scheduledAt).toLocaleDateString()}</div>
+            </div>
+          </div>
+        ))}
+      </Section>
+    </div>
+  );
+}
+
+function CustomerSuccessDashboard({ user, opps, activities }: {
+  user: ReturnType<typeof useAuth>['user'];
+  opps: Opportunity[];
+  activities: CrmActivity[];
+}) {
+  usePageTitle('Customer Success');
+  const renewals = opps.filter(o =>
+    o.orgName?.toLowerCase().includes('renew') ||
+    o.stage === 'negotiation' ||
+    (o.closeDate && (new Date(o.closeDate).getTime() - Date.now()) / 86_400_000 < 90)
+  );
+  const atRisk = renewals.filter(o => {
+    if (!o.closeDate) return false;
+    const days = (new Date(o.closeDate).getTime() - Date.now()) / 86_400_000;
+    return days < 30 && days >= 0;
+  });
+
+  return (
+    <div className="page animate-fade-in">
+      <GreetingBar
+        name={user?.name?.split(' ')[0] ?? 'CSM'}
+        role="Customer Success"
+        action={{ href: '/platform/crm', label: '→ Activity Log' }}
+      />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 20 }}>
+        <KPI label="Renewals Tracked" value={renewals.length.toString()}  sub="Active accounts"       icon="🔁" />
+        <KPI label="At Risk ≤30d"     value={atRisk.length.toString()}      sub="Need attention"        icon="⚠️" color={atRisk.length > 0 ? '#ef4444' : '#22c55e'} />
+        <KPI label="Total Activities" value={activities.length.toString()} sub="All interactions"      icon="📅" />
+        <KPI label="Accounts"         value={opps.length.toString()}        sub="In CRM"                icon="🏢" color="#6366f1" />
+      </div>
+
+      <Section title="Renewals at Risk" link={{ href: '/platform/crm', label: 'View All' }}>
+        {atRisk.length === 0 ? (
+          <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>No renewals at risk in the next 30 days. 🎉</div>
+        ) : atRisk.map(o => (
+          <div key={o.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+            <div>
+              <div style={{ fontWeight: 600 }}>{o.orgName}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Closes {o.closeDate?.slice(0,10)}</div>
+            </div>
+            <div style={{ fontWeight: 700, color: '#ef4444' }}>{fmtUsd(o.valueUsd ?? 0)}</div>
+          </div>
+        ))}
+      </Section>
+
+      <Section title="Recent Client Interactions" link={{ href: '/platform/crm', label: 'Log Activity' }}>
+        {activities.slice(0, 6).map(a => (
+          <div key={a.id} style={{ display: 'flex', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 13, alignItems: 'center' }}>
+            <span style={{ fontSize: 18 }}>{a.type === 'call' ? '📞' : a.type === 'email' ? '📧' : '🤝'}</span>
+            <div>
+              <div style={{ fontWeight: 600 }}>{a.subject}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{a.performedByName} · {new Date(a.scheduledAt).toLocaleDateString()}</div>
+            </div>
+          </div>
+        ))}
+      </Section>
+    </div>
+  );
+}
+
+function TenantUserDashboard({ user, roleLabel }: {
+  user: ReturnType<typeof useAuth>['user'];
+  roleLabel: string;
+}) {
+  usePageTitle('Dashboard');
+  return (
+    <div className="page animate-fade-in">
+      <GreetingBar name={user?.name?.split(' ')[0] ?? 'there'} role={roleLabel} action={{ href: '/families', label: '→ Client Families' }} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 20 }}>
+        <KPI label="Client Families"  value="—" sub="Navigate to Families" icon="👨‍👩‍👧‍👦" />
+        <KPI label="Active Tasks"     value="—" sub="Navigate to Tasks"    icon="✅" />
+        <KPI label="Upcoming Events"  value="—" sub="Navigate to Calendar" icon="📅" />
+      </div>
+      <Section title="Quick Actions">
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          {[
+            { href: '/families',   label: '👨‍👩‍👧‍👦 Families' },
+            { href: '/tasks',      label: '✅ Tasks' },
+            { href: '/activities', label: '📋 Activities' },
+            { href: '/calendar',   label: '📅 Calendar' },
+            { href: '/documents',  label: '📁 Documents' },
+            { href: '/reports',    label: '📊 Reports' },
+          ].map(l => (
+            <Link key={l.href} href={l.href} style={{
+              padding: '10px 18px', background: 'var(--bg-canvas)',
+              border: '1px solid var(--border)', borderRadius: 10,
+              fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', textDecoration: 'none',
+            }}>{l.label}</Link>
+          ))}
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+// ─── Role label map ───────────────────────────────────────────────────────────
+
+const ROLE_LABELS: Record<string, string> = {
+  saas_master_admin:        'SaaS Master Admin',
+  tenant_admin:             'Tenant Administrator',
+  relationship_manager:     'Relationship Manager',
+  cio:                      'Chief Investment Officer',
+  controller:               'Controller',
+  compliance_officer:       'Compliance Officer',
+  report_viewer:            'Report Viewer',
+  external_advisor:         'External Advisor',
+  sales_operations:         'Sales Operations',
+  business_manager:         'Business Manager',
+  sales_manager:            'Sales Manager',
+  revenue_manager:          'Revenue Manager',
+  account_executive:        'Account Executive',
+  sdr:                      'Sales Development Representative',
+  customer_success_manager: 'Customer Success Manager',
+};
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
   const { user, userProfile, isSaasMasterAdmin } = useAuth();
   const isLive = useLiveMode();
+  const role = userProfile?.role ?? 'report_viewer';
 
-  const [platformCfg, setPlatformCfg] = useState<PlatformConfig | null>(null);
-  const [tenants,     setTenants]     = useState<TenantRecord[]>([]);
-  const [users,       setUsers]       = useState<UserProfile[]>([]);
-  const [loading,     setLoading]     = useState(true);
+  const [platformCfg,     setPlatformCfg]     = useState<PlatformConfig | null>(null);
+  const [tenants,         setTenants]         = useState<TenantRecord[]>([]);
+  const [platformUsers,   setPlatformUsers]   = useState<UserProfile[]>([]);
+  const [opps,            setOpps]            = useState<Opportunity[]>([]);
+  const [activities,      setActivities]      = useState<CrmActivity[]>([]);
+  const [teams,           setTeams]           = useState<SalesTeam[]>([]);
+  const [loading,         setLoading]         = useState(true);
 
   useEffect(() => {
-    if (!isLive || !isSaasMasterAdmin) { setLoading(false); return; }
-    Promise.all([
-      getPlatformConfig().catch(() => null),
-      getAllTenants().catch(() => []),
-      getAllUsers().catch(() => []),
-    ]).then(([cfg, ts, us]) => {
-      setPlatformCfg(cfg);
-      setTenants(ts);
-      setUsers(us);
-    }).finally(() => setLoading(false));
-  }, [isLive, isSaasMasterAdmin]);
+    if (!isLive || !user) { setLoading(false); return; }
 
-  // In live mode as SaaS Master Admin → show real platform dashboard
-  if (isLive && isSaasMasterAdmin) {
-    if (loading) {
-      return (
-        <div className="page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ width: 32, height: 32, border: '3px solid #6366f133', borderTopColor: '#6366f1', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-            <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>Loading platform data…</div>
-          </div>
-        </div>
+    const isPlatformAdmin = isSaasMasterAdmin || ['business_manager','sales_operations'].includes(role);
+    const isSalesRole     = ['sales_manager','revenue_manager','account_executive','sdr','customer_success_manager','sales_operations','business_manager'].includes(role);
+
+    const fetches: Promise<unknown>[] = [];
+
+    if (isPlatformAdmin) {
+      fetches.push(
+        getPlatformConfig().catch(() => null).then(d => setPlatformCfg(d)),
+        getAllTenants().catch(() => []).then(d => setTenants(d as TenantRecord[])),
+        getAllUsers().catch(() => []).then(d => setPlatformUsers(d as UserProfile[])),
       );
     }
-    return <LivePlatformDashboard user={user} platformCfg={platformCfg} tenants={tenants} users={users} />;
-  }
 
-  // In live mode as regular user → show empty tenant dashboard
-  if (isLive && !isSaasMasterAdmin) {
-    return <RegularUserDashboard user={user} />;
-  }
+    if (isSalesRole || isPlatformAdmin) {
+      fetches.push(
+        getAllOpportunities().catch(() => []).then(d => setOpps(d as Opportunity[])),
+        getAllActivities().catch(() => []).then(d => setActivities(d as CrmActivity[])),
+        getSalesTeams().catch(() => []).then(d => setTeams(d as SalesTeam[])),
+      );
+    }
 
-  // Demo / unauthenticated mode → show demo dashboard
-  return <DemoDashboard />;
-}
+    Promise.all(fetches).finally(() => setLoading(false));
+  }, [isLive, isSaasMasterAdmin, role, user]);
 
-function RegularUserDashboard({ user }: { user: ReturnType<typeof useAuth>['user'] }) {
-  usePageTitle('Dashboard');
-  const now = new Date();
-  const greeting = now.getHours() < 12 ? 'Good morning' : now.getHours() < 17 ? 'Good afternoon' : 'Good evening';
-  return (
-    <div className="page animate-fade-in">
-      <div style={{ marginBottom: 24, padding: '18px 20px', background: 'var(--bg-elevated)', borderRadius: 12, border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <div style={{ fontSize: 18, fontWeight: 800 }}>{greeting}, {user?.name?.split(' ')[0] ?? 'there'} 👋</div>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}>Your workspace is ready.</div>
-        </div>
-        <Link href="/activities" className="btn btn-primary">+ New Activity</Link>
-      </div>
-      <div className="card mt-6" style={{ textAlign: 'center', padding: '60px 40px' }}>
-        <div style={{ fontSize: 56, marginBottom: 16 }}>🏛️</div>
-        <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 8 }}>Your workspace is empty</h2>
-        <p style={{ color: 'var(--text-secondary)', fontSize: 14, maxWidth: 400, margin: '0 auto 24px', lineHeight: 1.6 }}>
-          No families, tasks, or activities have been added yet. Get started by adding your first client family.
-        </p>
-        <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-          <Link href="/families" className="btn btn-primary">+ Add Family</Link>
-          <Link href="/tasks" className="btn btn-secondary">+ Create Task</Link>
-          <Link href="/activities" className="btn btn-secondary">+ Log Activity</Link>
+  if (!isLive) {
+    return (
+      <div className="page animate-fade-in">
+        <GreetingBar name="Demo" role="Platform Demo Mode" />
+        <div style={{ textAlign: 'center', padding: '60px 40px' }}>
+          <div style={{ fontSize: 56 }}>🏛️</div>
+          <h2 style={{ fontSize: 20, fontWeight: 800, margin: '16px 0 8px' }}>MFO Nexus Platform</h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Switch to Live Mode to see your real data.</p>
         </div>
       </div>
-    </div>
-  );
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ width: 32, height: 32, border: '3px solid #6366f133', borderTopColor: '#6366f1', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
+          <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>Loading your dashboard…</div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Route by role ──────────────────────────────────────────────────────────
+  if (['saas_master_admin', 'business_manager', 'sales_operations'].includes(role)) {
+    return <PlatformAdminDashboard user={user} platformCfg={platformCfg} tenants={tenants} users={platformUsers} />;
+  }
+  if (['sales_manager', 'revenue_manager'].includes(role)) {
+    return <SalesLeaderDashboard user={user} opps={opps} activities={activities} teams={teams} />;
+  }
+  if (['account_executive', 'sdr'].includes(role)) {
+    return <SalesRepDashboard user={user} opps={opps} activities={activities} />;
+  }
+  if (role === 'customer_success_manager') {
+    return <CustomerSuccessDashboard user={user} opps={opps} activities={activities} />;
+  }
+
+  // All tenant/advisor roles
+  return <TenantUserDashboard user={user} roleLabel={ROLE_LABELS[role] ?? 'User'} />;
 }

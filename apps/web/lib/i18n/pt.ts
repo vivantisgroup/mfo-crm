@@ -18,6 +18,8 @@ export const pt: Record<TranslationKey, string> = {
   'nav.crm': 'CRM',
   'nav.support': 'Suporte',
   'nav.audit': 'Compliance',
+  'nav.roles': 'Papéis e Permissões',
+  'nav.emailTemplates': 'Modelos de E-mail',
   'nav.tenants': 'Tenants',
   'nav.plans': 'Assinaturas',
   'nav.users': 'Usuários',
@@ -25,6 +27,11 @@ export const pt: Record<TranslationKey, string> = {
   'nav.analytics': 'Analytics',
   'nav.renewals': 'Renovações',
   'nav.inbox': 'Caixa de Entrada',
+  'nav.copilot': 'Copiloto de IA',
+  'nav.dbSettings': 'Configurações de BD',
+  'nav.infrastructure': 'Infraestrutura',
+  'nav.catalogExplorer': 'Explorador de Catálogos',
+  'nav.backups': 'Gerenciamento de Backups',
 
   // Header & User Profile
   'header.search': 'Buscar registros… (⌘K)',

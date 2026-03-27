@@ -4,13 +4,9 @@ import React, { useState, useRef } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useTheme } from '@/lib/ThemeContext';
 import { useTaskQueue } from '@/lib/TaskQueueContext';
-import { logAction } from '@/lib/auditLog';
-import type { TaskQueue } from '@/lib/types';
 import {
-  buildSeedManifest, generateDemoCredentials,
-  totalDemoRecords, totalDemoCollections,
-  type DemoTenant,
-} from '@/lib/demoSeed';
+  type TaskQueue,
+} from '@/lib/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,7 +20,7 @@ type TabId =
   | 'compliance'
   | 'tasks'
   | 'users'
-  | 'demo_data';
+  | 'communications';
 
 interface ApiKeyField {
   id: string;
@@ -1236,166 +1232,42 @@ function QueueSettingsSection() {
 
 // ─── Main Admin Page ───────────────────────────────────────────────────────────
 
-const TABS: { id: TabId; label: string; icon: string; superAdminOnly?: boolean; trialOnly?: boolean }[] = [
-  { id: 'platform', label: 'Platform Config', icon: '⚙️', superAdminOnly: true },
-  { id: 'database', label: 'Database & Infra', icon: '🗄️', superAdminOnly: true },
-  { id: 'mfa', label: 'MFA / Security', icon: '🔐' },
-  { id: 'integrations', label: 'Integrations (BYOK)', icon: '🔌' },
-  { id: 'ai_keys', label: 'AI Providers', icon: '🤖' },
-  { id: 'firm', label: 'Firm Identity', icon: '🏢' },
-  { id: 'compliance', label: 'Compliance', icon: '⚖️' },
-  { id: 'tasks', label: 'Task Queues', icon: '🗂' },
-  { id: 'demo_data', label: 'Demo Data', icon: '🌱', trialOnly: true },
+const TABS: { id: TabId; label: string; icon: string; superAdminOnly?: boolean }[] = [
+  { id: 'platform',       label: 'Platform Config',       icon: '⚙️',  superAdminOnly: true },
+  { id: 'database',       label: 'Database & Infra',       icon: '🗄️', superAdminOnly: true },
+  { id: 'mfa',            label: 'MFA / Security',         icon: '🔐' },
+  { id: 'integrations',   label: 'Integrations (BYOK)',    icon: '🔌' },
+  { id: 'ai_keys',        label: 'AI Providers',           icon: '🤖' },
+  { id: 'firm',           label: 'Firm Identity',          icon: '🏢' },
+  { id: 'compliance',     label: 'Compliance',             icon: '⚖️' },
+  { id: 'tasks',          label: 'Task Queues',            icon: '🗂' },
+  { id: 'communications', label: 'Communications',         icon: '📧', superAdminOnly: true },
 ];
 
-// ─── Demo Data Section (trial tenants only) ───────────────────────────────────
 
-function DemoDataSection() {
-  const { tenant } = useAuth();
-  const tenantName = tenant?.name ?? 'This Tenant';
+// ─── Section: Communications (email templates) ────────────────────────────────
+// Dynamically imports the email template editor to avoid a heavy bundle on load
 
-  const [confirmed1, setConfirmed1] = useState(false);
-  const [confirmText, setConfirmText] = useState('');
-  const [seeding, setSeeding]= useState(false);
-  const [progress, setProgress] = useState<{ label: string; status: 'pending'|'seeding'|'done' }[]>([]);
-  const [seedDone, setSeedDone] = useState(false);
+const EmailTemplatesPage = React.lazy(
+  () => import('@/app/(dashboard)/platform/email-templates/page')
+);
 
-  const nameMatch = confirmText.trim().toLowerCase() === tenantName.trim().toLowerCase();
-
-  async function doSeed() {
-    const manifest = buildSeedManifest();
-    setSeeding(true);
-    setSeedDone(false);
-    setProgress(manifest.map(c => ({ label: c.label, status: 'pending' })));
-    for (let i = 0; i < manifest.length; i++) {
-      setProgress(prev => prev.map((p, idx) => idx === i ? { ...p, status: 'seeding' } : p));
-      await new Promise(r => setTimeout(r, 80 + Math.random() * 60));
-      setProgress(prev => prev.map((p, idx) => idx === i ? { ...p, status: 'done' } : p));
-    }
-    setSeedDone(true);
-    setConfirmed1(false);
-    setConfirmText('');
-  }
-
-  if (seedDone) {
-    return (
-      <div>
-        <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 12 }}>🌱 Demo Data</h2>
-        <div style={{ padding: '24px 28px', background: '#22c55e12', border: '1px solid #22c55e40', borderRadius: 12, textAlign: 'center' }}>
-          <div style={{ fontSize: 36, marginBottom: 10 }}>✅</div>
-          <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 6 }}>Demo data seeded successfully!</div>
-          <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
-            {totalDemoRecords().toLocaleString()} records across {totalDemoCollections()} collections have been written to <strong>{tenantName}</strong>.
-          </div>
-          <button className="btn btn-secondary btn-sm" onClick={() => { setSeedDone(false); setSeeding(false); }}>Seed Again</button>
-        </div>
-      </div>
-    );
-  }
-
-  if (seeding) {
-    const done = progress.filter(p => p.status === 'done').length;
-    const pct  = Math.round(done / Math.max(progress.length, 1) * 100);
-    return (
-      <div>
-        <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 20 }}>⚙️ Seeding Demo Data…</h2>
-        <div style={{ height: 8, background: 'var(--bg-overlay)', borderRadius: 4, marginBottom: 20, overflow: 'hidden' }}>
-          <div style={{ height: '100%', borderRadius: 4, width: `${pct}%`, background: 'var(--brand-500)', transition: 'width 0.4s ease' }} />
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {progress.map((p, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, padding: '6px 10px', borderRadius: 6, background: p.status === 'done' ? '#22c55e08' : p.status === 'seeding' ? 'var(--bg-overlay)' : 'transparent' }}>
-              <span style={{ width: 16, textAlign: 'center' }}>{p.status === 'done' ? '✓' : p.status === 'seeding' ? '⟳' : '○'}</span>
-              <span>{p.label}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
+function CommunicationsSection() {
   return (
-    <div>
-      <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>🌱 Demo Data</h2>
-      <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 20 }}>
-        Populate this trial workspace with {totalDemoRecords().toLocaleString()} realistic sample records for evaluation and demonstration.
-      </p>
-
-      {/* Danger notice — always shown */}
-      <div style={{ padding: '16px 20px', borderRadius: 12, marginBottom: 24, background: '#ef444410', border: '2px solid #ef444440' }}>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 10 }}>
-          <span style={{ fontSize: 24, flexShrink: 0 }}>🚨</span>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 14, color: '#ef4444', marginBottom: 4 }}>DESTRUCTIVE OPERATION — ALL DATA WILL BE RESET</div>
-            <div style={{ fontSize: 13, color: '#fca5a5', lineHeight: 1.6 }}>
-              This will <strong>permanently delete and replace ALL existing data</strong> in <strong>{tenantName}</strong>:
-            </div>
-          </div>
-        </div>
-        <ul style={{ margin: '0 0 0 36px', padding: 0, fontSize: 13, color: '#fca5a5', lineHeight: 1.9 }}>
-          <li>All family records, contacts, and CRM notes</li>
-          <li>All tasks, queues, and time entries</li>
-          <li>All portfolio data, holdings, and account balances</li>
-          <li>All documents, compliance records, and suitability assessments</li>
-          <li>All activities and calendar events</li>
-        </ul>
-        <div style={{ marginTop: 12, padding: '10px 14px', background: '#ef444420', borderRadius: 8, fontSize: 12, color: '#fca5a5', fontWeight: 700 }}>
-          ⚠️ This action cannot be undone.
-        </div>
+    <div className="animate-fade-in">
+      <div style={{ marginBottom: 24 }}>
+        <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>📧 Communications</h2>
+        <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+          Manage platform-wide email templates. Changes apply to all tenant communications.
+        </p>
       </div>
-
-      {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
-        {[
-          { label: 'Collections', value: totalDemoCollections() },
-          { label: 'Records',     value: totalDemoRecords().toLocaleString() },
-          { label: 'Est. time',   value: `~${Math.ceil(totalDemoCollections() * 0.12)}s` },
-        ].map(s => (
-          <div key={s.label} style={{ padding: '12px 14px', background: 'var(--bg-elevated)', borderRadius: 10, border: '1px solid var(--border)', textAlign: 'center' }}>
-            <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--brand-500)' }}>{s.value}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginTop: 3 }}>{s.label}</div>
-          </div>
-        ))}
-      </div>
-
-      {!confirmed1 ? (
-        <button
-          className="btn btn-outline"
-          style={{ borderColor: '#ef4444', color: '#ef4444', width: '100%' }}
-          onClick={() => setConfirmed1(true)}
-        >
-          I understand — this will reset all data. Continue →
-        </button>
-      ) : (
-        <div style={{ padding: '16px', background: 'var(--bg-elevated)', borderRadius: 10, border: '1px solid var(--border)' }}>
-          <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 14 }}>Final confirmation required</div>
-          <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 10 }}>Type the workspace name exactly to enable the reset:</div>
-          <code style={{ display: 'block', padding: '8px 12px', background: 'var(--bg-canvas)', borderRadius: 6, marginBottom: 12, fontWeight: 700, fontSize: 13 }}>{tenantName}</code>
-          <input
-            className="input"
-            style={{ width: '100%', marginBottom: 12, borderColor: nameMatch ? '#22c55e' : confirmText ? '#ef4444' : undefined }}
-            placeholder={`Type "${tenantName}" to confirm…`}
-            value={confirmText}
-            onChange={e => setConfirmText(e.target.value)}
-            autoFocus
-          />
-          {confirmText && !nameMatch && <div style={{ fontSize: 12, color: '#ef4444', marginBottom: 10 }}>Name does not match — check capitalisation.</div>}
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn btn-ghost btn-sm" onClick={() => { setConfirmed1(false); setConfirmText(''); }}>← Back</button>
-            <button
-              className="btn btn-sm"
-              style={{ flex: 1, fontWeight: 700, background: nameMatch ? '#ef4444' : 'var(--bg-canvas)', color: nameMatch ? 'white' : 'var(--text-tertiary)', border: `1px solid ${nameMatch ? '#ef4444' : 'var(--border)'}`, cursor: nameMatch ? 'pointer' : 'not-allowed' }}
-              disabled={!nameMatch}
-              onClick={doSeed}
-            >
-              🚀 Reset & Seed Demo Data
-            </button>
-          </div>
-        </div>
-      )}
+      <React.Suspense fallback={<div style={{ padding: 40, textAlign:'center', color:'var(--text-tertiary)' }}>Loading template editor…</div>}>
+        <EmailTemplatesPage />
+      </React.Suspense>
     </div>
   );
 }
+
 
 // ─── Main Admin Page ───────────────────────────────────────────────────────────
 
@@ -1407,24 +1279,11 @@ export default function AdminPage() {
 
   const visibleTabs = TABS.filter(t => {
     if (t.superAdminOnly && !isInternal) return false;
-    // trialOnly tabs always shown for non-internal tenants (trial status enforcement happens in the section itself)
-    if (t.trialOnly && isInternal) return false;
     return true;
   });
 
   return (
-    <div className="animate-fade-in" style={{ maxWidth: 1280, margin: '0 auto' }}>
-      <header style={{ marginBottom: 40 }}>
-        <h1 style={{ fontSize: 30, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 6 }}>
-          {isInternal ? 'Platform' : 'Tenant'} <span style={{ color: 'var(--brand-500)', fontWeight: 400 }}>Administration</span>
-        </h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-          {isInternal
-            ? 'Global platform configuration — Super Admin access required for infrastructure settings.'
-            : 'Configure your workspace integrations, AI providers, and compliance parameters.'}
-        </p>
-      </header>
-
+    <div className="page-wrapper animate-fade-in">
       <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 48 }}>
         {/* Sidebar Nav */}
         <aside style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -1440,24 +1299,21 @@ export default function AdminPage() {
               {tab.superAdminOnly && (
                 <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--brand-400)', fontWeight: 700, textTransform: 'uppercase', opacity: 0.8 }}>SA</span>
               )}
-              {tab.trialOnly && (
-                <span style={{ marginLeft: 'auto', fontSize: 9, color: '#f59e0b', fontWeight: 700, textTransform: 'uppercase', opacity: 0.8 }}>TRIAL</span>
-              )}
             </button>
           ))}
         </aside>
 
         {/* Content */}
         <main style={{ padding: 40, background: 'var(--bg-surface)', borderRadius: 'var(--radius-xl)', border: '1px solid var(--border)', minHeight: 600 }}>
-          {activeTab === 'platform'  && <PlatformSection />}
-          {activeTab === 'database'  && <DatabaseSection />}
-          {activeTab === 'mfa'       && <MfaSection />}
-          {activeTab === 'integrations' && <IntegrationsSection />}
-          {activeTab === 'ai_keys'   && <AiKeysSection />}
-          {activeTab === 'firm'      && <FirmSection />}
-          {activeTab === 'compliance'&& <ComplianceSection />}
-          {activeTab === 'tasks'     && <QueueSettingsSection />}
-          {activeTab === 'demo_data' && <DemoDataSection />}
+          {activeTab === 'platform'       && <PlatformSection />}
+          {activeTab === 'database'       && <DatabaseSection />}
+          {activeTab === 'mfa'            && <MfaSection />}
+          {activeTab === 'integrations'   && <IntegrationsSection />}
+          {activeTab === 'ai_keys'        && <AiKeysSection />}
+          {activeTab === 'firm'           && <FirmSection />}
+          {activeTab === 'compliance'     && <ComplianceSection />}
+          {activeTab === 'tasks'          && <QueueSettingsSection />}
+          {activeTab === 'communications' && <CommunicationsSection />}
         </main>
       </div>
     </div>

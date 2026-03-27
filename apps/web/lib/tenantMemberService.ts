@@ -23,6 +23,7 @@ import {
   query, where, writeBatch, arrayUnion, arrayRemove,
 } from 'firebase/firestore';
 import type { PlatformRole, UserProfile, TenantRecord } from './platformService';
+import { createNotification } from './notificationService';
 
 const db = getFirestore(firebaseApp);
 
@@ -57,30 +58,46 @@ export interface TenantInvitation {
 }
 
 export const ROLE_LABELS: Record<PlatformRole, string> = {
-  saas_master_admin:   '🔐 SaaS Master Admin',
-  tenant_admin:        '👑 Tenant Admin',
-  relationship_manager:'💼 Relationship Manager',
-  cio:                 '📊 CIO',
-  controller:          '💰 Controller',
-  compliance_officer:  '⚖️ Compliance Officer',
-  report_viewer:       '👁 Report Viewer',
-  external_advisor:    '🤝 External Advisor',
+  saas_master_admin:          '🔐 SaaS Master Admin',
+  tenant_admin:               '👑 Tenant Admin',
+  relationship_manager:       '💼 Relationship Manager',
+  cio:                        '📊 CIO',
+  controller:                 '💰 Controller',
+  compliance_officer:         '⚖️ Compliance Officer',
+  report_viewer:              '👁 Report Viewer',
+  external_advisor:           '🤝 External Advisor',
+  sales_operations:           '📈 Sales Operations',
+  business_manager:           '🏢 Business Manager',
+  sales_manager:              '🏆 Sales Manager',
+  revenue_manager:            '💹 Revenue Manager',
+  account_executive:          '💼 Account Executive',
+  sdr:                        '📞 SDR',
+  customer_success_manager:   '🤝 Customer Success Manager',
 };
 
 export const ROLE_DESCRIPTIONS: Record<PlatformRole, string> = {
-  saas_master_admin:   'Full platform control — all tenants and configuration',
-  tenant_admin:        'Full access to one tenant: users, settings, all data',
-  relationship_manager:'Manage families, tasks, documents, reporting',
-  cio:                 'Portfolio management, investments, performance',
-  controller:          'Financial data, billing, treasury operations',
-  compliance_officer:  'KYC/AML, audit logs, suitability assessments',
-  report_viewer:       'Read-only access to reports and dashboards',
-  external_advisor:    'Limited access to specific client portfolios',
+  saas_master_admin:          'Full platform control — all tenants and configuration',
+  tenant_admin:               'Full access to one tenant: users, settings, all data',
+  relationship_manager:       'Manage families, tasks, documents, reporting',
+  cio:                        'Portfolio management, investments, performance',
+  controller:                 'Financial data, billing, treasury operations',
+  compliance_officer:         'KYC/AML, audit logs, suitability assessments',
+  report_viewer:              'Read-only access to reports and dashboards',
+  external_advisor:           'Limited access to specific client portfolios',
+  sales_operations:           'Manage sales pipeline, opportunities, CRM activities, and revenue reporting',
+  business_manager:           'Cross-functional oversight of operations, team performance, and business analytics',
+  sales_manager:              'Lead a regional or global sales team — full CRM, pipeline oversight, team management',
+  revenue_manager:            'Revenue operations: forecasting, quota management, deal desk, and analytics',
+  account_executive:          'Own an opportunity pipeline — demos, proposals, closings, and account handoff',
+  sdr:                        'Sales Development Rep — lead generation, cold outreach, and qualification',
+  customer_success_manager:   'Post-sale health, onboarding, renewals, and expansion revenue',
 };
 
 const TENANT_ROLES: PlatformRole[] = [
   'tenant_admin', 'relationship_manager', 'cio',
   'controller', 'compliance_officer', 'report_viewer', 'external_advisor',
+  'sales_operations', 'business_manager',
+  'sales_manager', 'revenue_manager', 'account_executive', 'sdr', 'customer_success_manager',
 ];
 
 export { TENANT_ROLES };
@@ -91,7 +108,7 @@ export async function getTenantMembers(tenantId: string): Promise<TenantMember[]
   const snap = await getDocs(collection(db, 'tenants', tenantId, 'members'));
   return snap.docs
     .map(d => d.data() as TenantMember)
-    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+    .sort((a, b) => (a.displayName || a.email || '').localeCompare(b.displayName || b.email || ''));
 }
 
 export async function getTenantMember(tenantId: string, uid: string): Promise<TenantMember | null> {
@@ -127,14 +144,15 @@ export async function addMemberToTenant(
   };
   batch.set(memberRef, member);
 
-  // Denormalize: add tenantId to user's tenantIds array
+  // Denormalize: add tenantId to user's tenantIds array using merge so this
+  // is safe even if the user doc was just created by the admin and fields may be missing.
   const userRef = doc(db, 'users', targetUser.uid);
-  batch.update(userRef, {
+  batch.set(userRef, {
     tenantIds: arrayUnion(tenantId),
     // If user has no primary tenant yet, set this as primary
     ...(targetUser.tenantIds.length === 0 ? { tenantId } : {}),
     updatedAt: now,
-  });
+  }, { merge: true });
 
   await batch.commit();
 
@@ -234,11 +252,32 @@ export async function updateMemberRole(
   performer:  { uid: string; name: string },
 ): Promise<void> {
   const now = new Date().toISOString();
-  await updateDoc(doc(db, 'tenants', tenantId, 'members', targetUid), {
+  const batch = writeBatch(db);
+
+  // Update member record in tenant
+  batch.update(doc(db, 'tenants', tenantId, 'members', targetUid), {
     role: newRole, updatedAt: now,
   });
+
+  // ← Also update the user's top-level profile so AuthContext live listener picks it up
+  batch.update(doc(db, 'users', targetUid), {
+    role: newRole, updatedAt: now,
+  });
+
+  await batch.commit();
+
+  // Audit log
   await audit(tenantId, performer, 'MEMBER_ROLE_CHANGED', targetUid, 'user',
     `${targetName}'s role changed from ${ROLE_LABELS[oldRole]} to ${ROLE_LABELS[newRole]} in ${tenantName}`);
+
+  // In-app notification for the affected user
+  await createNotification(
+    targetUid,
+    'role_change',
+    '🔄 Your role has been updated',
+    `Your role in ${tenantName} has been changed from ${ROLE_LABELS[oldRole]} to ${ROLE_LABELS[newRole]}.`,
+    '/settings/profile',
+  ).catch(() => {}); // non-blocking — don't fail the role change if this errors
 }
 
 /**

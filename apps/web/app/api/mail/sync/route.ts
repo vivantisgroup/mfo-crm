@@ -174,19 +174,32 @@ export async function POST(req: NextRequest) {
     // 3. Get existing message IDs to avoid duplicates
     const existingIds = await getExistingMessageIds(idToken, uid);
 
-    // 4. Fetch message list from Gmail (inbox + sent combined via label filter)
-    const listUrl = `${GMAIL}/users/me/messages?maxResults=${maxResults}&labelIds=INBOX&labelIds=SENT`;
-    const listRes = await fetch(listUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (!listRes.ok) {
-      const err = await listRes.text();
-      return NextResponse.json({ error: `Gmail list failed: ${err}` }, { status: 502 });
+    // 4. Fetch message list from Gmail — inbox and sent as SEPARATE queries
+    //    (Gmail's labelIds param is an AND filter, so INBOX+SENT matches nothing useful)
+    async function fetchGmailList(label: string, max: number): Promise<{ id: string; threadId: string }[]> {
+      const url  = `${GMAIL}/users/me/messages?maxResults=${max}&labelIds=${label}`;
+      const res  = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (!res.ok) {
+        const err = await res.text();
+        console.warn(`[mail/sync] Gmail ${label} list failed: ${err}`);
+        return [];
+      }
+      const data = await res.json();
+      return data.messages ?? [];
     }
 
-    const listData = await listRes.json();
-    const messages = listData.messages ?? [];
+    const half     = Math.ceil(maxResults / 2);
+    const [inboxMsgs, sentMsgs] = await Promise.all([
+      fetchGmailList('INBOX', half),
+      fetchGmailList('SENT',  half),
+    ]);
+
+    // Merge and deduplicate by message ID
+    const seen    = new Set<string>();
+    const messages: { id: string }[] = [];
+    for (const m of [...inboxMsgs, ...sentMsgs]) {
+      if (!seen.has(m.id)) { seen.add(m.id); messages.push(m); }
+    }
 
     let newEmails    = 0;
     let newActivities = 0;
@@ -235,8 +248,8 @@ export async function POST(req: NextRequest) {
         const logId  = `gmail_${msg.id}`;
         const logData = {
           uid,
-          provider:     'google',
-          gmailMessageId: msg.id,
+          provider:         'google',
+          gmailMessageId:   msg.id,
           messageId,
           subject,
           fromEmail,
@@ -245,6 +258,7 @@ export async function POST(req: NextRequest) {
           receivedAt,
           direction,
           snippet,
+          labelIds,                      // ← persist labelIds so UI filters work
           loggedToCrm:      !!match,
           linkedFamilyId:   match?.familyId   ?? null,
           linkedFamilyName: match?.familyName ?? null,

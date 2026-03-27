@@ -21,7 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Loader2, ShieldCheck, UserPlus, LogIn, ChevronRight, LockKeyhole } from 'lucide-react';
+import { Loader2, ShieldCheck, UserPlus, LogIn, ChevronRight, LockKeyhole, Eye, EyeOff } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -174,6 +174,11 @@ function LoginContent() {
   const [loading,     setLoading]     = useState(false);
   const [error,       setError]       = useState('');
   const [isInitialized, setIsInitialized] = useState<boolean | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe,   setRememberMe]  = useState(() => {
+    if (typeof localStorage === 'undefined') return false;
+    return localStorage.getItem('rememberMe') === 'true';
+  });
 
   // Init flow
   const [logs,        setLogs]        = useState<LogEntry[]>([]);
@@ -216,7 +221,14 @@ function LoginContent() {
    */
   const signInInProgressRef = useRef(false);
 
-  useEffect(() => { logRef.current?.scrollTo({ top: 9999, behavior: 'smooth' }); }, [logs]);
+  // Pre-populate email from localStorage if remember-me was set
+  useEffect(() => {
+    if (typeof localStorage === 'undefined') return;
+    const saved = localStorage.getItem('savedEmail');
+    if (saved && localStorage.getItem('rememberMe') === 'true') setEmail(saved);
+  }, []);
+
+
 
   // ── Bootstrap: onAuthStateChanged ───────────────────────────────────────────────────────────
   // Handles TWO cases only:
@@ -252,7 +264,35 @@ function LoginContent() {
           }
 
           // MFA passed or not required — route to workspace
-          const ts = await getTenantsForUser(profile);
+          let ts = await getTenantsForUser(profile);
+
+          // Fallback: same strategy as finishAuth — if tenantIds is empty,
+          // scan tenant member docs directly. Per-tenant catch so nothing explodes.
+          if (ts.length === 0) {
+            const { getFirestore, doc: fsDoc, getDoc: fsGetDoc } = await import('firebase/firestore');
+            const { firebaseApp: fa } = await import('@mfo-crm/config');
+            const db = getFirestore(fa);
+            const candidates = ['master', profile.tenantId].filter(Boolean) as string[];
+            const found: any[] = [];
+            await Promise.all(candidates.map(async (tid) => {
+              try {
+                const memberSnap = await fsGetDoc(fsDoc(db, 'tenants', tid, 'members', fbUser.uid));
+                if (!memberSnap.exists()) return;
+                const md = memberSnap.data() as any;
+                try {
+                  const { getTenant } = await import('@/lib/platformService');
+                  const rec = await getTenant(tid);
+                  if (rec) { found.push(rec); return; }
+                } catch { /**/ }
+                found.push({ id: tid, name: tid === 'master' ? 'Platform HQ' : (md.tenantName ?? tid),
+                  plan: 'standard' as const, status: 'active' as const,
+                  isInternal: tid === 'master', brandColor: '#6366f1',
+                  createdAt: md.joinedAt ?? new Date().toISOString(), createdBy: 'admin' });
+              } catch { /**/ }
+            }));
+            if (found.length > 0) ts = found;
+          }
+
           setAuthedUser(fbUser);
           setUserProfile(profile);
           setTenants(ts);
@@ -266,6 +306,7 @@ function LoginContent() {
             setSelectedId(profile.tenantId ?? ts[0]?.id ?? '');
             setScreen('tenant_select');
           }
+
         } catch { setScreen('signin'); }
         return;
       }
@@ -286,42 +327,71 @@ function LoginContent() {
     setLogs(prev => [...prev, { ts, status, message }]);
   }, []);
 
-  // ── Forgot Password ──────────────────────────────────────────────────────────
-  async function handlePasswordReset(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmedEmail = resetEmail.trim().toLowerCase();
-    if (!trimmedEmail) { setError('Please enter your email address.'); return; }
-
-    setLoading(true);
-    setError('');
-    try {
-      // Validate the email exists in our platform before sending a reset link.
-      // Firebase silently ignores unknown emails — we want to surface this to the user.
-      const { getFirestore, collection, query, where, getDocs } = await import('firebase/firestore');
-      const db   = getFirestore(firebaseApp);
-      const snap = await getDocs(
-        query(collection(db, 'users'), where('email', '==', trimmedEmail))
-      );
-      if (snap.empty) {
-        setError(`No account found for ${trimmedEmail}. Check the email address or contact your administrator.`);
-        return;
-      }
-
-      // Account confirmed — ask Firebase to send the reset email
-      await sendPasswordResetEmail(auth, trimmedEmail);
-      setResetSent(true);
-    } catch (err: any) {
-      setError(friendlyAuthError(err.code ?? err.message));
-    } finally {
-      setLoading(false);
-    }
-  }
-  const setStep = useCallback((n: number, total: number) => setProgress(Math.round((n / total) * 100)), []);
 
   // ── Finish auth: load profile + tenants ───────────────────────────────────────
   async function finishAuth(fbUser: any) {
     const profile = await ensureUserProfile(fbUser);
-    const ts      = await getTenantsForUser(profile);
+    let ts = await getTenantsForUser(profile);
+
+    // If no tenants found: call the server-side ensure-profile endpoint first.
+    // This uses Admin SDK (bypasses Firestore rules) to heal missing profile/member data.
+    // Then retry the tenant load once.
+    if (ts.length === 0) {
+      try {
+        const idToken = await fbUser.getIdToken();
+        const healRes = await fetch('/api/auth/ensure-profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken }),
+        });
+        if (healRes.ok) {
+          // Re-read profile & tenants after server-side healing
+          const healed = await ensureUserProfile(fbUser);
+          const healedTs = await getTenantsForUser(healed);
+          if (healedTs.length > 0) {
+            ts = healedTs;
+          }
+        }
+      } catch (healErr) {
+        console.warn('[finishAuth] ensure-profile heal failed:', healErr);
+      }
+    }
+
+    // Final fallback: scan member sub-collections directly.
+    // A signed-in user can ALWAYS read their own member doc (rule: request.auth.uid == uid).
+    // Per-tenant try/catch so one failure can't abort the whole scan.
+    if (ts.length === 0) {
+      const { getFirestore, doc: fsDoc, getDoc: fsGetDoc } = await import('firebase/firestore');
+      const { firebaseApp: fa } = await import('@mfo-crm/config');
+      const db = getFirestore(fa);
+
+      const candidates = Array.from(new Set(['master', profile.tenantId].filter(Boolean))) as string[];
+      const foundTenants: any[] = [];
+      await Promise.all(candidates.map(async (tid) => {
+        try {
+          const memberSnap = await fsGetDoc(fsDoc(db, 'tenants', tid, 'members', fbUser.uid));
+          if (!memberSnap.exists()) return;
+
+          const memberData = memberSnap.data() as any;
+          try {
+            const { getTenant } = await import('@/lib/platformService');
+            const tenantRecord = await getTenant(tid);
+            if (tenantRecord) { foundTenants.push(tenantRecord); return; }
+          } catch { /* fall through to minimal record */ }
+
+          foundTenants.push({
+            id: tid, name: tid === 'master' ? 'Platform HQ' : (memberData.tenantName ?? tid),
+            plan: 'standard' as const, status: 'active' as const,
+            isInternal: tid === 'master', brandColor: '#6366f1',
+            createdAt: memberData.joinedAt ?? new Date().toISOString(), createdBy: 'admin',
+          });
+        } catch (e) {
+          console.error('[finishAuth] error scanning tenant', tid, e);
+        }
+      }));
+
+      if (foundTenants.length > 0) ts = foundTenants;
+    }
     setAuthedUser(fbUser);
     setUserProfile(profile);
     setTenants(ts);
@@ -335,15 +405,28 @@ function LoginContent() {
     }
   }
 
+  // ── Forgot Password ──────────────────────────────────────────────────────────
+  async function handlePasswordReset(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmedEmail = resetEmail.trim().toLowerCase();
+    if (!trimmedEmail) { setError('Please enter your email address.'); return; }
+    setLoading(true);
+    setError('');
+    try {
+      await sendPasswordResetEmail(auth, trimmedEmail);
+      setResetSent(true);
+    } catch (err: any) {
+      setError(friendlyAuthError(err.code ?? err.message));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const setStep = useCallback((n: number, total: number) => setProgress(Math.round((n / total) * 100)), []);
+
+
+
   // ── Sign In ───────────────────────────────────────────────────────────────────
-  // Handles the COMPLETE fresh sign-in flow:
-  // 1. Firebase password auth
-  // 2. Profile fetch
-  // 3. MFA gate (if enabled) → show challenge screen
-  // 4. No MFA → finishAuth → dashboard
-  //
-  // signInInProgressRef is set to true for the entire duration so
-  // onAuthStateChanged returns early and doesn't double-handle.
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
     setError('');
@@ -351,13 +434,37 @@ function LoginContent() {
     setLoading(true);
     signInInProgressRef.current = true;
     try {
-      // Step 1: Firebase auth
+      if (typeof localStorage !== 'undefined') {
+        if (rememberMe) { localStorage.setItem('rememberMe', 'true'); localStorage.setItem('savedEmail', email); }
+        else { localStorage.removeItem('rememberMe'); localStorage.removeItem('savedEmail'); }
+      }
+
+      // Step 1: Firebase Auth
       const cred = await signInWithEmailAndPassword(auth, email, password);
 
-      // Step 2: Load profile (onAuthStateChanged is blocked by signInInProgressRef)
-      const profile = await ensureUserProfile(cred.user);
+      // Step 2: Server-side ensure-profile (Admin SDK — bypasses ALL Firestore security rules).
+      // This guarantees profile + member docs exist before any client Firestore reads.
+      // If this succeeds, we can use the server data directly and skip client Firestore reads.
+      let serverProfile: any = null;
+      let serverTenants: any[] = [];
+      try {
+        const idToken   = await cred.user.getIdToken();
+        const healRes   = await fetch('/api/auth/ensure-profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken }),
+        });
+        if (healRes.ok) {
+          const body = await healRes.json();
+          serverProfile  = body.profile  ?? null;
+          serverTenants  = body.tenants  ?? [];
+        }
+      } catch (ensureErr) {
+        console.warn('[handleSignIn] ensure-profile unavailable:', ensureErr);
+      }
 
-      // Step 3: MFA gate
+      // Step 3: MFA gate (use server profile if available, else read locally)
+      const profile = serverProfile ?? await ensureUserProfile(cred.user);
       if (profile.mfaEnabled) {
         setMfaUid(cred.user.uid);
         setMfaFbUser(cred.user);
@@ -365,12 +472,27 @@ function LoginContent() {
         setMfaError('');
         setScreen('mfa_challenge');
         setTimeout(() => firstOtpRef.current?.focus(), 80);
-        // signInInProgressRef stays true — cleared by handleMfaVerify or Back button
         return;
       }
 
-      // Step 4: No MFA — proceed
+      // Step 4: Fast-path using server data if tenants were returned
       signInInProgressRef.current = false;
+      if (serverProfile && serverTenants.length > 0) {
+        // Server gave us everything — no client Firestore reads needed
+        try { await touchLastLogin(cred.user.uid); } catch { /* non-fatal */ }
+        setAuthedUser(cred.user);
+        setUserProfile(serverProfile);
+        setTenants(serverTenants);
+        if (serverTenants.length === 1) {
+          router.replace('/dashboard');
+        } else {
+          setSelectedId(serverProfile.tenantId ?? serverTenants[0]?.id ?? '');
+          setScreen('tenant_select');
+        }
+        return;
+      }
+
+      // Step 5: Fallback — server couldn't return data, use client-side flow
       await finishAuth(cred.user);
     } catch (err: any) {
       signInInProgressRef.current = false;
@@ -379,6 +501,7 @@ function LoginContent() {
       setLoading(false);
     }
   }
+
 
   // ── MFA: verify TOTP code ─────────────────────────────────────────────────────
   async function handleMfaVerify() {
@@ -795,8 +918,31 @@ function LoginContent() {
                       Forgot password?
                     </button>
                   </div>
-                  <Input id="password" type="password" required placeholder="••••••••••••"
-                    value={password} onChange={e => setPassword(e.target.value)} className="h-12 bg-muted/50" />
+                  <div className="relative">
+                    <Input id="password" type={showPassword ? 'text' : 'password'} required placeholder="••••••••••••"
+                      value={password} onChange={e => setPassword(e.target.value)} className="h-12 bg-muted/50 pr-12" />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(v => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
+                      tabIndex={-1}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    id="rememberMe"
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={e => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 rounded border-border accent-primary cursor-pointer"
+                  />
+                  <label htmlFor="rememberMe" className="text-sm text-muted-foreground cursor-pointer select-none">
+                    Remember me
+                  </label>
                 </div>
                 <Button type="submit" size="lg" className="w-full h-12 mt-2 text-base font-bold shadow-lg shadow-primary/20" disabled={loading}>
                   {loading ? <><Loader2 className="mr-2 h-5 w-5 animate-spin"/> Authenticating…</> : <>Sign In <ChevronRight className="w-4 h-4 ml-1" /></>}

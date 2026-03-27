@@ -9,10 +9,11 @@
  *  3. History   — completed & expired renewals
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { usePageTitle } from '@/lib/PageTitleContext';
 import {
-  getMockRenewals,
+  listRenewals,
+  updateRenewalStatus,
   renewalDaysLeft,
   formatRenewalDate,
   type RenewalRecord,
@@ -486,14 +487,39 @@ export default function RenewalsPage() {
   usePageTitle('Renewals');
 
   const [tab, setTab] = useState<Tab>('upcoming');
-  const [renewals, setRenewals] = useState<RenewalRecord[]>(() => getMockRenewals());
+  const [renewals, setRenewals] = useState<RenewalRecord[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<RenewalRecord | null>(null);
 
-  const handleStatusChange = useCallback((id: string, status: RenewalStatus) => {
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    listRenewals().then(data => {
+      if (mounted) {
+        setRenewals(data);
+        setLoading(false);
+      }
+    }).catch(e => {
+      console.error('Failed to fetch renewals:', e);
+      if (mounted) setLoading(false);
+    });
+    return () => { mounted = false; };
+  }, []);
+
+  const handleStatusChange = useCallback(async (id: string, status: RenewalStatus) => {
+    // Optimistic UI update
     setRenewals(prev =>
       prev.map(r => r.id === id ? { ...r, status } : r)
     );
     setSelected(prev => prev?.id === id ? { ...prev, status } : prev);
+    
+    // Server update
+    try {
+      await updateRenewalStatus(id, status, { uid: 'system', name: 'System' }); // Assuming we don't have user object directly accessible here without useAuth
+    } catch (e) {
+      console.error('Failed to update renewal status:', e);
+      // Let it fail silently in UI or add toast
+    }
   }, []);
 
   // Summary KPIs
@@ -516,13 +542,20 @@ export default function RenewalsPage() {
             <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }}>{k.label}</div>
           </div>
         ))}
-        <button className="btn btn-primary btn-sm" style={{ fontSize: 13 }}>
-          + New Renewal
+        <button className="btn btn-primary btn-sm" style={{ fontSize: 13 }} disabled={loading}>
+          {loading ? '...' : '+ New Renewal'}
         </button>
       </div>
 
+      {loading && (
+        <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--text-tertiary)' }}>
+          ⏳ Loading lively renewals...
+        </div>
+      )}
+
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 28, borderBottom: '1px solid var(--border)' }}>
+      {!loading && (
+        <div style={{ display: 'flex', gap: 4, marginBottom: 28, borderBottom: '1px solid var(--border)' }}>
         {([
           { id: 'upcoming' as Tab, label: '⏰ Upcoming' },
           { id: 'pipeline' as Tab, label: '🗂 Pipeline' },
@@ -544,11 +577,12 @@ export default function RenewalsPage() {
           </button>
         ))}
       </div>
+      )}
 
       {/* Tab content */}
-      {tab === 'upcoming' && <UpcomingTab renewals={renewals} onSelect={setSelected} />}
-      {tab === 'pipeline' && <PipelineTab renewals={renewals} onSelect={setSelected} />}
-      {tab === 'history'  && <HistoryTab  renewals={renewals} onSelect={setSelected} />}
+      {!loading && tab === 'upcoming' && <UpcomingTab renewals={renewals} onSelect={setSelected} />}
+      {!loading && tab === 'pipeline' && <PipelineTab renewals={renewals} onSelect={setSelected} />}
+      {!loading && tab === 'history'  && <HistoryTab  renewals={renewals} onSelect={setSelected} />}
 
       {/* Slide-in drawer */}
       <RenewalDrawer

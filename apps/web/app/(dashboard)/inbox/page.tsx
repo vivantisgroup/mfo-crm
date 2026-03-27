@@ -1,325 +1,145 @@
 'use client';
 
 /**
- * /inbox — Unified Smart Inbox
+ * /inbox — Full 3-pane Email Client
  *
- * Today's view combining:
- *  • Google Calendar events (real-time)
- *  • Synced Gmail messages (from email_logs)
- *  • CRM-linked vs unlinked email detection
- *  • Inline email composer (sends via /api/mail/send)
- *  • One-click Gmail sync trigger
- *  • Proactive Google connection health check on mount
+ * Pane 1 (left)   — FolderNav: folder list + CRM labels
+ * Pane 2 (center) — ThreadList: thread rows from email_logs + Gmail
+ * Pane 3 (right)  — ReadingPane: full decoded thread body
+ *
+ * Existing backend is preserved:
+ *  • /api/mail/sync  — syncs Gmail → email_logs (called from FolderNav)
+ *  • /api/mail/send  — sends via Gmail API (called from Composer)
+ *  • /api/mail/thread/:id — new: fetches full thread (called from ReadingPane)
+ *  • /api/mail/action    — new: archive/star/trash/markRead
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/lib/AuthContext';
-import { getFirestore, collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import {
+  getFirestore, collection, query, orderBy, onSnapshot,
+} from 'firebase/firestore';
 import { firebaseApp } from '@mfo-crm/config';
 import { getAuth } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
+import { AlertTriangle } from 'lucide-react';
+
+import { FolderNav, type FolderKey } from './components/FolderNav';
+import { ThreadList, type ThreadSummary } from './components/ThreadList';
+import { ReadingPane } from './components/ReadingPane';
+import { Composer } from './components/Composer';
+import type { GmailLabel } from '@/app/api/mail/labels/route';
+import type { CrmLinkTarget } from '@/app/api/mail/link/route';
 
 const db = getFirestore(firebaseApp);
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface EmailEntry {
-  id:               string;
-  subject:          string;
-  fromEmail:        string;
-  fromName:         string;
-  toEmails:         string[];
-  snippet:          string;
-  direction:        'inbound' | 'outbound';
-  receivedAt:       string;
-  linkedFamilyId?:  string;
-  linkedFamilyName?:string;
-  loggedToCrm:      boolean;
-  gmailMessageId?:  string;
+interface EmailLog {
+  id:                string;
+  subject:           string;
+  fromEmail:         string;
+  fromName:          string;
+  toEmails:          string[];
+  snippet:           string;
+  direction:         'inbound' | 'outbound';
+  receivedAt:        string;
+  linkedFamilyId?:   string;
+  linkedFamilyName?: string;
+  loggedToCrm:       boolean;
+  gmailMessageId?:   string;
+  labelIds?:         string[];
+  crmLinks?:         CrmLinkTarget[];
 }
-
-interface CalEvent {
-  id:        string;
-  title:     string;
-  start:     string;
-  end:       string;
-  allDay:    boolean;
-  attendees: { email: string; name: string; status: string }[];
-  htmlLink:  string;
-  location:  string;
-}
-
-type ConnectionHealth = 'unknown' | 'ok' | 'no_token' | 'not_connected';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function timeLabel(iso: string) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  const now = new Date();
-  if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+function emailLogToThread(e: EmailLog): ThreadSummary {
+  const labelIds = e.labelIds ?? [];
+  return {
+    id:              e.id,
+    gmailThreadId:   e.gmailMessageId,
+    subject:         e.subject,
+    fromEmail:       e.fromEmail,
+    fromName:        e.fromName,
+    snippet:         e.snippet,
+    receivedAt:      e.receivedAt,
+    direction:       e.direction,
+    isUnread:        labelIds.includes('UNREAD'),
+    isStarred:       labelIds.includes('STARRED'),
+    linkedFamilyId:  e.linkedFamilyId,
+    linkedFamilyName:e.linkedFamilyName,
+    messageCount:    1,
+  };
+}
+
+function filterThreads(emails: EmailLog[], folder: FolderKey): EmailLog[] {
+  const labels = (e: EmailLog) => e.labelIds ?? [];
+  switch (folder) {
+    case 'INBOX':    return emails.filter(e => labels(e).includes('INBOX')   && !labels(e).includes('TRASH'));
+    case 'SENT':     return emails.filter(e => labels(e).includes('SENT')    && !labels(e).includes('TRASH'));
+    case 'STARRED':  return emails.filter(e => labels(e).includes('STARRED'));
+    case 'IMPORTANT':return emails.filter(e => labels(e).includes('IMPORTANT'));
+    case 'DRAFT':    return emails.filter(e => labels(e).includes('DRAFT'));
+    case 'TRASH':    return emails.filter(e => labels(e).includes('TRASH'));
+    case 'SPAM':     return emails.filter(e => labels(e).includes('SPAM'));
+    // Legacy lower-case keys (before Gmail labels fetched)
+    case 'inbox':    return emails.filter(e => e.direction === 'inbound'  && !labels(e).includes('TRASH'));
+    case 'sent':     return emails.filter(e => e.direction === 'outbound' && !labels(e).includes('TRASH'));
+    case 'starred':  return emails.filter(e => labels(e).includes('STARRED'));
+    case 'trash':    return emails.filter(e => labels(e).includes('TRASH'));
+    // CRM smart labels
+    case 'unlinked': return emails.filter(e => !e.crmLinks?.length && !e.linkedFamilyId);
+    case 'all':      return emails;
+    // User-defined Gmail label ID (e.g. 'Label_123456')
+    default:         return emails.filter(e => labels(e).includes(folder));
   }
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
-function isToday(iso: string) {
-  if (!iso) return false;
-  return new Date(iso).toDateString() === new Date().toDateString();
-}
+// ─── Connection Banners ───────────────────────────────────────────────────────
 
-// ─── Re-connect Banner ────────────────────────────────────────────────────────
+function AlertBanner({ type, uid, returnTo }: { type: 'not_connected' | 'no_token'; uid: string; returnTo: string }) {
+  const router  = useRouter();
+  const [busy, setBusy] = useState(false);
 
-function ReconnectBanner({ uid, returnTo }: { uid: string; returnTo: string }) {
-  const [loading, setLoading] = useState(false);
-
-  async function handleReconnect() {
-    setLoading(true);
+  async function reconnect() {
+    setBusy(true);
     try {
       const idToken = await getAuth().currentUser?.getIdToken();
-      if (!idToken) throw new Error('Not authenticated');
       const res = await fetch('/api/oauth/google/prepare', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ idToken, uid, returnTo }),
       });
-      if (!res.ok) throw new Error(`Prepare failed: ${res.status}`);
       const { authUrl } = await res.json();
       window.location.href = authUrl;
     } catch (e: any) {
-      alert(`Could not start Google OAuth: ${e.message}`);
-      setLoading(false);
+      alert(e.message);
+      setBusy(false);
     }
   }
 
-  return (
-    <div style={{
-      padding: '14px 18px',
-      borderRadius: 12,
-      marginBottom: 20,
-      background: '#f59e0b12',
-      border: '1px solid #f59e0b40',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: 16,
-    }}>
-      <div>
-        <div style={{ fontWeight: 700, fontSize: 13, color: '#f59e0b', marginBottom: 2 }}>
-          🔑 Google account needs re-authorization
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-          Your Gmail sync token has expired or is missing. Re-connect your Google account to resume email syncing.
-        </div>
-      </div>
-      <button
-        className="btn btn-primary btn-sm"
-        style={{ fontSize: 12, whiteSpace: 'nowrap' }}
-        onClick={handleReconnect}
-        disabled={loading}
-      >
-        {loading ? '⏳ Redirecting…' : '🔑 Re-connect Google →'}
-      </button>
-    </div>
-  );
-}
-
-// ─── Not Connected Banner ─────────────────────────────────────────────────────
-
-function NotConnectedBanner() {
-  const router = useRouter();
-  return (
-    <div style={{
-      padding: '20px 24px',
-      borderRadius: 14,
-      marginBottom: 24,
-      background: 'var(--bg-elevated)',
-      border: '1px solid var(--border)',
-      display: 'flex',
-      alignItems: 'center',
-      gap: 20,
-    }}>
-      <div style={{ fontSize: 40, flexShrink: 0 }}>📭</div>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Gmail not connected</div>
-        <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-          Connect your Google Workspace account to sync emails and calendar events with the CRM.
-        </div>
-      </div>
-      <button
-        className="btn btn-primary btn-sm"
-        style={{ fontSize: 13, whiteSpace: 'nowrap' }}
-        onClick={() => router.push('/settings?section=mail')}
-      >
-        Connect Gmail →
-      </button>
-    </div>
-  );
-}
-
-// ─── Email Composer ───────────────────────────────────────────────────────────
-
-function Composer({
-  initialTo, initialSubject, replyToId, onClose, onSent,
-}: {
-  initialTo?: string; initialSubject?: string; replyToId?: string;
-  onClose: () => void; onSent: () => void;
-}) {
-  const { user } = useAuth();
-  const [to,      setTo]      = useState(initialTo ?? '');
-  const [subject, setSubject] = useState(initialSubject ?? '');
-  const [body,    setBody]    = useState('');
-  const [sending, setSending] = useState(false);
-  const [error,   setError]   = useState('');
-
-  async function handleSend() {
-    if (!to || !subject || !body) { setError('Please fill all fields.'); return; }
-    setSending(true);
-    setError('');
-    try {
-      const idToken = await getAuth().currentUser?.getIdToken();
-      const tenant  = JSON.parse(localStorage.getItem('mfo_active_tenant') ?? '{}');
-      const res = await fetch('/api/mail/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          uid: user?.uid, idToken,
-          to, subject, body,
-          tenantId: tenant?.id,
-          replyToMessageId: replyToId,
-        }),
-      });
-      if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
-      onSent();
-      onClose();
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setSending(false);
-    }
-  }
-
-  return (
-    <div style={{
-      position: 'fixed', bottom: 24, right: 24, width: 520, zIndex: 200,
-      background: 'var(--bg-surface)', border: '1px solid var(--border)',
-      borderRadius: 16, boxShadow: '0 24px 48px rgba(0,0,0,0.4)',
-      display: 'flex', flexDirection: 'column', overflow: 'hidden',
-    }}>
-      {/* Header */}
-      <div style={{ padding: '12px 16px', background: 'var(--bg-elevated)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontWeight: 700, fontSize: 13 }}>✉️ {replyToId ? 'Reply' : 'New Message'}</span>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: 'var(--text-tertiary)' }}>✕</button>
-      </div>
-
-      <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <input className="input" placeholder="To: email address" value={to} onChange={e => setTo(e.target.value)} style={{ fontSize: 13 }} />
-        <input className="input" placeholder="Subject" value={subject} onChange={e => setSubject(e.target.value)} style={{ fontSize: 13 }} />
-        <textarea
-          className="input"
-          placeholder="Write your message…"
-          value={body}
-          onChange={e => setBody(e.target.value)}
-          rows={8}
-          style={{ resize: 'vertical', fontSize: 13, fontFamily: 'inherit', lineHeight: 1.6 }}
-        />
-        {error && <div style={{ fontSize: 12, color: '#ef4444' }}>{error}</div>}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary btn-sm" onClick={handleSend} disabled={sending}>
-            {sending ? '⏳ Sending…' : '📤 Send via Gmail'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Email Card ───────────────────────────────────────────────────────────────
-
-function EmailCard({ email, onReply }: { email: EmailEntry; onReply: (e: EmailEntry) => void }) {
-  const isLinked  = !!email.linkedFamilyId;
-  const isOutbound = email.direction === 'outbound';
-
-  return (
-    <div style={{
-      border: `1px solid ${isLinked ? 'var(--brand-500)33' : 'var(--border)'}`,
-      borderRadius: 12,
-      padding: '12px 16px',
-      background: isLinked ? 'var(--brand-900)08' : 'var(--bg-surface)',
-      display: 'flex', flexDirection: 'column', gap: 6,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-          <span style={{ fontSize: 14, flexShrink: 0 }}>{isOutbound ? '↗' : '↙'}</span>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {email.subject}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>
-              {isOutbound ? `To: ${email.toEmails[0]}` : `From: ${email.fromName || email.fromEmail}`}
-            </div>
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          {isLinked && (
-            <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: 'var(--brand-500)22', color: 'var(--brand-400)', fontWeight: 700 }}>
-              {email.linkedFamilyName}
-            </span>
-          )}
-          <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{timeLabel(email.receivedAt)}</span>
-        </div>
-      </div>
-      {email.snippet && (
-        <div style={{ fontSize: 12, color: 'var(--text-secondary)', paddingLeft: 24, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {email.snippet}
-        </div>
-      )}
-      <div style={{ display: 'flex', gap: 8, paddingLeft: 24, marginTop: 2 }}>
-        <button
-          className="btn btn-ghost btn-sm"
-          style={{ fontSize: 11, padding: '2px 10px' }}
-          onClick={() => onReply(email)}
-        >
-          ↩ Reply
+  if (type === 'not_connected') {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 18px', background: '#6366f108', border: '1px solid #6366f133', borderRadius: 10, margin: '12px 16px' }}>
+        <AlertTriangle size={16} color="#f59e0b" />
+        <div style={{ flex: 1, fontSize: 13 }}>Gmail not connected — <span style={{ color: 'var(--text-secondary)' }}>go to Settings to connect your Google account.</span></div>
+        <button className="btn btn-secondary btn-sm" style={{ fontSize: 12 }} onClick={() => router.push('/settings?section=mail')}>
+          Connect →
         </button>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
-// ─── Calendar Event Card ──────────────────────────────────────────────────────
-
-function CalEventCard({ ev }: { ev: CalEvent }) {
-  const startTime = ev.allDay ? 'All day' : timeLabel(ev.start);
   return (
-    <div style={{
-      border: '1px solid #3b82f633',
-      borderLeft: '3px solid #3b82f6',
-      borderRadius: 10,
-      padding: '10px 14px',
-      background: '#3b82f608',
-      display: 'flex', flexDirection: 'column', gap: 4,
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontWeight: 700, fontSize: 13 }}>{ev.title}</div>
-        <div style={{ fontSize: 11, color: '#3b82f6', fontWeight: 600 }}>{startTime}</div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 18px', background: '#f59e0b08', border: '1px solid #f59e0b33', borderRadius: 10, margin: '12px 16px' }}>
+      <AlertTriangle size={16} color="#f59e0b" />
+      <div style={{ flex: 1, fontSize: 13 }}>
+        <strong>Gmail token expired</strong> — <span style={{ color: 'var(--text-secondary)' }}>re-connect your Google account to resume syncing.</span>
       </div>
-      {ev.location && (
-        <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>📍 {ev.location}</div>
-      )}
-      {ev.attendees.length > 0 && (
-        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-          👥 {ev.attendees.slice(0, 3).map(a => a.name || a.email).join(', ')}
-          {ev.attendees.length > 3 ? ` +${ev.attendees.length - 3}` : ''}
-        </div>
-      )}
-      {ev.htmlLink && (
-        <a href={ev.htmlLink} target="_blank" rel="noopener noreferrer"
-          style={{ fontSize: 11, color: '#3b82f6', textDecoration: 'none', marginTop: 2 }}>
-          Open in Google Calendar →
-        </a>
-      )}
+      <button className="btn btn-secondary btn-sm" style={{ fontSize: 12 }} onClick={reconnect} disabled={busy}>
+        {busy ? '⏳…' : '🔑 Re-connect'}
+      </button>
     </div>
   );
 }
@@ -329,317 +149,312 @@ function CalEventCard({ ev }: { ev: CalEvent }) {
 export default function InboxPage() {
   const { user } = useAuth();
 
-  const [emails,     setEmails]     = useState<EmailEntry[]>([]);
-  const [calEvents,  setCalEvents]  = useState<CalEvent[]>([]);
-  const [syncing,    setSyncing]    = useState(false);
-  const [loadingCal, setLoadingCal] = useState(true);
-  const [loadingMail,setLoadingMail]= useState(true);
-  const [syncMsg,    setSyncMsg]    = useState<string | null>(null);
-  const [composer,   setComposer]   = useState<{ to?: string; subject?: string; replyId?: string } | null>(null);
-  const [tab,        setTab]        = useState<'today' | 'all' | 'unlinked'>('today');
+  const [emails,         setEmails]         = useState<EmailLog[]>([]);
+  const [loading,        setLoading]        = useState(true);
+  const [syncing,        setSyncing]        = useState(false);
+  const [syncMsg,        setSyncMsg]        = useState<string | null>(null);
+  const [folder,         setFolder]         = useState<FolderKey>('INBOX');
+  const [selected,       setSelected]       = useState<ThreadSummary | undefined>();
+  const [composer,       setComposer]       = useState<{ to?: string; subject?: string; replyId?: string; threadId?: string } | null>(null);
+  const [connHealth,     setConnHealth]     = useState<'unknown' | 'ok' | 'no_token' | 'not_connected'>('unknown');
+  const [labels,         setLabels]         = useState<GmailLabel[]>([]);
+  const [labelsLoading,  setLabelsLoading]  = useState(false);
+  const [tenantId,       setTenantId]       = useState('');
+  const [syncCount,      setSyncCount]      = useState(50);   // messages to fetch per sync
+  const [searchQuery,    setSearchQuery]    = useState('');   // client-side search filter
 
-  // Proactive connection health state
-  const [connHealth, setConnHealth] = useState<ConnectionHealth>('unknown');
+  // Resolve active tenant ID
+  useEffect(() => {
+    try {
+      const t = JSON.parse(localStorage.getItem('mfo_active_tenant') ?? '{}');
+      if (t?.id) setTenantId(t.id);
+    } catch { /* ignore */ }
+  }, []);
 
-  // ── Check Google integration health on mount ──────────────────────────────
-  const checkConnectionHealth = useCallback(async () => {
+  // ── Realtime email_logs listener (replaces getDocs — updates instantly) ────
+  useEffect(() => {
+    if (!user?.uid) return;
+    setLoading(true);
+    const q    = query(collection(db, 'users', user.uid, 'email_logs'), orderBy('receivedAt', 'desc'));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setEmails(snap.docs.map(d => ({ id: d.id, ...d.data() } as EmailLog)));
+        setLoading(false);
+      },
+      (err) => {
+        console.error('[inbox] email_logs snapshot error:', err);
+        setLoading(false);
+      },
+    );
+    return () => unsub();
+  }, [user?.uid]);
+
+  // ── Check Google integration health + auto-sync on first mount ───────────
+  const hasSyncedOnMountRef = useRef(false);
+  const checkHealth = useCallback(async () => {
     if (!user?.uid) return;
     try {
-      const idToken = await getAuth().currentUser?.getIdToken();
+      const idToken    = await getAuth().currentUser?.getIdToken();
       if (!idToken) { setConnHealth('not_connected'); return; }
-
-      // Read the integration doc directly from Firestore REST
       const PROJECT_ID = process.env.NEXT_PUBLIC_PROJECT_ID ?? 'mfo-crm';
-      const res = await fetch(
+      const res        = await fetch(
         `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/users/${user.uid}/integrations/google`,
-        { headers: { Authorization: `Bearer ${idToken}` } },
+        { headers: { Authorization: `Bearer ${idToken}` } }
       );
-
       if (res.status === 404) { setConnHealth('not_connected'); return; }
-      if (!res.ok) { setConnHealth('unknown'); return; }
-
+      if (!res.ok)            { setConnHealth('unknown');       return; }
       const doc    = await res.json();
       const fields = doc.fields ?? {};
       const status = fields.status?.stringValue ?? '';
-
       if (status !== 'connected') { setConnHealth('not_connected'); return; }
-
       const refreshToken = fields._refreshToken?.stringValue ?? '';
-      const accessToken  = fields._accessToken?.stringValue ?? '';
+      const accessToken  = fields._accessToken?.stringValue  ?? '';
       const expiresAt    = Number(fields._expiresAt?.integerValue ?? 0);
-      const tokenOk      = (refreshToken && refreshToken.length > 0) ||
-                           (accessToken && expiresAt > Date.now());
-
-      setConnHealth(tokenOk ? 'ok' : 'no_token');
-    } catch {
-      setConnHealth('unknown');
-    }
+      const ok = (refreshToken.length > 0) || (accessToken.length > 0 && expiresAt > Date.now());
+      setConnHealth(ok ? 'ok' : 'no_token');
+    } catch { setConnHealth('unknown'); }
   }, [user?.uid]);
 
-  const loadEmails = useCallback(async () => {
-    if (!user?.uid) return;
-    setLoadingMail(true);
-    try {
-      const q    = query(
-        collection(db, 'users', user.uid, 'email_logs'),
-        orderBy('receivedAt', 'desc'),
-        limit(100),
-      );
-      const snap = await getDocs(q);
-      setEmails(snap.docs.map(d => ({ id: d.id, ...d.data() } as EmailEntry)));
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoadingMail(false);
-    }
-  }, [user?.uid]);
+  // Health check runs on mount; auto-sync triggered by connHealth effect
+  useEffect(() => { checkHealth(); }, [checkHealth]);
 
-  const loadCalendar = useCallback(async () => {
+  // ── Fetch Gmail labels ────────────────────────────────────────────────────
+  const fetchLabels = useCallback(async () => {
     if (!user?.uid) return;
-    setLoadingCal(true);
+    setLabelsLoading(true);
     try {
-      const idToken  = await getAuth().currentUser?.getIdToken();
-      if (!idToken) return;
-      const timeMin  = new Date(Date.now() - 7 * 86400000).toISOString();
-      const timeMax  = new Date(Date.now() + 30 * 86400000).toISOString();
-      const params   = new URLSearchParams({ uid: user.uid, idToken, timeMin, timeMax });
-      const res      = await fetch(`/api/calendar/events?${params}`);
+      const idToken = await getAuth().currentUser?.getIdToken() ?? '';
+      const params  = new URLSearchParams({ uid: user.uid, idToken });
+      const res     = await fetch(`/api/mail/labels?${params}`);
       if (res.ok) {
         const data = await res.json();
-        setCalEvents(data.events ?? []);
+        setLabels(data.labels ?? []);
       }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoadingCal(false);
-    }
+    } catch (e) { console.error('[inbox] fetchLabels:', e); }
+    finally { setLabelsLoading(false); }
   }, [user?.uid]);
 
+  // Auto-sync + fetch labels on first mount when Gmail is connected
   useEffect(() => {
-    checkConnectionHealth();
-    loadEmails();
-    loadCalendar();
-  }, [checkConnectionHealth, loadEmails, loadCalendar]);
+    if (connHealth === 'ok' && !hasSyncedOnMountRef.current) {
+      hasSyncedOnMountRef.current = true;
+      handleSync();
+      fetchLabels();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connHealth]);
 
-  async function handleSync() {
+  // ── Gmail sync ─────────────────────────────────────────────────────────────
+  async function handleSync(maxResults?: number) {
     if (!user?.uid || syncing) return;
-
-    // If we know Google isn't connected, don't even try
     if (connHealth === 'not_connected') {
-      setSyncMsg('❌ Gmail is not connected. Go to Settings → Integrations to connect your account.');
+      setSyncMsg('❌ Gmail is not connected. Go to Settings → Integrations.');
       return;
     }
-
+    const count = maxResults ?? syncCount;
     setSyncing(true);
     setSyncMsg(null);
     try {
-      const idToken  = await getAuth().currentUser?.getIdToken();
-      const tenant   = JSON.parse(localStorage.getItem('mfo_active_tenant') ?? '{}');
+      const idToken = await getAuth().currentUser?.getIdToken();
+      const tenant  = JSON.parse(localStorage.getItem('mfo_active_tenant') ?? '{}');
       const res = await fetch('/api/mail/sync', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ uid: user.uid, idToken, tenantId: tenant?.id }),
+        body:    JSON.stringify({ uid: user.uid, idToken, tenantId: tenant?.id, maxResults: count }),
       });
       const data = await res.json();
       if (res.ok) {
-        setSyncMsg(`✅ Synced ${data.newEmails} emails, linked ${data.newActivities} to CRM`);
-        await loadEmails();
-        // Re-check health — token refresh may have updated the record
-        await checkConnectionHealth();
+        setSyncMsg(`✅ Synced ${data.newEmails} new emails (last ${count}) — ${data.newActivities} linked to CRM`);
+        await checkHealth();
+        await fetchLabels();
       } else {
-        setSyncMsg(`❌ Sync error: ${data.error}`);
-        // If it's a token error, update connection health
-        if (data.error?.includes('refresh token') || data.error?.includes('re-connect')) {
-          setConnHealth('no_token');
-        }
+        setSyncMsg(`❌ ${data.error}`);
+        if (data.error?.includes('refresh token') || data.error?.includes('re-connect')) setConnHealth('no_token');
       }
     } catch (e: any) {
       setSyncMsg(`❌ ${e.message}`);
-      if (e.message?.includes('refresh token') || e.message?.includes('re-connect')) {
-        setConnHealth('no_token');
-      }
     } finally {
       setSyncing(false);
     }
   }
 
-  // Filter emails by tab
-  const todayEmails    = emails.filter(e => isToday(e.receivedAt));
-  const unlinkedEmails = emails.filter(e => !e.linkedFamilyId);
-  const displayEmails  = tab === 'today' ? todayEmails : tab === 'unlinked' ? unlinkedEmails : emails;
-  const todayEvents    = calEvents.filter(e => isToday(e.start));
+  // ── Mail action (archive, star, trash, markRead…) ─────────────────────────
+  async function handleAction(messageIds: string[], action: string) {
+    if (!user?.uid) return;
+    try {
+      const idToken = await getAuth().currentUser?.getIdToken();
+      await fetch('/api/mail/action', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ uid: user.uid, idToken, messageIds, action }),
+      });
+      // onSnapshot listener auto-updates the email list
+    } catch (e) { console.error(e); }
+  }
 
-  // Stats
-  const linkedCount   = emails.filter(e => e.linkedFamilyId).length;
-  const unlinkedCount = unlinkedEmails.length;
+  // ── CRM link handler ───────────────────────────────────────────────────────
+  function handleLinksChange(emailLogId: string, newLinks: import('@/app/api/mail/link/route').CrmLinkTarget[]) {
+    setEmails(prev => prev.map(e => e.id === emailLogId ? { ...e, crmLinks: newLinks } : e));
+  }
+
+  // ── Derived ────────────────────────────────────────────────────────────────
+  const byFolder  = filterThreads(emails, folder);
+  const filtered  = searchQuery.trim()
+    ? byFolder.filter(e => {
+        const q = searchQuery.toLowerCase();
+        return e.subject?.toLowerCase().includes(q)
+          || e.fromName?.toLowerCase().includes(q)
+          || e.fromEmail?.toLowerCase().includes(q)
+          || e.snippet?.toLowerCase().includes(q);
+      })
+    : byFolder;
+  const threads   = filtered.map(emailLogToThread);
+
+  // Resolve folder display name (show Gmail label name if available)
+  const activeLabelName = labels.find(l => l.id === folder)?.displayName
+    ?? (folder === 'unlinked' ? 'Needs Linking' : folder === 'all' ? 'All Mail' : folder);
+
+  const counts: Partial<Record<FolderKey, number>> = {
+    INBOX:    emails.filter(e => (e.labelIds ?? []).includes('INBOX')   && !(e.labelIds ?? []).includes('TRASH')).length,
+    SENT:     emails.filter(e => (e.labelIds ?? []).includes('SENT')    && !(e.labelIds ?? []).includes('TRASH')).length,
+    STARRED:  emails.filter(e => (e.labelIds ?? []).includes('STARRED')).length,
+    TRASH:    emails.filter(e => (e.labelIds ?? []).includes('TRASH')).length,
+    unlinked: emails.filter(e => !e.crmLinks?.length && !e.linkedFamilyId).length,
+    all:      emails.length,
+  };
+
+  const defaultEmpty = connHealth === 'not_connected'
+    ? 'Connect Gmail in Settings to start syncing.'
+    : 'No emails in this folder — click Sync Gmail to fetch messages.';
+  const emptyMessage = ({
+    INBOX:    connHealth === 'not_connected' ? 'Connect Gmail in Settings to start syncing.' : 'Your inbox is empty — click Sync Gmail.',
+    SENT:     'No sent messages yet.',
+    STARRED:  'No starred emails.',
+    DRAFT:    'No drafts.',
+    IMPORTANT:'No important emails.',
+    TRASH:    'Trash is empty.',
+    SPAM:     'Spam folder is empty.',
+    unlinked: 'All emails are linked to CRM. Great work! 🎉',
+    all:      'No emails yet. Click Sync Gmail above.',
+  } as Record<string, string>)[folder] ?? defaultEmpty;
 
   return (
-    <div className="page animate-fade-in" style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px' }}>
+    <div style={{ display: 'flex', height: 'calc(100vh - var(--header-height))', overflow: 'hidden' }}>
 
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 }}>
-        <div>
-          <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 4, letterSpacing: '-0.02em' }}>Smart Inbox</h1>
-          <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-            Gmail + Calendar unified with CRM intelligence
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={handleSync}
-            disabled={syncing}
-            style={{ fontSize: 13 }}
-          >
-            {syncing ? '⏳ Syncing…' : '🔄 Sync Gmail'}
-          </button>
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={() => setComposer({})}
-            style={{ fontSize: 13 }}
-          >
-            ✉️ Compose
-          </button>
-        </div>
-      </div>
+      {/* ── Pane 1: Folder nav ────────────────────────────────────────────── */}
+      <FolderNav
+        active={folder}
+        counts={counts}
+        syncing={syncing}
+        labels={labels}
+        labelsLoading={labelsLoading}
+        syncCount={syncCount}
+        onSyncCountChange={setSyncCount}
+        onSelect={f => { setFolder(f); setSelected(undefined); setSearchQuery(''); }}
+        onSync={handleSync}
+        onLoadMore={() => handleSync(syncCount * 2)}
+        onCompose={() => setComposer({})}
+      />
 
-      {/* ── Connection health banners (shown proactively on mount) ── */}
-      {connHealth === 'not_connected' && <NotConnectedBanner />}
-      {connHealth === 'no_token' && user?.uid && (
-        <ReconnectBanner uid={user.uid} returnTo="/inbox" />
-      )}
+      {/* ── Center + Right wrapper ────────────────────────────────────────── */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
 
-      {/* Sync feedback banner */}
-      {syncMsg && (
-        <div style={{
-          padding: '12px 16px', borderRadius: 10, marginBottom: 20, fontSize: 13, fontWeight: 600,
-          background: syncMsg.startsWith('✅') ? '#22c55e15' : '#ef444415',
-          color:      syncMsg.startsWith('✅') ? '#22c55e'   : '#ef4444',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-        }}>
-          <span>{syncMsg}</span>
-          <button
-            style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 16, color: 'inherit', lineHeight: 1 }}
-            onClick={() => setSyncMsg(null)}
-            title="Dismiss"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
-      {/* Stats row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
-        {[
-          { label: 'Emails today',    value: todayEmails.length,   icon: '📧', color: '#6366f1' },
-          { label: 'CRM-linked',      value: linkedCount,          icon: '🔗', color: '#22c55e' },
-          { label: 'Needs linking',   value: unlinkedCount,        icon: '⚡', color: '#f59e0b' },
-          { label: "Today's meetings",value: todayEvents.length,   icon: '📅', color: '#3b82f6' },
-        ].map(s => (
-          <div key={s.label} style={{
-            background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-            borderRadius: 12, padding: '14px 18px',
+        {/* Banner area */}
+        {connHealth === 'not_connected' && user?.uid && (
+          <AlertBanner type="not_connected" uid={user.uid} returnTo="/inbox" />
+        )}
+        {connHealth === 'no_token' && user?.uid && (
+          <AlertBanner type="no_token" uid={user.uid} returnTo="/inbox" />
+        )}
+        {syncMsg && (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '10px 18px', margin: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+            background: syncMsg.startsWith('✅') ? '#22c55e12' : '#ef444412',
+            color:      syncMsg.startsWith('✅') ? '#22c55e'   : '#ef4444',
+            border:    `1px solid ${syncMsg.startsWith('✅') ? '#22c55e33' : '#ef444433'}`,
           }}>
-            <div style={{ fontSize: 20, marginBottom: 6 }}>{s.icon}</div>
-            <div style={{ fontSize: 24, fontWeight: 800, color: s.color }}>{s.value}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{s.label}</div>
+            <span>{syncMsg}</span>
+            <button onClick={() => setSyncMsg(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: 'inherit' }}>✕</button>
           </div>
-        ))}
-      </div>
+        )}
 
-      {/* Layout grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 20, alignItems: 'start' }}>
+        {/* ── Pane 2 + 3 split ───────────────────────────────────────────── */}
+        <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
 
-        {/* Left: Email feed */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* Tab bar */}
-          <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
-            {([
-              { key: 'today',    label: `Today (${todayEmails.length})` },
-              { key: 'all',      label: `All (${emails.length})` },
-              { key: 'unlinked', label: `Unlinked (${unlinkedCount})` },
-            ] as const).map(t => (
-              <button key={t.key} onClick={() => setTab(t.key)} style={{
-                padding: '6px 14px', fontSize: 13,
-                fontWeight: tab === t.key ? 700 : 400,
-                cursor: 'pointer', border: 'none', background: 'transparent',
-                borderBottom: tab === t.key ? '2px solid var(--brand-500)' : '2px solid transparent',
-                color: tab === t.key ? 'var(--brand-400)' : 'var(--text-secondary)',
-                marginBottom: -1, transition: 'all 0.12s',
-              }}>
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          {loadingMail ? (
-            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
-              Loading emails…
-            </div>
-          ) : displayEmails.length === 0 ? (
-            <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
-              <div style={{ fontSize: 32, marginBottom: 12 }}>📭</div>
-              {tab === 'unlinked'
-                ? 'All emails are linked to CRM. Great work!'
-                : connHealth === 'not_connected'
-                ? 'Connect Gmail in Settings to start syncing emails.'
-                : 'No emails yet. Click "Sync Gmail" to fetch your messages.'}
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {displayEmails.map(email => (
-                <EmailCard
-                  key={email.id}
-                  email={email}
-                  onReply={e => setComposer({
-                    to:      e.direction === 'inbound' ? e.fromEmail : e.toEmails[0],
-                    subject: e.subject.startsWith('Re:') ? e.subject : `Re: ${e.subject}`,
-                    replyId: e.gmailMessageId,
-                  })}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Right: Calendar sidebar */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-            📅 Today's Schedule
-          </div>
-          {loadingCal ? (
-            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '12px 0' }}>Loading calendar…</div>
-          ) : todayEvents.length === 0 ? (
-            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '12px 0', textAlign: 'center' }}>
-              No meetings today
-            </div>
-          ) : (
-            todayEvents.map(ev => <CalEventCard key={ev.id} ev={ev} />)
-          )}
-
-          {/* Upcoming divider */}
-          {calEvents.filter(e => !isToday(e.start) && new Date(e.start) > new Date()).slice(0, 5).length > 0 && (
-            <>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 8 }}>
-                Upcoming
+          {/* Thread list */}
+          <div style={{ width: 360, flexShrink: 0, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {/* Search bar + folder header */}
+            <div style={{ padding: '12px 12px 8px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)' }}>{activeLabelName}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                  {searchQuery ? `${filtered.length} of ${byFolder.length}` : filtered.length} thread{filtered.length !== 1 ? 's' : ''}
+                </div>
               </div>
-              {calEvents
-                .filter(e => !isToday(e.start) && new Date(e.start) > new Date())
-                .slice(0, 5)
-                .map(ev => <CalEventCard key={ev.id} ev={ev} />)}
-            </>
-          )}
+              {/* Search input */}
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', pointerEvents: 'none', display: 'flex' }}>
+                  🔍
+                </span>
+                <input
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Search emails…"
+                  style={{
+                    width: '100%', boxSizing: 'border-box',
+                    padding: '7px 28px 7px 32px',
+                    borderRadius: 8, border: '1px solid var(--border)',
+                    background: 'var(--bg-canvas)', color: 'inherit',
+                    fontSize: 13, outline: 'none',
+                  }}
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', fontSize: 14, padding: 2, lineHeight: 1 }}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
+            <ThreadList
+              threads={threads}
+              loading={loading}
+              selected={selected?.id}
+              onSelect={t => setSelected(t)}
+              onAction={handleAction}
+              emptyMessage={searchQuery ? `No emails matching “${searchQuery}”` : emptyMessage}
+            />
+          </div>
+
+          {/* Reading pane */}
+          <ReadingPane
+            thread={selected}
+            uid={user?.uid ?? ''}
+            tenantId={tenantId}
+            emailLogId={selected?.id}
+            initialLinks={selected ? (emails.find(e => e.id === selected.id)?.crmLinks ?? []) : []}
+            onReply={(to, subject, messageId, threadId) =>
+              setComposer({ to, subject, replyId: messageId, threadId })
+            }
+            onAction={handleAction}
+            onLinksChange={handleLinksChange}
+          />
         </div>
       </div>
 
-      {/* Email Composer */}
+      {/* Composer */}
       {composer !== null && (
         <Composer
           initialTo={composer.to}
           initialSubject={composer.subject}
           replyToId={composer.replyId}
+          threadId={composer.threadId}
           onClose={() => setComposer(null)}
-          onSent={loadEmails}
+          onSent={() => { /* onSnapshot auto-refreshes the thread list */ }}
         />
       )}
     </div>

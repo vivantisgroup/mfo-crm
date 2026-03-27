@@ -74,7 +74,9 @@ export type Permission =
   // ─ Platform (SaaS Master) ─
   | 'platform:tenants'   | 'platform:billing'     | 'platform:config'
   | 'platform:users'     | 'platform:audit'       | 'platform:crm'
-  | 'platform:support';
+  | 'platform:support'
+  // ─ Email Templates ─
+  | 'email_templates:manage';
 
 // ─── Role Permission Maps ──────────────────────────────────────────────────────
 
@@ -97,6 +99,7 @@ const ALL_PERMISSIONS: Permission[] = [
   'admin:branding','admin:billing','admin:audit',
   'platform:tenants','platform:billing','platform:config','platform:users',
   'platform:audit','platform:crm','platform:support',
+  'email_templates:manage',
 ];
 
 export const ROLE_PERMISSIONS: Record<PlatformRole, Permission[]> = {
@@ -120,6 +123,7 @@ export const ROLE_PERMISSIONS: Record<PlatformRole, Permission[]> = {
     'concierge:read','concierge:write',
     'admin:users','admin:groups','admin:roles','admin:settings',
     'admin:integrations','admin:branding','admin:billing','admin:audit',
+    'email_templates:manage',
   ],
 
   relationship_manager: [
@@ -187,6 +191,141 @@ export const ROLE_PERMISSIONS: Record<PlatformRole, Permission[]> = {
     'portfolio:read',
     'documents:read',
     'reports:read',
+  ],
+
+  sales_operations: [
+    // Client & contact management
+    'families:read','families:write','families:export',
+    'contacts:read','contacts:write','contacts:delete',
+    // CRM activities (pipeline, calls, meetings, notes)
+    'activities:read','activities:write','activities:delete',
+    // Task management
+    'tasks:read','tasks:write','tasks:assign',
+    // Calendar
+    'calendar:read','calendar:write',
+    // Documents
+    'documents:read','documents:write',
+    // Reporting (revenue, pipeline analytics)
+    'reports:read','reports:generate','reports:export',
+    // Concierge / service delivery
+    'concierge:read','concierge:write',
+    // Read-only compliance (suitability checks before pitches)
+    'suitability:read',
+  ],
+
+  business_manager: [
+    'families:read','families:write','families:export','families:import',
+    'contacts:read','contacts:write',
+    'activities:read','activities:write',
+    'tasks:read','tasks:write','tasks:delete','tasks:assign',
+    'calendar:read','calendar:write','calendar:delete',
+    'portfolio:read','portfolio:export',
+    'documents:read','documents:write',
+    'reports:read','reports:generate','reports:export','reports:distribute',
+    'estate:read',
+    'governance:read','governance:write',
+    'compliance:read','suitability:read',
+    'audit:read',
+    'concierge:read','concierge:write',
+    'admin:users','admin:groups','admin:settings','admin:integrations',
+  ],
+
+  // ─── Sales Structure Roles ────────────────────────────────────────────────────
+
+  sales_manager: [
+    // Full CRM visibility (own team)
+    'families:read','families:write','families:export','families:import',
+    'contacts:read','contacts:write','contacts:delete',
+    'activities:read','activities:write','activities:delete',
+    // Full task management + assignment
+    'tasks:read','tasks:write','tasks:delete','tasks:assign',
+    'calendar:read','calendar:write','calendar:delete',
+    'documents:read','documents:write','documents:sign',
+    // Full reporting suite
+    'reports:read','reports:generate','reports:export','reports:distribute',
+    // Service delivery
+    'concierge:read','concierge:write',
+    // Compliance + suitability review
+    'compliance:read','suitability:read','suitability:write',
+    'audit:read',
+    // Team admin (own team)
+    'admin:users','admin:groups','admin:settings',
+  ],
+
+  revenue_manager: [
+    // Full data access for analytics
+    'families:read','families:export',
+    'contacts:read',
+    'activities:read',
+    'tasks:read',
+    'calendar:read',
+    'portfolio:read','portfolio:export',
+    'documents:read',
+    // Full reporting — this is the core function
+    'reports:read','reports:generate','reports:export','reports:distribute',
+    // Governance + compliance read for revenue assurance
+    'governance:read',
+    'compliance:read','suitability:read',
+    'audit:read','audit:export',
+    // Admin: can manage quotas/settings but not users
+    'admin:settings',
+  ],
+
+  account_executive: [
+    // Own CRM records
+    'families:read','families:write','families:export',
+    'contacts:read','contacts:write',
+    'activities:read','activities:write',
+    // Tasks + calendar for deal management
+    'tasks:read','tasks:write','tasks:assign',
+    'calendar:read','calendar:write',
+    // Docs + signing for proposals / contracts
+    'documents:read','documents:write','documents:sign',
+    // Core reporting for own pipeline
+    'reports:read','reports:generate','reports:export',
+    // Concierge for client delivery
+    'concierge:read','concierge:write',
+    // Pre-sale suitability
+    'suitability:read','suitability:write',
+  ],
+
+  sdr: [
+    // Prospecting — read + write leads/contacts
+    'families:read','families:write',
+    'contacts:read','contacts:write',
+    // Activity logging (calls, emails, LinkedIn)
+    'activities:read','activities:write',
+    // Task management (own tasks)
+    'tasks:read','tasks:write',
+    'calendar:read','calendar:write',
+    // Basic reporting (own activity metrics)
+    'reports:read',
+    // Concierge read for context
+    'concierge:read',
+  ],
+
+  customer_success_manager: [
+    // Full client data for account health
+    'families:read','families:write','families:export',
+    'contacts:read','contacts:write',
+    // Activity logging (QBRs, onboarding sessions)
+    'activities:read','activities:write',
+    // Task management
+    'tasks:read','tasks:write','tasks:assign',
+    'calendar:read','calendar:write',
+    // Portfolio + documents (health dashboards, renewal docs)
+    'portfolio:read',
+    'documents:read','documents:write','documents:sign',
+    // Customer health reporting + renewal reporting
+    'reports:read','reports:generate','reports:export','reports:distribute',
+    // Estate + governance read (for complex clients)
+    'estate:read',
+    'governance:read',
+    // Compliance
+    'compliance:read','suitability:read',
+    'audit:read',
+    // Concierge (full — CS is the service team)
+    'concierge:read','concierge:write',
   ],
 };
 
@@ -278,6 +417,8 @@ export const PERMISSION_META: Record<Permission, PermissionMeta> = {
   'platform:audit':   { id: 'platform:audit',   module: 'Platform', action: 'admin', label: 'Platform Audit',    description: 'Access full platform audit trail' },
   'platform:crm':     { id: 'platform:crm',     module: 'Platform', action: 'admin', label: 'Platform CRM',      description: 'Access the SaaS sales CRM' },
   'platform:support': { id: 'platform:support', module: 'Platform', action: 'admin', label: 'Platform Support',  description: 'Manage support tickets platform-wide' },
+  // Email Templates
+  'email_templates:manage': { id: 'email_templates:manage', module: 'Email Templates', action: 'admin', label: 'Manage Email Templates', description: 'Edit and customize tenant email notification templates' },
 };
 
 // ─── Grouped permission modules (for UI rendering) ───────────────────────────
@@ -285,7 +426,7 @@ export const PERMISSION_META: Record<Permission, PermissionMeta> = {
 export const PERMISSION_MODULES = [
   'Families','Contacts','Activities','Tasks','Calendar','Portfolio',
   'Documents','Reports','Estate','Governance','Compliance','Suitability',
-  'Audit','Concierge','Admin','Platform',
+  'Audit','Concierge','Admin','Platform','Email Templates',
 ] as const;
 
 export type PermissionModule = typeof PERMISSION_MODULES[number];

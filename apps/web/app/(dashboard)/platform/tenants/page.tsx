@@ -30,9 +30,11 @@ import {
   ROLE_LABELS, ROLE_DESCRIPTIONS, TENANT_ROLES,
   type TenantMember, type TenantInvitation,
 } from '@/lib/tenantMemberService';
-import { getAllUsers, deleteTenant, createTenant, type UserProfile } from '@/lib/platformService';
+import { getAllUsers, deleteTenant, createTenant, updateTenant, type UserProfile } from '@/lib/platformService';
+import { VERTICAL_REGISTRY, type IndustryVerticalId } from '@/lib/verticalRegistry';
 import { CommunicationPanel } from '@/components/CommunicationPanel';
 import { usePageTitle, useBreadcrumb } from '@/lib/PageTitleContext';
+import { SUPPORTED_LANGUAGES } from '@/lib/emailTemplateService';
 
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -154,8 +156,49 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
   const [allUsers,    setAllUsers]    = useState<UserProfile[]>([]);
   const [memberInput, setMemberInput] = useState('');
   const [memberRole,  setMemberRole]  = useState<import('@/lib/platformService').PlatformRole>('report_viewer');
+  const [memberLang,  setMemberLang]  = useState((sub as any).defaultLanguage ?? 'en');
   const [sendInvite,  setSendInvite]  = useState(true);
   const [addingMember, setAddingMember] = useState(false);
+
+  // CRM association state
+  const [crmOrgs,         setCrmOrgs]         = useState<PlatformOrg[]>([]);
+  const [crmContacts,     setCrmContacts]     = useState<PlatformContact[]>([]);
+  const [selCrmOrgId,     setSelCrmOrgId]     = useState((sub as any).crmOrgId ?? '');
+  const [selCrmOrgName,   setSelCrmOrgName]   = useState((sub as any).crmOrgName ?? '');
+  const [selCrmContactId, setSelCrmContactId] = useState((sub as any).crmContactId ?? '');
+  const [crmSaving,       setCrmSaving]       = useState(false);
+
+  // Load CRM orgs on mount
+  useEffect(() => {
+    import('@/lib/crmService').then(({ getAllOrgs }) => getAllOrgs().then(setCrmOrgs)).catch(() => {});
+  }, []);
+
+  // Load contacts when org changes
+  useEffect(() => {
+    if (!selCrmOrgId) { setCrmContacts([]); return; }
+    import('@/lib/crmService').then(({ getContactsForOrg }) =>
+      getContactsForOrg(selCrmOrgId).then(setCrmContacts)
+    ).catch(() => {});
+  }, [selCrmOrgId]);
+
+  async function saveCrmLink() {
+    setCrmSaving(true);
+    try {
+      const contact = crmContacts.find(c => c.id === selCrmContactId);
+      await updateTenant(sub.tenantId, {
+        crmOrgId:       selCrmOrgId || undefined,
+        crmOrgName:     selCrmOrgName || undefined,
+        crmContactId:   selCrmContactId || undefined,
+        crmContactName: contact?.name || undefined,
+      });
+      if (selCrmOrgId) {
+        const { updateOrg } = await import('@/lib/crmService');
+        await updateOrg(selCrmOrgId, { tenantIds: [sub.tenantId] });
+      }
+      setMsg('✅ CRM association saved.');
+    } catch (e: any) { setMsg(`❌ ${e.message}`); }
+    finally { setCrmSaving(false); }
+  }
 
   // Extension UI
   const [extDays, setExtDays]   = useState(14);
@@ -189,6 +232,10 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
   // Audit log state
   const [auditLogs,     setAuditLogs]     = useState<any[]>([]);
   const [auditLoaded,   setAuditLoaded]   = useState(false);
+
+  // Remove member inline confirm
+  const [removeConfirmMember, setRemoveConfirmMember] = useState<TenantMember | null>(null);
+  const [removingMember,      setRemovingMember]      = useState(false);
 
   useEffect(() => {
     if (tab === 'invoices') getInvoices(sub.tenantId).then(setInvoices);
@@ -291,6 +338,12 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
   }
 
   async function doSeedDemo() {
+    // Guard: demo data seeding is NOT allowed on the master (platform) tenant
+    if (sub.tenantId === 'master') {
+      setMsg('❌ Demo data seeding is not available on the master tenant. Select a non-master client tenant to seed demo data.');
+      return;
+    }
+
     const manifest = buildSeedManifest();
     const creds    = generateDemoCredentials(sub.tenantName);
     const demo: DemoTenant = {
@@ -397,7 +450,9 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
           displayName,
           role:        'report_viewer',
           mfaEnabled:  false,
+          mfaEnrollRequired: isNew, // new users must enroll TOTP on first login
           status:      'active',
+          preferredLanguage: memberLang,
           createdAt:   new Date().toISOString(),
           // Use arrayUnion so we merge with any existing tenantIds — do NOT write []
           tenantIds:   au(sub.tenantId),
@@ -463,12 +518,19 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
   }
 
   async function doRemoveMember(member: TenantMember) {
-    if (!confirm(`Remove ${member.displayName} from this tenant? They will lose access immediately.`)) return;
+    // Show inline confirmation modal instead of browser confirm()
+    setRemoveConfirmMember(member);
+  }
+
+  async function confirmRemoveMember() {
+    if (!removeConfirmMember) return;
+    setRemovingMember(true);
     try {
-      await removeMemberFromTenant(sub.tenantId, sub.tenantName, member.uid, member.displayName, performer);
-      setMembers(prev => prev.filter(m => m.uid !== member.uid));
-      setMsg(`✅ ${member.displayName} removed.`);
+      await removeMemberFromTenant(sub.tenantId, sub.tenantName, removeConfirmMember.uid, removeConfirmMember.displayName, performer);
+      setMembers(prev => prev.filter(m => m.uid !== removeConfirmMember.uid));
+      setMsg(`✅ ${removeConfirmMember.displayName} removed from ${sub.tenantName}.`);
     } catch (e: any) { setMsg(`❌ ${e.message}`); }
+    finally { setRemovingMember(false); setRemoveConfirmMember(null); }
   }
 
   async function doRevokeInvitation(inv: TenantInvitation) {
@@ -508,6 +570,11 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
               <Chip label={sub.status} status={sub.status} />
               <Chip label={`${plan.icon} ${plan.name}`} status={sub.status} />
               {daysLeft !== null && <Chip label={daysLeft === 0 ? 'Trial expired' : `${daysLeft}d trial left`} status={daysLeft <= 3 ? 'overdue' : 'trial'} />}
+              {selCrmOrgName && (
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 8, background: '#6366f115', color: '#6366f1', border: '1px solid #6366f130' }}>
+                  🔗 {selCrmOrgName}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -533,7 +600,87 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
         {/* ── OVERVIEW ── */}
         {tab === 'overview' && (
           <div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+            {/* ── CRM Association card — shown first as per requirement ── */}
+            <div className="card" style={{ marginTop: 20, padding: '20px 22px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: '#6366f115', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>🔗</div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>CRM Association</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Link this tenant to its CRM organization and primary contact</div>
+                  </div>
+                </div>
+                {selCrmOrgId && (
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 20, background: '#22c55e15', color: '#22c55e', border: '1px solid #22c55e30' }}>
+                    ● Linked
+                  </span>
+                )}
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Organization</div>
+                  <select
+                    className="input"
+                    style={{ width: '100%' }}
+                    value={selCrmOrgId}
+                    onChange={e => {
+                      const org = crmOrgs.find(o => o.id === e.target.value);
+                      setSelCrmOrgId(e.target.value);
+                      setSelCrmOrgName(org?.name ?? '');
+                      setSelCrmContactId('');
+                    }}
+                  >
+                    <option value="">— Not linked —</option>
+                    {crmOrgs.map(o => (
+                      <option key={o.id} value={o.id}>{o.name}{o.country ? ` · ${o.country}` : ''}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Primary Contact</div>
+                  <select
+                    className="input"
+                    style={{ width: '100%', opacity: selCrmOrgId ? 1 : 0.5 }}
+                    value={selCrmContactId}
+                    onChange={e => setSelCrmContactId(e.target.value)}
+                    disabled={!selCrmOrgId}
+                  >
+                    <option value="">— None —</option>
+                    {crmContacts.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}{c.role ? ` · ${c.role}` : ''}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {selCrmOrgId && (
+                <div style={{ marginTop: 12, padding: '10px 14px', background: '#22c55e0d', borderRadius: 8, border: '1px solid #22c55e20', fontSize: 12, color: '#22c55e' }}>
+                  ✓ Linked to <strong>{selCrmOrgName}</strong>
+                  {selCrmContactId && crmContacts.find(c => c.id === selCrmContactId) && (
+                    <> · Contact: <strong>{crmContacts.find(c => c.id === selCrmContactId)!.name}</strong></>
+                  )}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+                {selCrmOrgId && (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    style={{ color: '#ef4444', borderColor: '#ef444440' }}
+                    onClick={() => { setSelCrmOrgId(''); setSelCrmOrgName(''); setSelCrmContactId(''); }}
+                    disabled={crmSaving}
+                  >
+                    ✕ Remove Link
+                  </button>
+                )}
+                <button className="btn btn-primary btn-sm" onClick={saveCrmLink} disabled={crmSaving}>
+                  {crmSaving ? '…' : '💾 Save Link'}
+                </button>
+              </div>
+            </div>
+            {/* ── KPI cards ── */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20, marginTop: 20 }}>
               <div className="card" style={{ padding: '16px 20px' }}>
                 <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>Monthly Estimate</div>
                 <div style={{ fontSize: 32, fontWeight: 900, color: 'var(--brand-500)' }}>{formatUsd(monthly)}</div>
@@ -728,7 +875,20 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
               Seeds {totalDemoRecords().toLocaleString()} realistic records across {totalDemoCollections()} collections in <strong>{sub.tenantName}</strong>.
             </div>
 
-            {/* Big danger banner — always visible */}
+            {/* ── Master-tenant guard ── */}
+            {sub.tenantId === 'master' ? (
+              <div style={{ padding: '20px 24px', borderRadius: 12, background: '#6366f110', border: '2px solid #6366f140', display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+                <span style={{ fontSize: 32 }}>🏛️</span>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 15, color: '#818cf8', marginBottom: 6 }}>Demo seeding not available on Master Tenant</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                    The <strong>Master Tenant</strong> is the platform&apos;s own internal organization and cannot be seeded with demo data.
+                    Demo provisioning is only available on <strong>client tenants</strong> — select any non-master tenant from the tenant list to use this feature.
+                  </div>
+                </div>
+              </div>
+            ) : (
+            <>
             <div style={{
               padding: '16px 20px', borderRadius: 12, marginBottom: 20,
               background: '#ef444410', border: '2px solid #ef444440',
@@ -824,9 +984,10 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
                 </div>
               </div>
             )}
+            </>
+            )}
           </div>
         )}
-
 
         {/* ── MEMBERS ── */}
         {tab === 'members' && (() => {
@@ -836,7 +997,7 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
               {/* Add Member panel */}
               <div style={{ marginBottom: 20, padding: '16px 18px', background: 'var(--bg-canvas)', borderRadius: 10, border: '1px solid var(--border)' }}>
                 <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>➕ Add Member</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 2fr) 1fr auto', gap: 10, alignItems: 'flex-end' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 2fr) 1fr 1fr auto', gap: 10, alignItems: 'flex-end' }}>
                   <div>
                     <Label>User Email (or select existing)</Label>
                     <input className="input" type="email" style={{ width: '100%' }} placeholder="user@firm.com"
@@ -851,6 +1012,13 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
                     <select className="input" style={{ width: '100%' }} value={memberRole}
                       onChange={e => setMemberRole(e.target.value as any)}>
                       {TENANT_ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <Label>Language</Label>
+                    <select className="input" style={{ width: '100%' }} value={memberLang}
+                      onChange={e => setMemberLang(e.target.value)}>
+                      {SUPPORTED_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.label}</option>)}
                     </select>
                   </div>
                   <button className="btn btn-primary btn-sm" onClick={doSmartAdd}
@@ -884,13 +1052,13 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
                       background: m.status === 'suspended' ? 'var(--bg-canvas)' : 'var(--bg-elevated)',
                       borderRadius: 8, opacity: m.status === 'suspended' ? 0.6 : 1, border: '1px solid var(--border)' }}>
                       <div style={{ width: 32, height: 32, borderRadius: '50%',
-                        background: `hsl(${(m.displayName.charCodeAt(0) * 7) % 360},60%,50%)`,
+                        background: `hsl(${((m.displayName || m.email || '?').charCodeAt(0) * 7) % 360},60%,50%)`,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         color: 'white', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
-                        {m.displayName[0]?.toUpperCase()}
+                        {(m.displayName || m.email || '?')[0].toUpperCase()}
                       </div>
                       <div>
-                        <div style={{ fontWeight: 600, fontSize: 13 }}>{m.displayName}</div>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{m.displayName || m.email}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
                           {m.email} · Joined {new Date(m.joinedAt).toLocaleDateString()}
                         </div>
@@ -911,6 +1079,32 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
                       </button>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* ── Inline remove confirmation modal ── */}
+              {removeConfirmMember && (
+                <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
+                  <div style={{ background: 'var(--bg-elevated)', border: '1px solid #ef444440', borderRadius: 16, padding: '28px 32px', maxWidth: 440, width: '90%', boxShadow: '0 24px 60px rgba(0,0,0,0.7)' }}>
+                    <div style={{ fontSize: 28, marginBottom: 12 }}>⚠️</div>
+                    <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 8 }}>Remove Member</div>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>
+                      Remove <strong>{removeConfirmMember.displayName}</strong> ({removeConfirmMember.email}) from <strong>{sub.tenantName}</strong>?<br />
+                      They will immediately lose access to all resources in this tenant.
+                    </p>
+                    <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                      <button className="btn btn-ghost" onClick={() => setRemoveConfirmMember(null)} disabled={removingMember}>
+                        Cancel
+                      </button>
+                      <button
+                        onClick={confirmRemoveMember}
+                        disabled={removingMember}
+                        style={{ padding: '8px 20px', background: '#ef4444', color: 'white', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+                      >
+                        {removingMember ? '⏳ Removing…' : '🗑 Remove Member'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -1204,6 +1398,7 @@ function NewSubscriptionModal({ onClose, onCreated, performer }: {
   onCreated: (sub: TenantSubscription) => void;
   performer: { uid: string; name: string };
 }) {
+  const [verticalId, setVerticalId] = useState<IndustryVerticalId>('multi_family_office');
   const [form, setForm] = useState({
     tenantId: '', tenantName: '', contactName: '', contactEmail: '',
     planId: 'trial' as PlanId, billingCycle: 'monthly' as BillingCycle,
@@ -1212,6 +1407,7 @@ function NewSubscriptionModal({ onClose, onCreated, performer }: {
     // CRM linkage
     crmOrgId: '', crmOrgName: '', crmContactId: '', crmContactName: '',
   });
+
   const [loading, setLoading] = useState(false);
 
   // CRM data
@@ -1285,16 +1481,20 @@ function NewSubscriptionModal({ onClose, onCreated, performer }: {
     try {
       await upsertSubscription(sub);
       // Write a tenants/{id} record so getTenant() resolves this tenant in the switcher
+      const vertical = VERTICAL_REGISTRY.find(v => v.id === verticalId);
       await createTenant({
-        id:         form.tenantId,
-        name:       form.tenantName,
-        plan:       (['trial', 'standard', 'enterprise'].includes(form.planId)
-                      ? form.planId
-                      : 'standard') as 'trial' | 'standard' | 'enterprise',
-        status:     form.planId === 'trial' ? 'trial' : 'active',
-        isInternal: false,
-        brandColor: '#6366f1',
-        createdBy:  performer.uid,
+        id:               form.tenantId,
+        name:             form.tenantName,
+        plan:             (['trial', 'standard', 'enterprise'].includes(form.planId)
+                            ? form.planId
+                            : 'standard') as 'trial' | 'standard' | 'enterprise',
+        status:           form.planId === 'trial' ? 'trial' : 'active',
+        isInternal:       false,
+        brandColor:       vertical?.color ?? '#6366f1',
+        createdBy:        performer.uid,
+        industryVertical: verticalId,
+        modulesEnabled:   vertical?.defaultModules ?? [],
+        currencyCode:     form.currency,
       });
       // Bidirectional CRM link
       if (form.crmOrgId) {
@@ -1349,6 +1549,34 @@ function NewSubscriptionModal({ onClose, onCreated, performer }: {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div><Label>Tenant ID *</Label><input required className="input" style={{ width: '100%' }} value={form.tenantId} onChange={f('tenantId')} placeholder="tenant-acme-001" /></div>
             <div><Label>Tenant Name *</Label><input required className="input" style={{ width: '100%' }} value={form.tenantName} onChange={f('tenantName')} placeholder="Acme Family Office" /></div>
+          </div>
+
+          {/* ─── Industry Vertical ─── */}
+          <div>
+            <Label>Industry Vertical *</Label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+              {VERTICAL_REGISTRY.filter(v => v.status === 'ga').map(v => (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => setVerticalId(v.id)}
+                  style={{
+                    padding: '10px 12px', borderRadius: 10, border: `2px solid ${verticalId === v.id ? v.color : 'var(--border)'}`,
+                    background: verticalId === v.id ? `${v.color}14` : 'var(--bg-canvas)',
+                    cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s',
+                  }}
+                >
+                  <div style={{ fontSize: 18, marginBottom: 4 }}>{v.icon}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: verticalId === v.id ? v.color : 'var(--text-primary)' }}>{v.label}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.3 }}>{v.tagline.slice(0, 44)}…</div>
+                </button>
+              ))}
+            </div>
+            {VERTICAL_REGISTRY.filter(v => v.status !== 'ga').length > 0 && (
+              <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-tertiary)' }}>
+                Beta / Coming Soon: {VERTICAL_REGISTRY.filter(v => v.status !== 'ga').map(v => `${v.icon} ${v.label}`).join(', ')}
+              </div>
+            )}
           </div>
 
           {/* Contact override — pre-filled from CRM but editable */}
@@ -1418,9 +1646,22 @@ export default function TenantManagementPage() {
   const [allEvents,  setAllEvents]  = useState<SubscriptionEvent[]>([]);
   const [search,     setSearch]     = useState('');
   const [statusF,    setStatusF]    = useState<SubscriptionStatus | 'all'>('all');
+  const [planF,      setPlanF]      = useState<PlanId | 'all'>('all');
+  const [sortKey,    setSortKey]    = useState<'name' | 'plan' | 'status' | 'mrr' | 'seats' | 'period'>('name');
+  const [sortDir,    setSortDir]    = useState<'asc' | 'desc'>('asc');
+  const [selPlan,    setSelPlan]    = useState<PlanId | null>(null);
   const [loading,    setLoading]    = useState(true);
   const [selected,   setSelected]   = useState<TenantSubscription | null>(null);
   const [showNew,    setShowNew]    = useState(false);
+
+  function toggleSort(key: typeof sortKey) {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  }
+  function SortIcon({ k }: { k: typeof sortKey }) {
+    if (sortKey !== k) return <span style={{ opacity: 0.3, marginLeft: 4 }}>↕</span>;
+    return <span style={{ marginLeft: 4 }}>{sortDir === 'asc' ? '↑' : '↓'}</span>;
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1482,12 +1723,28 @@ export default function TenantManagementPage() {
     }
   }, [searchParams, subs]);
 
-  const filtered = useMemo(() => subs.filter(s => {
-    const q = search.toLowerCase();
-    if (q && !`${s.tenantName} ${s.contactEmail} ${s.contactName} ${s.tenantId}`.toLowerCase().includes(q)) return false;
-    if (statusF !== 'all' && s.status !== statusF) return false;
-    return true;
-  }), [subs, search, statusF]);
+  const filtered = useMemo(() => {
+    let list = subs.filter(s => {
+      const q = search.toLowerCase();
+      if (q && !`${s.tenantName} ${s.contactEmail} ${s.contactName} ${s.tenantId}`.toLowerCase().includes(q)) return false;
+      if (statusF !== 'all' && s.status !== statusF) return false;
+      if (planF   !== 'all' && s.planId  !== planF)   return false;
+      return true;
+    });
+    list = [...list].sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case 'name':   cmp = a.tenantName.localeCompare(b.tenantName); break;
+        case 'plan':   cmp = a.planId.localeCompare(b.planId); break;
+        case 'status': cmp = a.status.localeCompare(b.status); break;
+        case 'mrr':    cmp = planMonthlyTotal(a) - planMonthlyTotal(b); break;
+        case 'seats':  cmp = a.licensedSeats - b.licensedSeats; break;
+        case 'period': cmp = (a.currentPeriodEnd ?? '').localeCompare(b.currentPeriodEnd ?? ''); break;
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return list;
+  }, [subs, search, statusF, planF, sortKey, sortDir]);
 
   const stats = useMemo(() => ({
     total:    subs.length,
@@ -1569,15 +1826,21 @@ export default function TenantManagementPage() {
       {/* ── TENANTS TAB ── */}
       {mainTab === 'tenants' && (
         <>
-          <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
-            <input type="text" className="input" placeholder="🔍 Search tenants…" value={search} onChange={e => setSearch(e.target.value)} style={{ flex: '1 1 260px' }} />
-            <select className="input" value={statusF} onChange={e => setStatusF(e.target.value as any)}>
+          <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+            <input type="text" className="input" placeholder="🔍 Search by name, email, ID…" value={search} onChange={e => setSearch(e.target.value)} style={{ flex: '1 1 220px' }} />
+            <select className="input" style={{ flex: '0 0 140px' }} value={statusF} onChange={e => setStatusF(e.target.value as any)}>
               <option value="all">All Statuses</option>
               {(['trial','active','past_due','suspended','cancelled'] as SubscriptionStatus[]).map(s => (
                 <option key={s} value={s}>{s.replace('_', ' ')}</option>
               ))}
             </select>
-            <span style={{ fontSize: 12, color: 'var(--text-tertiary)', alignSelf: 'center' }}>{filtered.length} tenant{filtered.length !== 1 ? 's' : ''}</span>
+            <select className="input" style={{ flex: '0 0 140px' }} value={planF} onChange={e => setPlanF(e.target.value as any)}>
+              <option value="all">All Plans</option>
+              {Object.values(SUBSCRIPTION_PLANS).map(p => (
+                <option key={p.id} value={p.id}>{p.icon} {p.name}</option>
+              ))}
+            </select>
+            <span style={{ fontSize: 12, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>{filtered.length} tenant{filtered.length !== 1 ? 's' : ''}</span>
           </div>
           {loading ? (
             <div style={{ textAlign: 'center', padding: 60, color: 'var(--text-tertiary)' }}>Loading…</div>
@@ -1665,47 +1928,149 @@ export default function TenantManagementPage() {
         </div>
       )}
 
-      {/* ── PLANS TAB ── */}
-      {mainTab === 'plans' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
-          {Object.values(SUBSCRIPTION_PLANS).filter(p => p.isPublic || p.id === 'trial').map(p => (
-            <div key={p.id} style={{ background: 'var(--bg-surface)', border: `1px solid ${p.color}44`, borderRadius: 12, overflow: 'hidden' }}>
-              <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--border)', background: `${p.color}08` }}>
-                <div style={{ fontSize: 28 }}>{p.icon}</div>
-                <div style={{ fontWeight: 900, fontSize: 18, marginTop: 8 }}>{p.name}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>{p.description}</div>
-                {p.baseMonthly > 0 ? (
-                  <div style={{ marginTop: 12 }}>
-                    <span style={{ fontSize: 28, fontWeight: 900, color: p.color }}>{formatUsd(p.baseMonthly)}</span>
-                    <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>/mo base</span>
+      {/* ── PLANS TAB — Master-Detail ── */}
+      {mainTab === 'plans' && (() => {
+        const displayedPlan = selPlan ?? (Object.keys(SUBSCRIPTION_PLANS)[0] as PlanId);
+        const p = SUBSCRIPTION_PLANS[displayedPlan];
+        const planTenants = subs.filter(s => s.planId === displayedPlan && s.tenantId !== 'master');
+        const planMrr = planTenants.filter(s => s.status === 'active').reduce((sum, s) => sum + planMonthlyTotal(s), 0);
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 16, alignItems: 'start' }}>
+            {/* ── Left: Plan list ── */}
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div style={{ padding: '12px 16px', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)' }}>Subscription Plans</div>
+              {Object.values(SUBSCRIPTION_PLANS).map(pl => {
+                const tenantCount = subs.filter(s => s.planId === pl.id && s.tenantId !== 'master').length;
+                const active = (selPlan ?? Object.keys(SUBSCRIPTION_PLANS)[0]) === pl.id;
+                return (
+                  <button key={pl.id} onClick={() => setSelPlan(pl.id)} style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '12px 16px', border: 'none', borderBottom: '1px solid var(--border)',
+                    background: active ? `${pl.color}12` : 'transparent',
+                    borderLeft: active ? `3px solid ${pl.color}` : '3px solid transparent',
+                    cursor: 'pointer', textAlign: 'left', transition: 'background 0.15s',
+                  }}>
+                    <span style={{ fontSize: 20 }}>{pl.icon}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: active ? pl.color : 'var(--text-primary)' }}>{pl.name}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{tenantCount} tenant{tenantCount !== 1 ? 's' : ''}</div>
+                    </div>
+                    {pl.baseMonthly > 0 && <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>{formatUsd(pl.baseMonthly)}</div>}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* ── Right: Plan detail ── */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Header card */}
+              <div className="card" style={{ padding: '24px 28px', background: `linear-gradient(135deg, ${p.color}10, transparent)`, border: `1px solid ${p.color}30` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ fontSize: 36 }}>{p.icon}</div>
+                    <div style={{ fontWeight: 900, fontSize: 24, marginTop: 8 }}>{p.name}</div>
+                    <div style={{ color: 'var(--text-secondary)', marginTop: 4 }}>{p.description}</div>
                   </div>
-                ) : p.id === 'enterprise' ? (
-                  <div style={{ fontSize: 22, fontWeight: 900, color: p.color, marginTop: 12 }}>Custom</div>
-                ) : (
-                  <div style={{ fontSize: 22, fontWeight: 900, color: p.color, marginTop: 12 }}>Free Trial</div>
-                )}
-              </div>
-              <div style={{ padding: '14px 20px' }}>
-                {[
-                  p.pricePerSeat > 0 && `$${p.pricePerSeat}/seat/mo`,
-                  p.aumFeeBps > 0 && `${p.aumFeeBps} bps/yr on AUM`,
-                  p.maxSeats > 0 ? `Up to ${p.maxSeats} seats` : p.maxSeats === -1 ? 'Unlimited seats' : null,
-                  p.maxAumUsd > 0 ? `Up to ${formatAum(p.maxAumUsd)} AUM` : p.maxAumUsd === -1 ? 'Unlimited AUM' : null,
-                  p.trialDays > 0 && `${p.trialDays}-day free trial`,
-                ].filter(Boolean).map(f => (
-                  <div key={String(f)} style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>· {f}</div>
-                ))}
-                <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-                  {p.features.slice(0, 5).map(feat => (
-                    <div key={feat} style={{ fontSize: 12, marginBottom: 3 }}>✓ {feat}</div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 36, fontWeight: 900, color: p.color }}>
+                      {p.baseMonthly > 0 ? formatUsd(p.baseMonthly) : p.id === 'enterprise' ? 'Custom' : 'Free'}
+                    </div>
+                    {p.baseMonthly > 0 && <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>/month base</div>}
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginTop: 20 }}>
+                  {[
+                    { label: 'Active Tenants', value: planTenants.filter(s => s.status === 'active').length },
+                    { label: 'Trial Tenants',  value: planTenants.filter(s => s.status === 'trial').length },
+                    { label: 'Total Tenants',  value: planTenants.length },
+                    { label: 'Plan MRR',       value: formatUsd(planMrr) },
+                  ].map(kpi => (
+                    <div key={kpi.label} style={{ background: 'var(--bg-canvas)', borderRadius: 8, padding: '10px 14px' }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase' }}>{kpi.label}</div>
+                      <div style={{ fontSize: 20, fontWeight: 900, color: p.color, marginTop: 4 }}>{kpi.value}</div>
+                    </div>
                   ))}
-                  {p.features.length > 5 && <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>+{p.features.length - 5} more…</div>}
                 </div>
               </div>
+
+              {/* Pricing & Limits */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <div className="card" style={{ padding: '18px 20px' }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12 }}>💰 Pricing</div>
+                  {[
+                    ['Base (monthly)', p.baseMonthly > 0 ? formatUsd(p.baseMonthly) + '/mo' : p.id === 'enterprise' ? 'Custom' : 'Free'],
+                    ['Base (annual)',  p.baseAnnual  > 0 ? formatUsd(p.baseAnnual)  + '/yr' : '—'],
+                    ['Per Seat/mo',   p.pricePerSeat > 0 ? formatUsd(p.pricePerSeat) : '—'],
+                    ['Per Seat/yr',   p.pricePerSeatAnnual > 0 ? formatUsd(p.pricePerSeatAnnual) : '—'],
+                    ['AUM Fee',       p.aumFeeBps > 0 ? `${p.aumFeeBps} bps/yr` : 'None'],
+                  ].map(([lbl, val]) => (
+                    <div key={lbl} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>{lbl}</span>
+                      <span style={{ fontWeight: 600 }}>{val}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="card" style={{ padding: '18px 20px' }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12 }}>📊 Limits</div>
+                  {[
+                    ['Max Seats', p.maxSeats === -1 ? 'Unlimited' : String(p.maxSeats)],
+                    ['Max AUM',   p.maxAumUsd === -1 ? 'Unlimited' : formatAum(p.maxAumUsd)],
+                    ['Trial',     p.trialDays > 0 ? `${p.trialDays} days` : 'None'],
+                  ].map(([lbl, val]) => (
+                    <div key={lbl} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>{lbl}</span>
+                      <span style={{ fontWeight: 600 }}>{val}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Features */}
+              <div className="card" style={{ padding: '18px 20px' }}>
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12 }}>✅ Included Features</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 6 }}>
+                  {p.features.map(feat => (
+                    <div key={feat} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                      <span style={{ color: p.color, fontWeight: 700 }}>✓</span> {feat}
+                    </div>
+                  ))}
+                </div>
+                {p.addOns.length > 0 && (
+                  <>
+                    <div style={{ fontWeight: 700, fontSize: 13, marginTop: 16, marginBottom: 10 }}>🔌 Available Add-ons</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {p.addOns.map(ao => (
+                        <span key={ao} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 12, background: `${p.color}15`, color: p.color, border: `1px solid ${p.color}30`, fontWeight: 600 }}>{ao}</span>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Tenants on this plan */}
+              {planTenants.length > 0 && (
+                <div className="card table-wrap">
+                  <div style={{ padding: '12px 16px', fontWeight: 700, fontSize: 13, borderBottom: '1px solid var(--border)' }}>🏢 Tenants on this plan ({planTenants.length})</div>
+                  <table>
+                    <thead><tr><th>Tenant</th><th>Status</th><th>Seats</th><th>Est. MRR</th><th>Period End</th></tr></thead>
+                    <tbody>
+                      {planTenants.map(t => (
+                        <tr key={t.tenantId} style={{ cursor: 'pointer' }} onClick={() => { setSelected(t); setMainTab('tenants'); }}>
+                          <td><div style={{ fontWeight: 700 }}>{t.tenantName}</div><div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{t.contactEmail}</div></td>
+                          <td><Chip label={t.status} status={t.status} /></td>
+                          <td>{t.licensedSeats}</td>
+                          <td style={{ fontWeight: 700, color: 'var(--brand-500)' }}>{formatUsd(planMonthlyTotal(t))}</td>
+                          <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{t.currentPeriodEnd?.slice(0,10) ?? '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        );
+      })()}
 
       {/* ── GLOBAL EVENTS ── */}
       {mainTab === 'events' && (

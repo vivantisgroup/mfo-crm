@@ -26,22 +26,47 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
 
     // Only redirect if Firebase itself has NO session.
     // profile_error means Firebase is valid but Firestore failed → show error, don't loop.
-    if (stage === 'unauthenticated' || stage === 'needs_setup') {
+    if (stage === 'unauthenticated') {
       router.push('/login');
+      return;
+    }
+    // Platform not yet initialized → show the setup wizard
+    if (stage === 'needs_setup') {
+      router.push('/setup');
+      return;
+    }
+
+    // Post-login flows: tenant selection and MFA verification
+    if (stage === 'select_tenant') {
+      router.push('/select-tenant');
+      return;
+    }
+    if (stage === 'mfa_required') {
+      router.push('/mfa-verify');
+      return;
+    }
+    if (stage === 'mfa_enroll') {
+      router.push('/mfa-enroll');
+      return;
+    }
+
+    // Force password change for newly added users
+    if (isAuthenticated && userProfile?.mustChangePassword && pathname !== '/change-password') {
+      router.push('/change-password');
       return;
     }
 
     // Tenant-restricted route guard (internal users can't access family routes)
     if (isAuthenticated && tenant?.isInternal) {
       const privateRoutes = [
-        '/families', '/activities', '/tasks', '/portfolio',
+        '/families', '/contacts', '/organizations', '/activities', '/tasks', '/portfolio',
         '/documents', '/governance', '/estate', '/concierge', '/calendar',
       ];
       if (privateRoutes.some(r => pathname.startsWith(r))) {
         router.push('/dashboard');
       }
     }
-  }, [isHydrated, isAuthenticated, stage, tenant, pathname, router]);
+  }, [isHydrated, isAuthenticated, stage, tenant, pathname, router, userProfile]);
 
   // ── Loading splash ────────────────────────────────────────────────────────
   if (!isHydrated || stage === 'loading') {

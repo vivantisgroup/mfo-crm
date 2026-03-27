@@ -62,6 +62,35 @@ export interface Theme {
 // ─── Pre-defined Themes ───────────────────────────────────────────────────────
 
 export const PRESET_THEMES: Theme[] = [
+  // ── Institutional (Default) ─────────────────────────────────────────────────
+  {
+    id: 'institutional', name: 'Institutional', emoji: '🏛️', mode: 'light', font: 'Inter', accent: '#2563eb',
+    vars: {
+      // Premium Wealth Management light palette — clean, trustworthy, airy
+      '--bg-canvas':    '#f8fafc',   // slate-50 — app body
+      '--bg-surface':   '#ffffff',   // white — cards, panels
+      '--bg-elevated':  '#f1f5f9',   // slate-100 — sub-elements, table headers
+      '--bg-overlay':   '#e2e8f0',   // slate-200 — overlays
+      '--bg-highlight': '#dde4ee',   // slate-200+ — hover
+      '--border':       'rgba(15,23,42,0.08)',
+      '--border-hover': 'rgba(15,23,42,0.16)',
+      '--text-primary':   '#0f172a', // slate-900
+      '--text-secondary': '#64748b', // slate-500
+      '--text-tertiary':  '#94a3b8', // slate-400
+      '--brand-400': '#60a5fa',   // blue-400
+      '--brand-500': '#2563eb',   // blue-600 — institutional blue
+      '--brand-600': '#1d4ed8',   // blue-700
+      '--brand-900': 'rgba(37,99,235,0.08)',
+      '--brand-glow': 'rgba(37,99,235,0.15)',
+      // White sidebar — clean and bright for institutional use
+      '--sidebar-bg':      '#ffffff',
+      '--sidebar-border':  'rgba(15,23,42,0.08)',
+      '--sidebar-text':    '#64748b',   // slate-500
+      '--sidebar-accent':  '#2563eb',   // blue-600
+      '--sidebar-hover':   '#f1f5f9',   // slate-100
+      '--sidebar-logo-bg': '#2563eb',   // blue-600
+    },
+  },
   // ── Dark ──────────────────────────────────────────────────────────────────
   {
     id: 'midnight', name: 'Midnight', emoji: '🌑', mode: 'dark', font: 'Inter', accent: '#6366f1',
@@ -375,7 +404,7 @@ const Ctx = createContext<ThemeContextValue | null>(null);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const STORAGE_KEY   = 'mfo-theme-v2';
+const STORAGE_KEY   = 'mfo-theme-v3';  // v3 — institutional light default
 const AVATAR_KEY    = 'mfo-avatars';
 const BRANDING_KEY  = 'mfo-tenant-branding';
 
@@ -421,7 +450,7 @@ function applyVars(vars: Partial<ThemeVars>, fontStack: string) {
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [themeId,        setThemeId]        = useState<string>('midnight');
+  const [themeId,        setThemeId]        = useState<string>('institutional');
   const [fontOverride,   setFontOverrideS]  = useState<FontFamily | null>(null);
   const [customVars,     setCustomVarsS]    = useState<Partial<ThemeVars>>({});
   const [companyLogo,    setCompanyLogoS]   = useState<string | null>(null);
@@ -437,9 +466,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const activeVars: ThemeVars = { ...baseTheme.vars, ...customVars } as ThemeVars;
   const theme: Theme = { ...baseTheme, font: activeFont, vars: activeVars };
 
-  // Load from localStorage once
+  // Load from localStorage once — migrate from v2 (dark themes) to v3 (institutional light default)
   useEffect(() => {
     try {
+      // ── Migrate: remove old v2 key so new institutional default activates ──
+      if (localStorage.getItem('mfo-theme-v2')) {
+        localStorage.removeItem('mfo-theme-v2');
+        // Do NOT load from v3 if migrating — let the institutional default stand
+        setHydrated(true);
+        return;
+      }
+
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const s = JSON.parse(raw);

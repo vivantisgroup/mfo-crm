@@ -87,10 +87,9 @@ export function FamiliesEmptyState() {
         <EmptyState
           icon="👨‍👩‍👧‍👦"
           title="No families yet"
-          description="Your client database is empty. Start by onboarding your first family, or seed demo data to explore all features."
+          description="Your client database is empty. Start by onboarding your first family."
           actions={[
             { label: '+ Onboard Family', primary: true },
-            { label: 'Seed Demo Data', href: '/platform/demo' },
           ]}
         />
       </div>
@@ -114,11 +113,10 @@ export function TasksEmptyState() {
         <EmptyState
           icon="✅"
           title="No tasks yet"
-          description="No tasks have been created in this workspace. Add your first task, set up task queues in Admin, or seed a demo environment."
+          description="No tasks have been created in this workspace. Add your first task or set up task queues in Admin."
           actions={[
             { label: '+ Create Task', primary: true },
             { label: 'Configure Queues', href: '/admin' },
-            { label: 'Seed Demo Data', href: '/platform/demo' },
           ]}
         />
       </div>
@@ -145,7 +143,6 @@ export function ActivitiesEmptyState() {
           description="Start tracking client interactions — calls, meetings, emails, and more — to keep a full communication history."
           actions={[
             { label: '+ Log Activity', primary: true },
-            { label: 'Seed Demo Data', href: '/platform/demo' },
           ]}
         />
       </div>
@@ -166,10 +163,9 @@ export function PortfolioEmptyState() {
         <EmptyState
           icon="📊"
           title="No portfolio data"
-          description="There is no investment or portfolio data in this workspace yet. Onboard families with assets or seed a demo environment."
+          description="There is no investment or portfolio data in this workspace yet. Onboard families with assets to get started."
           actions={[
             { label: 'Onboard Families', href: '/families', primary: true },
-            { label: 'Seed Demo Data', href: '/platform/demo' },
           ]}
         />
       </div>
@@ -196,7 +192,6 @@ export function DocumentsEmptyState() {
           description="No documents have been uploaded yet. Upload agreements, reports, KYC documents, and more."
           actions={[
             { label: '+ Upload Document', primary: true },
-            { label: 'Seed Demo Data', href: '/platform/demo' },
           ]}
         />
       </div>
@@ -212,7 +207,6 @@ export function CalendarEmptyState() {
       description="No upcoming events scheduled. Connect your Google or Outlook calendar in your profile settings, or create events manually."
       actions={[
         { label: 'Connect Calendar', primary: true },
-        { label: 'Seed Demo Data', href: '/platform/demo' },
       ]}
     />
   );

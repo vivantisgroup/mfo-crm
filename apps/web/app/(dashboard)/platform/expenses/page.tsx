@@ -8,6 +8,7 @@ import {
   EXPENSE_CATEGORIES, FREQ_LABELS, monthlyEquivalent,
   type PlatformExpense, type ExpenseCategory, type ExpenseFrequency,
 } from '@/lib/expenseService';
+import { ConfirmDialog, type ConfirmOptions } from '@/components/ConfirmDialog';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -143,6 +144,7 @@ function ExpenseDetail({
   const [editMode, setEditMode] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [msg, setMsg] = useState('');
+  const [confirmOpts, setConfirmOpts] = useState<ConfirmOptions | null>(null);
   const { icon, color, label } = EXPENSE_CATEGORIES[expense.category];
 
   const localToForm = (e: PlatformExpense): typeof BLANK => ({
@@ -167,11 +169,19 @@ function ExpenseDetail({
     setMsg('✅ Expense updated.');
   }
 
-  async function handleDelete() {
-    if (!confirm(`Delete "${expense.name}"? This cannot be undone.`)) return;
-    setDeleting(true);
-    try { await deleteExpense(expense.id, expense.name, performer); onDeleted(expense.id); }
-    catch (e: any) { setMsg(`❌ ${e.message}`); setDeleting(false); }
+  function handleDelete() {
+    setConfirmOpts({
+      title:        'Delete Expense',
+      message:      `Delete "${expense.name}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      variant:      'danger',
+      onConfirm: async () => {
+        setDeleting(true);
+        try { await deleteExpense(expense.id, expense.name, performer); onDeleted(expense.id); }
+        catch (e: any) { setMsg(`❌ ${e.message}`); setDeleting(false); }
+      },
+      onCancel: () => setConfirmOpts(null),
+    });
   }
 
   const monthly = monthlyEquivalent(expense);
@@ -180,6 +190,7 @@ function ExpenseDetail({
 
   return (
     <div className="animate-fade-in">
+      {confirmOpts && <ConfirmDialog {...confirmOpts} />}
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 }}>
         <div>

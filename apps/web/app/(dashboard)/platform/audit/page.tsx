@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,20 +42,7 @@ interface AuditEntry {
 
 // ─── Mock Data ────────────────────────────────────────────────────────────────
 
-const MOCK_LOGS: AuditEntry[] = [
-  { id: 'log-001', timestamp: '2026-03-20T10:48:32Z', tenantId: 'tenant-001', tenantName: 'Vivants MFO', userId: 'usr-001', userName: 'Alexandra Torres', userRole: 'Firm Admin', action: 'USER_LOGIN', resourceType: 'auth_session', resourceName: 'Platform Login', severity: 'info', status: 'success', ipAddress: '200.175.43.21', location: 'São Paulo, BR', userAgent: 'Chrome/130', sessionId: 'sess-abc123' },
-  { id: 'log-002', timestamp: '2026-03-20T10:45:11Z', tenantId: 'tenant-002', tenantName: 'Apex Wealth Partners', userId: 'usr-012', userName: 'Carlos Mendes', userRole: 'Relationship Manager', action: 'API_KEY_SET', resourceType: 'integration_key', resourceName: 'OpenAI API Key', severity: 'warning', status: 'success', ipAddress: '177.92.11.08', location: 'Rio de Janeiro, BR', userAgent: 'Firefox/131', metadata: '{"provider":"openai","keyId":"sk-proj-xxxx"}' },
-  { id: 'log-003', timestamp: '2026-03-20T10:32:04Z', tenantId: 'tenant-003', tenantName: 'Summit Capital', userId: 'usr-021', userName: 'James Wu', userRole: 'Compliance Officer', action: 'DOCUMENT_ACCESS', resourceType: 'document', resourceName: 'Smith Family Trust Deed', severity: 'info', status: 'success', ipAddress: '52.13.88.201', location: 'New York, US', userAgent: 'Safari/17' },
-  { id: 'log-004', timestamp: '2026-03-20T10:18:55Z', tenantId: 'tenant-001', tenantName: 'Vivants MFO', userId: 'usr-002', userName: 'System', userRole: 'System', action: 'INVOICE_GENERATED', resourceType: 'invoice', resourceName: 'INV-2026-0320 — Apex Wealth Partners', severity: 'info', status: 'success', ipAddress: '10.0.0.1', location: 'us-central1 (GCP)', userAgent: 'Backend/cron' },
-  { id: 'log-005', timestamp: '2026-03-20T09:55:38Z', tenantId: 'tenant-004', tenantName: 'Legacy Trust Group', userId: 'usr-035', userName: 'Unknown', userRole: 'Unknown', action: 'USER_LOGIN_FAILED', resourceType: 'auth_session', resourceName: 'Failed Login Attempt', severity: 'critical', status: 'failure', ipAddress: '45.33.22.10', location: 'Frankfurt, DE', userAgent: 'curl/7.88', metadata: '{"attempts":3,"lockout":false}' },
-  { id: 'log-006', timestamp: '2026-03-20T09:41:02Z', tenantId: 'tenant-002', tenantName: 'Apex Wealth Partners', userId: 'usr-011', userName: 'Ricardo Almeida', userRole: 'Firm Admin', action: 'ROLE_GRANTED', resourceType: 'user_permission', resourceName: 'Ana Lima → compliance_officer', severity: 'warning', status: 'success', ipAddress: '177.92.11.09', location: 'Rio de Janeiro, BR', userAgent: 'Chrome/130' },
-  { id: 'log-007', timestamp: '2026-03-20T09:22:15Z', tenantId: 'tenant-001', tenantName: 'Vivants MFO', userId: 'usr-001', userName: 'Alexandra Torres', userRole: 'Firm Admin', action: 'TENANT_CREATED', resourceType: 'tenant', resourceName: 'Summit Capital', severity: 'info', status: 'success', ipAddress: '200.175.43.21', location: 'São Paulo, BR', userAgent: 'Chrome/130', metadata: '{"plan":"growth","seats":5}' },
-  { id: 'log-008', timestamp: '2026-03-20T08:58:49Z', tenantId: 'tenant-005', tenantName: 'AlphaPath Advisory', userId: 'usr-044', userName: 'Sarah Chen', userRole: 'CIO', action: 'SUITABILITY_SUBMITTED', resourceType: 'suitability_submission', resourceName: 'Chen Family — Annual Review', severity: 'info', status: 'success', ipAddress: '103.21.55.90', location: 'Hong Kong', userAgent: 'Chrome/130', metadata: '{"score":9,"risk":"aggressive"}' },
-  { id: 'log-009', timestamp: '2026-03-20T08:45:33Z', tenantId: 'tenant-001', tenantName: 'Vivants MFO', userId: 'usr-001', userName: 'Alexandra Torres', userRole: 'Firm Admin', action: 'CONFIG_UPDATED', resourceType: 'platform_config', resourceName: 'MFA — TOTP Window Changed', severity: 'warning', status: 'success', ipAddress: '200.175.43.21', location: 'São Paulo, BR', userAgent: 'Chrome/130', metadata: '{"from":"0","to":"1"}' },
-  { id: 'log-010', timestamp: '2026-03-20T08:15:22Z', tenantId: 'tenant-003', tenantName: 'Summit Capital', userId: 'usr-021', userName: 'James Wu', userRole: 'Compliance Officer', action: 'DATA_EXPORT', resourceType: 'report', resourceName: 'Q4 2025 Regulatory Report (SEC 204-2)', severity: 'warning', status: 'success', ipAddress: '52.13.88.201', location: 'New York, US', userAgent: 'Safari/17' },
-  { id: 'log-011', timestamp: '2026-03-20T07:52:01Z', tenantId: 'tenant-002', tenantName: 'Apex Wealth Partners', userId: 'usr-012', userName: 'Carlos Mendes', userRole: 'Relationship Manager', action: 'MFA_FAILED', resourceType: 'auth_session', resourceName: 'MFA Verification', severity: 'critical', status: 'failure', ipAddress: '177.92.11.08', location: 'Rio de Janeiro, BR', userAgent: 'Chrome/130', metadata: '{"code_entered":"123456","attempts":1}' },
-  { id: 'log-012', timestamp: '2026-03-20T07:30:48Z', tenantId: 'tenant-004', tenantName: 'Legacy Trust Group', userId: 'usr-036', userName: 'Michael Grant', userRole: 'Firm Admin', action: 'SUBSCRIPTION_CHANGED', resourceType: 'subscription', resourceName: 'Standard → Growth Plan', severity: 'info', status: 'success', ipAddress: '82.44.11.203', location: 'London, UK', userAgent: 'Edge/130', metadata: '{"from":"standard","to":"growth","mrr_delta":890}' },
-];
+// MOCK REMOVED - using live data
 
 const SEVERITY_COLORS: Record<Severity, string> = {
   info: '#22d3ee',
@@ -133,11 +122,56 @@ export default function AuditPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [dateFrom, setDateFrom] = useState('');
 
-  const tenants = useMemo(() => ['All', ...Array.from(new Set(MOCK_LOGS.map(l => l.tenantName)))], []);
+  const [logsList, setLogsList] = useState<AuditEntry[]>([]);
+  const [fetching, setFetching] = useState(true);
+
+  const fetchLogs = async () => {
+    setFetching(true);
+    try {
+      const q = query(collection(db, 'audit_logs'), orderBy('occurredAt', 'desc'), limit(500));
+      const snap = await getDocs(q);
+      const data = snap.docs.map(doc => {
+        const d = doc.data();
+        let severity: Severity = 'info';
+        if (d.status === 'failure') severity = 'critical';
+        else if (d.action?.includes('DELETE') || d.action?.includes('REMOVE') || d.action?.includes('FAIL') || d.action?.includes('RESET')) severity = 'warning';
+        return {
+          id: doc.id,
+          timestamp: d.occurredAt || new Date().toISOString(),
+          tenantId: d.tenantId || 'unknown',
+          tenantName: d.tenantId === 'master' ? 'Platform HQ' : (d.tenantId || 'Unknown'),
+          userId: d.userId || 'system',
+          userName: d.userName || 'System',
+          userRole: d.userRole || 'User',
+          action: (d.action || 'UNKNOWN') as AuditAction,
+          resourceType: d.resourceType || 'system',
+          resourceName: d.resourceName || d.resourceId || 'System',
+          severity,
+          status: (d.status || 'success') as 'success' | 'failure' | 'warning',
+          ipAddress: d.ipAddress || 'unknown',
+          location: d.location || 'unknown',
+          userAgent: d.userAgent || 'unknown',
+          metadata: typeof d.metadata === 'string' ? d.metadata : JSON.stringify(d.metadata ?? {}),
+          sessionId: d.sessionId || ''
+        };
+      });
+      setLogsList(data);
+    } catch (e) {
+      console.error('[audit] Failed to fetch:', e);
+    } finally {
+      setFetching(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchLogs();
+  }, []);
+
+  const tenants = useMemo(() => ['All', ...Array.from(new Set(logsList.map(l => l.tenantName)))], [logsList]);
   const categories = useMemo(() => ['All', ...Array.from(new Set(Object.values(ACTION_CATEGORY)))], []);
 
   const filtered = useMemo(() => {
-    return MOCK_LOGS.filter(log => {
+    return logsList.filter(log => {
       if (search && !`${log.userName} ${log.action} ${log.resourceName} ${log.tenantName}`.toLowerCase().includes(search.toLowerCase())) return false;
       if (tenantFilter !== 'All' && log.tenantName !== tenantFilter) return false;
       if (sevFilter !== 'all' && log.severity !== sevFilter) return false;
@@ -145,7 +179,7 @@ export default function AuditPage() {
       if (categoryFilter !== 'All' && ACTION_CATEGORY[log.action] !== categoryFilter) return false;
       return true;
     });
-  }, [search, tenantFilter, sevFilter, statusFilter, categoryFilter]);
+  }, [logsList, search, tenantFilter, sevFilter, statusFilter, categoryFilter]);
 
   return (
     <div className="animate-fade-in" style={{ maxWidth: 1400, margin: '0 auto' }}>
@@ -163,7 +197,7 @@ export default function AuditPage() {
           <div style={{ display: 'flex', gap: 10 }}>
             <button className="btn btn-outline btn-sm">📥 Export CSV</button>
             <button className="btn btn-outline btn-sm">📄 Export PDF</button>
-            <button className="btn btn-primary btn-sm">🔄 Refresh</button>
+            <button className="btn btn-primary btn-sm" onClick={fetchLogs} disabled={fetching}>{fetching ? '...' : '🔄 Refresh'}</button>
           </div>
         </div>
       </header>

@@ -179,6 +179,7 @@ export interface TenantSubscription {
   tenantName:         string;
   contactName:        string;
   contactEmail:       string;
+  defaultLanguage?:   string;   // BCP-47, e.g. 'en' | 'pt' | 'es' — used for email templates
   // Subscription
   planId:             PlanId;
   billingCycle:       BillingCycle;

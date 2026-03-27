@@ -18,6 +18,7 @@ import { firebaseApp } from '@mfo-crm/config';
 import {
   getFirestore,
   collection,
+  collectionGroup,
   doc,
   getDoc,
   getDocs,
@@ -45,7 +46,14 @@ export type PlatformRole =
   | 'controller'
   | 'compliance_officer'
   | 'report_viewer'
-  | 'external_advisor';
+  | 'external_advisor'
+  | 'sales_operations'
+  | 'business_manager'
+  | 'sales_manager'
+  | 'revenue_manager'
+  | 'account_executive'
+  | 'sdr'
+  | 'customer_success_manager';
 
 export interface PlatformConfig {
   initialized:    boolean;
@@ -67,6 +75,18 @@ export interface UserProfile {
   mfaEnabled:    boolean;
   mfaEnrolledAt?: string;
   status:        'active' | 'invited' | 'suspended';
+  /** true = user must change their password before proceeding (temp password was set by admin) */
+  mustChangePassword?: boolean;
+  /** true = user must complete TOTP authenticator enrollment before accessing the dashboard */
+  mfaEnrollRequired?: boolean;
+  /** ISO 639-1 language code for email templates: 'en' | 'pt' | 'es' | 'fr' | 'de' */
+  preferredLanguage?: string;
+  /** Organizational department (e.g. "Sales", "Engineering", "Operations", "Finance") */
+  department?:   string;
+  /** Job title within the department */
+  jobTitle?:     string;
+  /** Direct phone / mobile */
+  phone?:        string;
   createdAt:     string;
   updatedAt?:    string;
   lastLoginAt?:  string;
@@ -74,17 +94,47 @@ export interface UserProfile {
 }
 
 
+
 export interface TenantRecord {
-  id:          string;
-  name:        string;
-  plan:        'trial' | 'standard' | 'enterprise';
-  status:      'active' | 'suspended' | 'trial';
-  isInternal:  boolean;
-  brandColor:  string;
-  createdAt:   string;
-  createdBy:   string; // uid
-  expiresAt?:  string;
+  id:               string;
+  name:             string;
+  plan:             'trial' | 'standard' | 'enterprise';
+  status:           'active' | 'suspended' | 'trial';
+  isInternal:       boolean;
+  brandColor:       string;
+  createdAt:        string;
+  createdBy:        string; // uid
+  expiresAt?:       string;
+  /** If true, users must complete email-OTP MFA after selecting this tenant */
+  mfaRequired?:     boolean;
+
+  // ── Multi-Vertical Architecture ──────────────────────────────────────────────
+  /** Industry vertical that drives available modules, roles, and nav */
+  industryVertical?: import('./verticalRegistry').IndustryVerticalId;
+  /** Optional free-form sub-type label (e.g. "Cardiology Clinic") */
+  businessType?:     string;
+  /** Explicit list of enabled module IDs; defaults from vertical registry */
+  modulesEnabled?:   string[];
+  /** ISO 3166-1 alpha-2 country code (drives compliance defaults) */
+  country?:          string;
+  /** IANA timezone (e.g. "America/Sao_Paulo") */
+  timezone?:         string;
+  /** ISO 4217 primary currency (e.g. "BRL") */
+  currencyCode?:     string;
+  /** Short description of the business */
+  description?:      string;
+
+  // ── CRM Association ───────────────────────────────────────────────────────────
+  /** Linked CRM Organization ID (platform_orgs/{id}) */
+  crmOrgId?:          string;
+  /** Display name of the linked org (denormalized for quick display) */
+  crmOrgName?:        string;
+  /** Linked primary CRM Contact ID */
+  crmContactId?:      string;
+  /** Display name of the linked contact */
+  crmContactName?:    string;
 }
+
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -143,9 +193,93 @@ export async function updateUserProfile(
   await updateDoc(ref, { ...patch, updatedAt: nowISO() });
 }
 
-/** Touch lastLoginAt on every sign-in */
+/** Suspend a user platform-wide (sets status: 'suspended'). */
+export async function suspendUser(
+  uid:       string,
+  userName:  string,
+  performer: { uid: string; name: string },
+): Promise<void> {
+  await updateDoc(doc(db, 'users', uid), { status: 'suspended', updatedAt: nowISO() });
+  await addDoc(collection(db, 'audit_logs'), {
+    tenantId: 'master', userId: performer.uid, userName: performer.name,
+    action: 'USER_SUSPENDED', resourceId: uid, resourceType: 'user',
+    resourceName: `User "${userName}" (${uid}) suspended by ${performer.name}`,
+    status: 'success', ipAddress: 'client',
+    userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'server',
+    occurredAt: nowISO(),
+  });
+}
+
+/** Reactivate a suspended user. */
+export async function reactivateUser(
+  uid:       string,
+  userName:  string,
+  performer: { uid: string; name: string },
+): Promise<void> {
+  await updateDoc(doc(db, 'users', uid), { status: 'active', updatedAt: nowISO() });
+  await addDoc(collection(db, 'audit_logs'), {
+    tenantId: 'master', userId: performer.uid, userName: performer.name,
+    action: 'USER_REACTIVATED', resourceId: uid, resourceType: 'user',
+    resourceName: `User "${userName}" (${uid}) reactivated by ${performer.name}`,
+    status: 'success', ipAddress: 'client',
+    userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'server',
+    occurredAt: nowISO(),
+  });
+}
+
+/**
+ * Permanently delete a user from the platform.
+ * Removes: users/{uid}, all tenants/{*}/members/{uid} docs,
+ * strips uid from users.tenantIds arrays (already removed by member delete batch).
+ * Does NOT delete Firebase Auth user — caller must handle that via Admin SDK.
+ */
+export async function deleteUser(
+  uid:       string,
+  userName:  string,
+  performer: { uid: string; name: string },
+): Promise<void> {
+  const now = nowISO();
+
+  // 1. Get the user's tenantIds to delete member docs
+  const userSnap = await getDoc(doc(db, 'users', uid));
+  const tenantIds: string[] = userSnap.exists()
+    ? (userSnap.data() as UserProfile).tenantIds ?? []
+    : [];
+
+  // 2. Delete member sub-collection docs across all tenants
+  if (tenantIds.length > 0) {
+    const CHUNK = 490;
+    const chunks: string[][] = [];
+    for (let i = 0; i < tenantIds.length; i += CHUNK) chunks.push(tenantIds.slice(i, i + CHUNK));
+    for (const chunk of chunks) {
+      const b = writeBatch(db);
+      chunk.forEach(tid => b.delete(doc(db, 'tenants', tid, 'members', uid)));
+      await b.commit();
+    }
+  }
+
+  // 3. Delete the user document
+  await deleteDoc(doc(db, 'users', uid));
+
+  // 4. Audit
+  await addDoc(collection(db, 'audit_logs'), {
+    tenantId: 'master', userId: performer.uid, userName: performer.name,
+    action: 'USER_DELETED', resourceId: uid, resourceType: 'user',
+    resourceName: `User "${userName}" (${uid}) permanently deleted by ${performer.name}`,
+    status: 'success', ipAddress: 'client',
+    userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'server',
+    occurredAt: now,
+  });
+}
+
+/** Touch lastLoginAt on every sign-in — intentionally non-throwing. */
 export async function touchLastLogin(uid: string): Promise<void> {
-  await updateDoc(doc(db, 'users', uid), { lastLoginAt: nowISO() });
+  try {
+    await updateDoc(doc(db, 'users', uid), { lastLoginAt: nowISO() });
+  } catch (e: any) {
+    // Permission-denied or not-found are non-fatal here — the session still succeeds.
+    console.warn('[touchLastLogin] non-fatal:', e?.code ?? e?.message);
+  }
 }
 
 // ─── Tenants ──────────────────────────────────────────────────────────────────
@@ -165,14 +299,53 @@ export async function getTenant(id: string): Promise<TenantRecord | null> {
  * Fetch all tenants accessible to a given user profile.
  * A user may have multiple tenantIds (e.g. SaaS Master Admin + client tenants).
  */
-export async function getTenantsForUser(profile: UserProfile): Promise<TenantRecord[]> {
+export async function getTenantsForUser(
+  profile: UserProfile,
+  uid?: string,
+): Promise<TenantRecord[]> {
   const ids = Array.from(new Set([
     ...(profile.tenantIds ?? []),
     ...(profile.tenantId ? [profile.tenantId] : []),
   ]));
-  if (ids.length === 0) return [];
-  const results = await Promise.all(ids.map(id => getTenant(id)));
-  return results.filter((t): t is TenantRecord => t !== null);
+
+  if (profile.role === 'saas_master_admin' && !ids.includes('master')) {
+    ids.push('master');
+  }
+
+  if (ids.length > 0) {
+    const results = await Promise.all(
+      ids.map(id => getTenant(id).catch(err => {
+        console.warn('[getTenantsForUser] getTenant failed for', id, err?.code ?? err?.message);
+        return null;
+      })),
+    );
+    const found = results.filter((t): t is TenantRecord => t !== null);
+    if (found.length > 0) return found;
+    // All tenant reads failed (rules denied) — fall through to collectionGroup
+  }
+
+  // ── Fallback: tenantIds is empty (race condition / write failure) ─────────────
+  // Query the members collection group across ALL tenants to find where this user
+  // actually belongs.  This works without knowing which tenantIds to check, and is
+  // secured by the Firestore rule: /{path=**}/members/{uid} allow read if uid == request.auth.uid
+  const resolvedUid = uid ?? profile.uid;
+  if (!resolvedUid) return [];
+
+  try {
+    const memberSnaps = await getDocs(
+      query(collectionGroup(db, 'members'), where('uid', '==', resolvedUid)),
+    );
+    if (memberSnaps.empty) return [];
+
+    const tenantIds = Array.from(new Set(
+      memberSnaps.docs.map(d => (d.data() as { tenantId?: string }).tenantId).filter((id): id is string => !!id),
+    ));
+    const results = await Promise.all(tenantIds.map(id => getTenant(id).catch(() => null)));
+    return results.filter((t): t is TenantRecord => t !== null);
+  } catch (err) {
+    console.warn('[getTenantsForUser] collectionGroup fallback failed:', err);
+    return [];
+  }
 }
 
 export async function createTenant(
@@ -261,68 +434,133 @@ export async function bootstrapPlatform(
 /**
  * Called for every sign-in after the platform is initialized.
  * Creates the user profile on their first sign-in if it doesn't
- * already exist (e.g. invited via email).
+ * already exist, and merges any admin-provisioned profile that was
+ * written under a different UID (e.g. via the Identity Toolkit REST
+ * accounts:signUp fallback which returns a different UID if the email
+ * already existed in Firebase Auth).
  */
 export async function ensureUserProfile(
   firebaseUser: FirebaseUser,
   displayName?: string,
 ): Promise<UserProfile> {
   const existing = await getUserProfile(firebaseUser.uid);
-  if (existing) {
-    await touchLastLogin(firebaseUser.uid);
-    return { ...existing, lastLoginAt: nowISO() };
+
+  // Helper: find any OTHER profile for this email (admin-provisioned at wrong UID)
+  async function findProvisionedProfile(): Promise<{ doc: any; data: UserProfile } | null> {
+    if (!firebaseUser.email) return null;
+    const snap = await getDocs(
+      query(collection(db, 'users'), where('email', '==', firebaseUser.email)),
+    );
+    const other = snap.docs.find(d => d.id !== firebaseUser.uid);
+    if (!other) return null;
+    return { doc: other, data: other.data() as UserProfile };
   }
 
-  // New sign-up — they weren't bootstraped and weren't invited natively
-  // But maybe they were pre-provisioned via an email invite!
-  const qObj = query(collection(db, 'users'), where('email', '==', firebaseUser.email));
-  const snap = await getDocs(qObj);
-  const placeholderDoc = snap.docs.find(d => d.id.startsWith('invite_') || d.data().status === 'invited');
-
-  if (placeholderDoc) {
-    const placeholder = placeholderDoc.data() as UserProfile;
+  // Helper: migrate a provisioned profile to the real UID
+  async function migrateProfile(
+    provisioned: UserProfile,
+    provisionedRef: any,
+  ): Promise<UserProfile> {
     const batch = writeBatch(db);
     const now = nowISO();
 
-    const newProfile: UserProfile = {
-      ...placeholder,
+    const merged: UserProfile = {
+      ...provisioned,
       uid:         firebaseUser.uid,
-      displayName: displayName || placeholder.displayName || firebaseUser.email!.split('@')[0],
+      displayName: displayName || provisioned.displayName || firebaseUser.email!.split('@')[0],
       status:      'active',
       lastLoginAt: now,
       updatedAt:   now,
     };
-    batch.set(doc(db, 'users', firebaseUser.uid), newProfile);
+    batch.set(doc(db, 'users', firebaseUser.uid), merged);
 
-    // Migrate tenant memberships
-    for (const tenantId of placeholder.tenantIds ?? []) {
-      const oldMemberRef = doc(db, 'tenants', tenantId, 'members', placeholder.uid);
-      const oldMemberSnap = await getDoc(oldMemberRef);
-      if (oldMemberSnap.exists()) {
-        const memberData = oldMemberSnap.data();
-        batch.set(doc(db, 'tenants', tenantId, 'members', firebaseUser.uid), {
-          ...memberData,
-          uid: firebaseUser.uid,
-          status: 'active',
-          displayName: newProfile.displayName,
-          updatedAt: now,
-        });
-        batch.delete(oldMemberRef);
+    // Migrate tenant member docs to real UID.
+    // Reads of OLD member docs may fail with permission-denied when provisioned.uid != auth.uid
+    // and the user isn't an admin. Handle that gracefully: always write the member doc at
+    // the real UID (using provisioned data as fallback), and best-effort delete the old one.
+    for (const tenantId of provisioned.tenantIds ?? []) {
+      try {
+        const oldMemberRef = doc(db, 'tenants', tenantId, 'members', provisioned.uid);
+        const oldMemberSnap = await getDoc(oldMemberRef);
+        if (oldMemberSnap.exists()) {
+          const memberData = oldMemberSnap.data();
+          batch.set(doc(db, 'tenants', tenantId, 'members', firebaseUser.uid), {
+            ...memberData,
+            uid:         firebaseUser.uid,
+            status:      'active',
+            displayName: merged.displayName,
+            updatedAt:   now,
+          });
+          // Only delete the old doc if we found it and the UIDs are different
+          if (provisioned.uid !== firebaseUser.uid) {
+            batch.delete(oldMemberRef);
+          }
+        } else {
+          // Old doc doesn't exist (e.g. Admin SDK write failed) — create a fresh one
+          batch.set(doc(db, 'tenants', tenantId, 'members', firebaseUser.uid), {
+            uid:         firebaseUser.uid,
+            tenantId,
+            email:       firebaseUser.email ?? provisioned.email,
+            displayName: merged.displayName,
+            role:        provisioned.role ?? 'report_viewer',
+            status:      'active',
+            joinedAt:    now,
+            invitedBy:   'system',
+            updatedAt:   now,
+          });
+        }
+      } catch {
+        // Permission-denied reading old member doc — write a fresh one at the real UID
+        // using the provisioned profile data. This is safe: worst case a duplicate is created.
+        try {
+          batch.set(doc(db, 'tenants', tenantId, 'members', firebaseUser.uid), {
+            uid:         firebaseUser.uid,
+            tenantId,
+            email:       firebaseUser.email ?? provisioned.email,
+            displayName: merged.displayName,
+            role:        provisioned.role ?? 'report_viewer',
+            status:      'active',
+            joinedAt:    now,
+            invitedBy:   'system',
+            updatedAt:   now,
+          });
+        } catch { /* member write also failed — will be healed by Fix Workspace button */ }
       }
     }
 
-    // Delete placeholder user
-    batch.delete(placeholderDoc.ref);
+    // Remove the stale provisioned profile
+    batch.delete(provisionedRef);
+
     await batch.commit();
-    return newProfile;
+    return merged;
   }
 
-  // Completely new user without any placeholder
+  // ── Case 1: Profile already exists at real UID ─────────────────────────────
+  if (existing) {
+    // Profile is already at the correct UID.
+    // Do NOT call findProvisionedProfile() when tenantIds is empty — that triggers a
+    // Firestore LIST query on the `users` collection which is blocked for non-admins
+    // and causes a permission-denied crash on first login.
+    // A profile with tenantIds:[] is the expected state for a newly admin-created user
+    // who hasn't been assigned to a tenant yet — the "no workspace" UI handles this.
+    await touchLastLogin(firebaseUser.uid);
+    return { ...existing, lastLoginAt: nowISO() };
+  }
+
+  // ── Case 2: No profile at real UID — look for provisioned/placeholder ─────
+  try {
+    const provisioned = await findProvisionedProfile();
+    if (provisioned) {
+      return migrateProfile(provisioned.data, provisioned.doc.ref);
+    }
+  } catch { /* non-fatal — fall through to fresh create */ }
+
+  // ── Case 3: Completely new user ───────────────────────────────────────────
   const profile: UserProfile = {
     uid:         firebaseUser.uid,
     email:       firebaseUser.email!,
     displayName: displayName || firebaseUser.email!.split('@')[0],
-    role:        'report_viewer',   // least privilege default
+    role:        'report_viewer',
     tenantId:    null,
     tenantIds:   [],
     mfaEnabled:  false,
@@ -364,6 +602,21 @@ export async function grantSaasMasterAdmin(
     userAgent:    typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
     occurredAt:   nowISO(),
   });
+}
+
+// ─── Tenant Update ────────────────────────────────────────────────────────────
+
+export async function updateTenant(
+  tenantId: string,
+  patch: Partial<TenantRecord>,
+): Promise<void> {
+  // Firestore rejects undefined values — strip them before writing
+  const clean: Record<string, any> = {};
+  for (const [k, v] of Object.entries(patch)) {
+    if (v !== undefined) clean[k] = v;
+  }
+  clean.updatedAt = nowISO();
+  await updateDoc(doc(db, 'tenants', tenantId), clean);
 }
 
 // ─── Tenant Deletion ──────────────────────────────────────────────────────────

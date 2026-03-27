@@ -8,6 +8,7 @@ import {
   totpSecondsRemaining,
   type MfaEnrollmentSession,
 } from '@/lib/mfaService';
+import { ConfirmDialog, type ConfirmOptions } from '@/components/ConfirmDialog';
 
 type EnrollStep = 'idle' | 'scan' | 'verify' | 'success';
 
@@ -96,6 +97,7 @@ export default function MfaSettingsPage() {
   const [loading,       setLoading]       = useState(false);
   const [msg,           setMsg]           = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [copied,        setCopied]        = useState(false);
+  const [confirmOpts,   setConfirmOpts]   = useState<ConfirmOptions | null>(null);
 
   const mfaActive = userProfile?.mfaEnabled ?? false;
 
@@ -153,16 +155,24 @@ export default function MfaSettingsPage() {
   }, [otp, enrollStep]);
 
   // ── Unenroll ──────────────────────────────────────────────────────────────────
-  async function handleUnenroll() {
+  function handleUnenroll() {
     if (!firebaseUser) return;
-    if (!confirm('Remove MFA from your account? You will no longer be required to enter a verification code at sign-in.')) return;
-    setLoading(true); setMsg(null);
-    try {
-      await unenrollMfa(firebaseUser);
-      setMsg({ type: 'ok', text: 'MFA has been removed from your account.' });
-    } catch (e: any) {
-      setMsg({ type: 'err', text: e.message ?? 'Failed to remove MFA.' });
-    } finally { setLoading(false); }
+    setConfirmOpts({
+      title:        'Remove MFA',
+      message:      'Remove MFA from your account? You will no longer be required to enter a verification code at sign-in.',
+      confirmLabel: 'Remove MFA',
+      variant:      'warning',
+      onConfirm: async () => {
+        setLoading(true); setMsg(null);
+        try {
+          await unenrollMfa(firebaseUser);
+          setMsg({ type: 'ok', text: 'MFA has been removed from your account.' });
+        } catch (e: any) {
+          setMsg({ type: 'err', text: e.message ?? 'Failed to remove MFA.' });
+        } finally { setLoading(false); }
+      },
+      onCancel: () => setConfirmOpts(null),
+    });
   }
 
   // ── Copy secret key ───────────────────────────────────────────────────────────
@@ -184,6 +194,7 @@ export default function MfaSettingsPage() {
 
   return (
     <div style={{ maxWidth: 640, margin: '0 auto', padding: '32px 24px' }}>
+      {confirmOpts && <ConfirmDialog {...confirmOpts} />}
 
       {/* Page header */}
       <div style={{ marginBottom: 32 }}>

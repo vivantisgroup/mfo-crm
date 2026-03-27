@@ -13,6 +13,7 @@ import {
   formatPrice, annualSavingsPct,
   type PlanDefinition, type PlanVersion, type PlanStatus,
 } from '@/lib/planService';
+import { ConfirmDialog, type ConfirmOptions } from '@/components/ConfirmDialog';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -366,6 +367,7 @@ export default function PlanManagementPage() {
   const [editing, setEditing] = useState<PlanDefinition | null>(null);
   const [isNew,   setIsNew]   = useState(false);
   const [historyCode, setHistoryCode] = useState<string | null>(null);
+  const [confirmOpts, setConfirmOpts] = useState<ConfirmOptions | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -392,11 +394,19 @@ export default function PlanManagementPage() {
     await load();
   }
 
-  async function handleArchive(plan: PlanDefinition) {
-    if (!confirm(`Archive plan "${plan.name}"? It will be hidden from new subscriptions but existing subscribers keep their terms.`)) return;
-    await archivePlan(plan.code, performer);
-    setMsg(`✅ Plan "${plan.name}" archived.`);
-    await load();
+  function handleArchive(plan: PlanDefinition) {
+    setConfirmOpts({
+      title:        'Archive Plan',
+      message:      `Archive plan "${plan.name}"? It will be hidden from new subscriptions but existing subscribers keep their terms.`,
+      confirmLabel: 'Archive',
+      variant:      'warning',
+      onConfirm: async () => {
+        await archivePlan(plan.code, performer);
+        setMsg(`✅ Plan "${plan.name}" archived.`);
+        await load();
+      },
+      onCancel: () => setConfirmOpts(null),
+    });
   }
 
   function openNew() {
@@ -415,6 +425,7 @@ export default function PlanManagementPage() {
 
   return (
     <div className="page animate-fade-in">
+      {confirmOpts && <ConfirmDialog {...confirmOpts} />}
       {editing && (
         <PlanEditorModal plan={editing} isNew={isNew} onClose={() => { setEditing(null); setIsNew(false); }} onSave={handleSave} />
       )}

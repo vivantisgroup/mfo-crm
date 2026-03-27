@@ -16,6 +16,8 @@ export const en = {
   'nav.crm': 'CRM',
   'nav.support': 'Support',
   'nav.audit': 'Compliance',
+  'nav.roles': 'Roles & Permissions',
+  'nav.emailTemplates': 'Email Templates',
   'nav.tenants': 'Tenants',
   'nav.plans': 'Plans',
   'nav.users': 'Users',
@@ -23,6 +25,11 @@ export const en = {
   'nav.analytics': 'Analytics',
   'nav.renewals': 'Renewals',
   'nav.inbox': 'Inbox',
+  'nav.copilot': 'AI Co-Pilot',
+  'nav.dbSettings': 'Database Settings',
+  'nav.infrastructure': 'Infrastructure',
+  'nav.catalogExplorer': 'Catalog Explorer',
+  'nav.backups': 'Backup Management',
 
   // Header & User Profile
   'header.search': 'Search records… (⌘K)',

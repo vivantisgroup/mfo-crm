@@ -370,12 +370,12 @@ export default function BillingPage() {
     const rnwls = getMockRenewals();
     return { renewalsDueSoon: rnwls.filter(r => !['completed', 'declined', 'expired'].includes(r.status) && renewalDaysLeft(r) <= 30).length };
   }, []);
-  usePageTitle('Billing & Subscriptions');
+  usePageTitle('Revenue');
 
   const totalMRR = SUBSCRIBERS.filter(s => s.status === 'active').reduce((s, t) => s + t.mrr, 0);
 
   return (
-    <div className="animate-fade-in" style={{ maxWidth: 1400, margin: '0 auto' }}>
+    <div className="page-wrapper animate-fade-in">
       {/* MRR summary strip — compact */}
       <div style={{ marginBottom: 20, padding: '12px 18px', background: 'var(--bg-elevated)', borderRadius: 10, border: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 16 }}>
         <div style={{ textAlign: 'right' }}>

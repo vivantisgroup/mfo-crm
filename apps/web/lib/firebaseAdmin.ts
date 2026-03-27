@@ -1,84 +1,168 @@
 /**
  * lib/firebaseAdmin.ts
  *
- * Lazy-initialised Firebase Admin SDK singleton.
- * Used only by API routes (server-side Node.js runtime).
+ * Lazy-initialised Firebase Admin SDK singleton for use in API routes only.
  *
- * Required environment variable:
- *   FIREBASE_ADMIN_SDK_JSON – JSON string of the service account credentials
- *   (download from Firebase Console → Project Settings → Service Accounts → Generate new private key)
+ * Credential resolution order:
+ *   1. FIREBASE_ADMIN_SDK_JSON (JSON string, optionally base64-encoded)
+ *   2. Application Default Credentials (ADC)
+ *      — run `gcloud auth application-default login` for local development,
+ *      — or set GOOGLE_APPLICATION_CREDENTIALS to a service-account key path.
  *
- * Example .env.local entry (single-line minified JSON):
- *   FIREBASE_ADMIN_SDK_JSON={"type":"service_account","project_id":"...","private_key":"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n","client_email":"..."}
+ * For local development without a service account JSON, ADC is the simplest
+ * approach. ADC is also the recommended method when running on Cloud Run / GCE.
  */
 
 /* eslint-disable @typescript-eslint/no-var-requires */
 
-let _db: any = null;
+let _app: any = null;
+let _db:  any = null;
+let _auth: any = null;
+let _initError: Error | null = null;
+let _hasCredentials = false;  // true only when real credentials were resolved
 
 function getAdminApp(): any {
-  // Lazy require so this file can be imported without crashing in Edge runtime
-  const admin = require('firebase-admin');
+  // Return cached app or re-throw cached error
+  if (_app)        return _app;
+  if (_initError)  throw _initError;
 
-  if (admin.apps.length) return admin.apps[0];
+  const admin = require('firebase-admin');
+  if (admin.apps.length > 0) {
+    _app = admin.apps[0];
+    return _app;
+  }
 
   const credJson = process.env.FIREBASE_ADMIN_SDK_JSON;
-  if (!credJson) {
-    throw new Error(
-      'FIREBASE_ADMIN_SDK_JSON environment variable is not set. ' +
-      'Download a service account key from Firebase Console → Project Settings → Service Accounts.'
-    );
-  }
 
-  let cred: any;
-
-  // Attempt 1: parse directly
-  try {
-    cred = JSON.parse(credJson);
-  } catch {
-    // Attempt 2: might be base64-encoded (workaround for Vercel special chars)
-    try {
-      const decoded = Buffer.from(credJson, 'base64').toString('utf8');
-      cred = JSON.parse(decoded);
-    } catch {
-      throw new Error(
-        'FIREBASE_ADMIN_SDK_JSON is not valid JSON.\n' +
-        'Common causes:\n' +
-        '  1. The private_key contains literal newlines instead of \\n — edit the env var in Vercel and replace each real newline inside private_key with the two characters \\n.\n' +
-        '  2. Quotes were stripped — paste the full JSON value as-is, no extra quoting.\n' +
-        '  3. The JSON was truncated — paste the complete minified service account file.\n' +
-        'Vercel → Project → Settings → Environment Variables → FIREBASE_ADMIN_SDK_JSON'
+  // ── Attempt 1: FIREBASE_ADMIN_SDK_JSON is set ─────────────────────────────
+  if (credJson) {
+    // ── Detect the common mistake: someone pasted the JS code snippet instead of JSON ──
+    const trimmed = credJson.trim();
+    const looksLikeJsCode = trimmed.startsWith('var ') || trimmed.startsWith('const ') ||
+      trimmed.startsWith('let ') || trimmed.includes('require(') || trimmed.includes('initializeApp(');
+    if (looksLikeJsCode) {
+      console.error(
+        '[firebaseAdmin] ❌ FIREBASE_ADMIN_SDK_JSON contains JavaScript code, not a JSON service account key.\n' +
+        'FIX: Go to https://console.firebase.google.com → Project Settings → Service Accounts\n' +
+        '     → "Generate new private key" → download the JSON file.\n' +
+        '     In Vercel: Project Settings → Environment Variables → FIREBASE_ADMIN_SDK_JSON\n' +
+        '     → paste the ENTIRE contents of the downloaded JSON file as the value (no quotes around it).'
       );
+      // Fall through to ADC (will also fail locally, but the error message above is shown)
+    } else {
+      let cred: any;
+
+      // Try direct JSON parse
+      try { cred = JSON.parse(credJson); } catch { /* fall through */ }
+
+      // Try base64-decode then parse (Vercel sometimes base64-encodes special chars)
+      if (!cred) {
+        try {
+          const decoded = Buffer.from(credJson, 'base64').toString('utf8');
+          cred = JSON.parse(decoded);
+        } catch { /* fall through */ }
+      }
+
+      // Try fixing escaped newlines common in Windows/Vercel copy-paste artifacts
+      if (!cred) {
+        try {
+          const fixed = credJson
+            .replace(/\\\\n/g, '\\n')  // double-escaped → single-escaped
+            .replace(/\r/g, '');        // strip CR
+          cred = JSON.parse(fixed);
+        } catch { /* fall through */ }
+      }
+
+      if (cred) {
+        // Auto-repair private_key newlines
+        if (typeof cred.private_key === 'string') {
+          cred.private_key = cred.private_key
+            .replace(/\\n/g, '\n')  // literal \n escape → real newline
+            .replace(/\r/g, '');    // strip CR
+        }
+        try {
+          _app = admin.initializeApp({ credential: admin.credential.cert(cred) });
+          _hasCredentials = true;
+          return _app;
+        } catch (e: any) {
+          // cert init failed — fall through to ADC
+          console.warn('[firebaseAdmin] cert credential failed, trying ADC:', e.message);
+        }
+      } else {
+        console.warn('[firebaseAdmin] FIREBASE_ADMIN_SDK_JSON could not be parsed; trying ADC.');
+      }
     }
   }
 
-  // ── Auto-repair: Vercel sometimes stores the value with real newlines in
-  //    private_key (treated as literal chars) instead of the JSON escape \n.
-  //    Detect and fix so firebase-admin doesn't reject the credential.
-  if (cred && typeof cred.private_key === 'string') {
-    if (!cred.private_key.includes('\n') && cred.private_key.includes('\\n')) {
-      // Double-escaped — unescape once
-      cred.private_key = cred.private_key.replace(/\\n/g, '\n');
-    }
-    // If there are real literal CR characters (Windows paste artefact), strip them
-    cred.private_key = cred.private_key.replace(/\r/g, '');
+  // ── Attempt 2: Application Default Credentials ─────────────────────────────
+  try {
+    _app = admin.initializeApp({ credential: admin.credential.applicationDefault() });
+    _hasCredentials = true;
+    console.log('[firebaseAdmin] Initialised with Application Default Credentials.');
+    return _app;
+  } catch {
+    // ADC not set up (common on Windows dev without gcloud) — fall through to projectId-only mode
   }
 
-  return admin.initializeApp({ credential: admin.credential.cert(cred) });
+
+  // ── Attempt 3: projectId-only (no credentials) ──────────────────────────────
+  // Prevents the "Unable to detect Project Id" crash. Routes already catch
+  // the resulting auth errors gracefully and return helpful UI messages.
+  const projectId =
+    process.env.NEXT_PUBLIC_PROJECT_ID ??
+    process.env.GOOGLE_CLOUD_PROJECT ??
+    'mfo-crm';
+  try {
+    _app = admin.initializeApp({ projectId });
+    console.warn(
+      `[firebaseAdmin] ⚠️  No credentials — running in projectId-only mode (project="${projectId}").` +
+      '\n  To fix: Firebase Console → Project Settings → Service Accounts → Generate new private key.' +
+      '\n  Paste the JSON into FIREBASE_ADMIN_SDK_JSON in .env.local and restart the dev server.'
+    );
+    return _app;
+  } catch (e: any) {
+    _initError = new Error(
+      `Firebase Admin SDK could not be initialised (project="${projectId}"): ${e.message}\n\n` +
+      'Set FIREBASE_ADMIN_SDK_JSON in .env.local to the full contents of a Firebase service account JSON key.\n' +
+      'Firebase Console → Project Settings → Service Accounts → Generate new private key.'
+    );
+    throw _initError;
+  }
 }
 
-/** Returns an Admin Firestore instance (lazy, singleton). */
+
+/** Returns an Admin Firestore instance (lazy singleton). */
 export function getAdminFirestore(): any {
   if (_db) return _db;
   const admin = require('firebase-admin');
-  getAdminApp(); // ensure app is initialised
+  getAdminApp();
   _db = admin.firestore();
   return _db;
 }
 
-/** Returns an Admin Auth instance (lazy). */
+/** Returns an Admin Auth instance (lazy singleton). */
 export function getAdminAuth(): any {
+  if (_auth) return _auth;
   const admin = require('firebase-admin');
   getAdminApp();
-  return admin.auth();
+  _auth = admin.auth();
+  return _auth;
+}
+
+/**
+ * Returns true when the Admin SDK is available.
+ * Use this to gracefully degrade rather than crash.
+ */
+export function isAdminAvailable(): boolean {
+  try { getAdminApp(); return true; } catch { return false; }
+}
+
+/**
+ * Returns true when the Admin SDK was initialised with real credentials
+ * (service account JSON or ADC) and can actually WRITE to Firestore.
+ * Returns false in projectId-only mode (no credentials).
+ * Use this in the initialize route to decide MODE A vs MODE B.
+ */
+export function hasAdminWriteAccess(): boolean {
+  try { getAdminApp(); return _hasCredentials; } catch { return false; }
 }
