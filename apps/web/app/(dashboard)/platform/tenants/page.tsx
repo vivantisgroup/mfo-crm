@@ -1447,9 +1447,11 @@ function NewSubscriptionModal({ onClose, onCreated, performer }: {
   const periodEnd = new Date(now);
   periodEnd.setMonth(periodEnd.getMonth() + (form.billingCycle === 'annual' ? 12 : 1));
 
+  const isValid = form.tenantId.trim() !== '' && form.tenantName.trim() !== '';
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.tenantId || !form.tenantName) return;
+    if (!isValid) return;
     setLoading(true);
     const sub: TenantSubscription = {
       tenantId:           form.tenantId,
@@ -1621,7 +1623,17 @@ function NewSubscriptionModal({ onClose, onCreated, performer }: {
         </div>
         <div style={{ padding: '0 32px 28px', display: 'flex', gap: 10 }}>
           <button type="button" className="btn btn-ghost" onClick={onClose} style={{ flex: 1 }}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={loading || !form.tenantId || !form.tenantName} style={{ flex: 2 }}>
+          <button 
+            type="submit" 
+            className={`btn ${isValid ? 'btn-primary' : 'btn-secondary'}`} 
+            disabled={loading} 
+            style={{ 
+              flex: 2, 
+              opacity: loading ? 0.7 : 1,
+              transition: 'all 0.2s',
+              border: isValid ? undefined : '1px solid var(--border)'
+            }}
+          >
             {loading ? '…' : '✅ Create Subscription'}
           </button>
         </div>
