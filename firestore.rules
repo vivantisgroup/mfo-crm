@@ -138,10 +138,12 @@ service cloud.firestore {
         || (userRole() == 'tenant_admin' && resource.data.get('tenantIds', []).hasAny(userTenantIds()))
         || isSalesRole()
       );
-      // Allow create if signed in as own uid, or master admin, or during platform setup
+      // Allow create if signed in as own uid, master admin, setup mode, or tenant admin.
+      // Tenant admins may not create new master admins.
       allow create: if (isSignedIn() && request.auth.uid == uid)
         || isSaasMasterAdmin()
-        || isSetupMode();
+        || isSetupMode()
+        || (userRole() == 'tenant_admin' && request.resource.data.get('role', '') != 'saas_master_admin');
       allow update: if isSetupMode() || (isSignedIn() && (
         // Self may update non-sensitive fields. May also remove tenantIds (but not add), and nullify primary tenantId.
         (request.auth.uid == uid

@@ -13,7 +13,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminAuth, getAdminFirestore } from '@/lib/firebaseAdmin';
+import { getAdminAuth, getAdminFirestore, hasAdminWriteAccess } from '@/lib/firebaseAdmin';
 
 // NEXT_PUBLIC_* vars are available server-side in Next.js API routes when explicitly set in .env.local.
 // We also check a plain FIREBASE_API_KEY for environments where the NEXT_PUBLIC_ prefix isn't used.
@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
     let isNew: boolean;
 
     // First try via Admin SDK createUser (cleanest path)
-    try {
+    if (hasAdminWriteAccess()) {
       const adminAuth = getAdminAuth();
       try {
         const created = await adminAuth.createUser({
@@ -167,51 +167,77 @@ export async function POST(req: NextRequest) {
           throw err;
         }
       }
-    } catch (adminErr: any) {
+    } else {
       // Admin SDK not available — fall back to Identity Toolkit REST
-      if (adminErr.message?.includes('FIREBASE_ADMIN_SDK_JSON') || adminErr.code?.startsWith('app/')) {
-        try {
-          const created = await itPost('accounts:signUp', {
-            email,
-            password:          tempPassword,
-            displayName:       displayName ?? email.split('@')[0],
-            returnSecureToken: false,
-          });
-          uid   = created.localId;
-          isNew = true;
-        } catch (err: any) {
-          if (err.message === 'EMAIL_EXISTS') {
-            uid   = `pending_${email.replace(/[^a-z0-9]/gi, '_')}`;
-            isNew = false;
-          } else {
-            throw err;
-          }
+      try {
+        const created = await itPost('accounts:signUp', {
+          email,
+          password:          tempPassword,
+          displayName:       displayName ?? email.split('@')[0],
+          returnSecureToken: false,
+        });
+        uid   = created.localId;
+        isNew = true;
+      } catch (err: any) {
+        if (err.message === 'EMAIL_EXISTS') {
+          uid   = `pending_${email.replace(/[^a-z0-9]/gi, '_')}`;
+          isNew = false;
+        } else {
+          throw err;
         }
-      } else {
-        throw adminErr;
       }
     }
 
-    // ── Write Firestore profile (server-side, bypasses rules) ──
+    // ── Write Firestore profile (server-side, bypasses rules if admin) ──
     const now = new Date().toISOString();
     let firestoreOk = false;
     try {
-      const adminDb = getAdminFirestore();
+      if (hasAdminWriteAccess()) {
+        const adminDb = getAdminFirestore();
+        await adminDb.collection('users').doc(uid).set({
+          uid,
+          email,
+          displayName: displayName ?? email.split('@')[0],
+          role:               'report_viewer',
+          tenantId:           null,
+          tenantIds:          [],
+          mfaEnabled:         false,
+          status:             'invited',
+          mustChangePassword: isNew,
+          createdAt:          now,
+          updatedAt:          now,
+        }, { merge: true });
+      } else {
+        // Fall back to REST API write using the caller's ID token.
+        // Requires the caller (e.g. saas_master_admin or tenant_admin) to have write rules permission.
+        const projectId = process.env.NEXT_PUBLIC_PROJECT_ID ?? process.env.FIREBASE_PROJECT_ID;
+        if (!projectId) throw new Error('Cannot write via REST without a project ID');
+        
+        const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${uid}?updateMask.fieldPaths=uid&updateMask.fieldPaths=email&updateMask.fieldPaths=displayName&updateMask.fieldPaths=role&updateMask.fieldPaths=tenantIds&updateMask.fieldPaths=mfaEnabled&updateMask.fieldPaths=status&updateMask.fieldPaths=mustChangePassword&updateMask.fieldPaths=createdAt&updateMask.fieldPaths=updatedAt`;
+        
+        const fields = {
+          uid: { stringValue: uid },
+          email: { stringValue: email },
+          displayName: { stringValue: displayName ?? email.split('@')[0] },
+          role: { stringValue: 'report_viewer' },
+          tenantIds: { arrayValue: { values: [] } },
+          mfaEnabled: { booleanValue: false },
+          status: { stringValue: 'invited' },
+          mustChangePassword: { booleanValue: isNew },
+          createdAt: { timestampValue: now },
+          updatedAt: { timestampValue: now },
+        };
 
-      await adminDb.collection('users').doc(uid).set({
-        uid,
-        email,
-        displayName: displayName ?? email.split('@')[0],
-        role:               'report_viewer', // least privilege — admin can upgrade later
-        tenantId:           null,
-        tenantIds:          [],
-        mfaEnabled:         false,
-        status:             'invited',
-        mustChangePassword: isNew, // force password change on first login
-        createdAt:          now,
-        updatedAt:          now,
-      }, { merge: true }); // merge:true so we don't clobber existing profiles
-
+        const res = await fetch(url, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+          body: JSON.stringify({ fields }),
+        });
+        if (!res.ok) {
+          const errBody = await res.text();
+          throw new Error(`REST PATCH /users/${uid} failed: ${res.status} ${errBody}`);
+        }
+      }
       firestoreOk = true;
     } catch (fsErr: any) {
       // Non-fatal: log but don't fail the request.
