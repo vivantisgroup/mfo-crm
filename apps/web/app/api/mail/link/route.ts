@@ -127,10 +127,10 @@ export async function POST(req: NextRequest) {
         };
 
         // Add type-specific fields for direct navigation
-        if (link.type === 'family')  actData.familyId   = link.id;
-        if (link.type === 'contact') actData.contactId  = link.id;
-        if (link.type === 'org')     actData.orgId      = link.id;
-        if (link.type === 'ticket')  actData.ticketId   = link.id;
+        if (link.type === 'family')  actData.linkedFamilyId   = link.id;
+        if (link.type === 'contact') actData.linkedContactId  = link.id;
+        if (link.type === 'org')     actData.linkedOrgId      = link.id;
+        if (link.type === 'ticket')  actData.linkedTicketId   = link.id;
 
         await fsWrite(idToken, `tenants/${tId}/activities/${actId}`, actData);
       } catch (e: any) {

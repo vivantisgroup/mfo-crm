@@ -5,7 +5,6 @@
  * Logs the sent email as a CRM activity if tenantId + familyId provided.
  *
  * Request body:
- * {
  *   uid:       string;
  *   idToken:   string;
  *   to:        string;          // recipient email
@@ -15,6 +14,7 @@
  *   familyId?: string;
  *   familyName?: string;
  *   replyToMessageId?: string;  // Gmail thread ID for replies
+ *   attachments?: { name: string; type: string; data: string }[]; // Base64 data chunks
  * }
  */
 
@@ -49,22 +49,58 @@ function encodeEmail(opts: {
   subject: string;
   body: string;
   replyToMessageId?: string;
+  attachments?: { name: string; type: string; data: string }[];
 }): string {
+  const boundary = `----=_Part_${Math.random().toString(36).slice(2)}`;
+  
   const lines = [
     `To: ${opts.to}`,
     `From: ${opts.from}`,
     `Subject: ${opts.subject}`,
-    'Content-Type: text/plain; charset=UTF-8',
     'MIME-Version: 1.0',
   ];
+
   if (opts.replyToMessageId) {
     lines.push(`In-Reply-To: ${opts.replyToMessageId}`);
     lines.push(`References: ${opts.replyToMessageId}`);
   }
-  lines.push('', opts.body);
+
+  if (!opts.attachments || opts.attachments.length === 0) {
+    // Simple text email
+    lines.push('Content-Type: text/plain; charset=UTF-8');
+    lines.push('', opts.body);
+  } else {
+    // Multipart email with attachments
+    lines.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+    lines.push('');
+    
+    // Body part
+    lines.push(`--${boundary}`);
+    lines.push('Content-Type: text/plain; charset=UTF-8');
+    lines.push('');
+    lines.push(opts.body);
+    lines.push('');
+
+    // Attachments
+    for (const att of opts.attachments) {
+      lines.push(`--${boundary}`);
+      lines.push(`Content-Type: ${att.type}; name="${att.name}"`);
+      lines.push(`Content-Disposition: attachment; filename="${att.name}"`);
+      lines.push('Content-Transfer-Encoding: base64');
+      lines.push('');
+      // The base64 data must be split into chunks of 76 characters to be RFC compliant, 
+      // but Gmail API generally accepts single-line base64 blocks too.
+      // We'll trust the client strips the 'data:mime/type;base64,' prefix.
+      lines.push(att.data);
+      lines.push('');
+    }
+
+    // End boundary
+    lines.push(`--${boundary}--`);
+  }
 
   const raw = lines.join('\r\n');
-  return Buffer.from(raw)
+  return Buffer.from(raw, 'utf-8')
     .toString('base64')
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
@@ -76,7 +112,7 @@ export async function POST(req: NextRequest) {
     const {
       uid, idToken, to, subject, body,
       tenantId, familyId, familyName,
-      replyToMessageId,
+      replyToMessageId, attachments
     } = await req.json();
 
     if (!uid || !idToken || !to || !subject || !body) {
@@ -93,7 +129,7 @@ export async function POST(req: NextRequest) {
     const fromEmail = profile.emailAddress ?? '';
 
     // 2. Compose and send email via Gmail API
-    const raw       = encodeEmail({ to, from: fromEmail, subject, body, replyToMessageId });
+    const raw       = encodeEmail({ to, from: fromEmail, subject, body, replyToMessageId, attachments });
     const sendRes   = await fetch(`${GMAIL}/users/me/messages/send`, {
       method:  'POST',
       headers: {
@@ -145,8 +181,8 @@ export async function POST(req: NextRequest) {
       const actId   = `email_${sent.id}`;
       const actData = {
         tenantId,
-        familyId,
-        familyName,
+        linkedFamilyId:   familyId,
+        linkedFamilyName: familyName,
         activityType: 'email',
         type:         'email',
         direction:    'outbound',

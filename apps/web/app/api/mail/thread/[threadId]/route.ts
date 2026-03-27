@@ -20,19 +20,28 @@ function decodeBase64(str: string): string {
   }
 }
 
-function extractBody(payload: any): { html: string; text: string } {
+function extractBody(payload: any): { html: string; text: string; attachments: any[] } {
   let html = '';
   let text = '';
+  const attachments: any[] = [];
 
   function walk(part: any) {
     if (!part) return;
-    if (part.mimeType === 'text/html'  && part.body?.data) html  = decodeBase64(part.body.data);
-    if (part.mimeType === 'text/plain' && part.body?.data) text  = decodeBase64(part.body.data);
+    if (part.mimeType === 'text/html'  && (!part.filename) && part.body?.data) html  = decodeBase64(part.body.data);
+    if (part.mimeType === 'text/plain' && (!part.filename) && part.body?.data) text  = decodeBase64(part.body.data);
+    if (part.filename && part.body?.attachmentId) {
+      attachments.push({
+        id: part.body.attachmentId,
+        name: part.filename,
+        mimeType: part.mimeType,
+        size: part.body.size,
+      });
+    }
     for (const child of part.parts ?? []) walk(child);
   }
 
   walk(payload);
-  return { html, text };
+  return { html, text, attachments };
 }
 
 function getHeader(headers: any[], name: string): string {
@@ -72,7 +81,7 @@ export async function GET(
     const messages = (thread.messages ?? []).map((msg: any) => {
       const headers  = msg.payload?.headers ?? [];
       const labelIds = msg.labelIds ?? [];
-      const { html, text } = extractBody(msg.payload);
+      const { html, text, attachments } = extractBody(msg.payload);
 
       return {
         id:         msg.id,
@@ -93,6 +102,7 @@ export async function GET(
         toEmails:   extractEmails(getHeader(headers, 'To')),
         html,
         text,
+        attachments,
         internalDate: msg.internalDate,
       };
     });

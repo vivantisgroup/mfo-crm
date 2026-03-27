@@ -24,6 +24,12 @@ interface MessageDetail {
   text:         string;
   snippet:      string;
   internalDate: string;
+  attachments?: {
+    id: string;
+    name: string;
+    mimeType: string;
+    size: number;
+  }[];
 }
 
 interface Props {
@@ -116,6 +122,63 @@ function MessageBubble({ msg, collapsed, onToggle, onReply, onAction }: {
                 style={{ width: '100%', border: 'none', height: iframeHeight, minHeight: 120 }} title="Email content" />
             : <pre style={{ fontFamily: 'inherit', fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap', color: 'var(--text-primary)', margin: 0 }}>{msg.text || msg.snippet}</pre>
           }
+
+          {/* Attachments */}
+          {msg.attachments && msg.attachments.length > 0 && (
+            <div style={{ marginTop: 24, padding: '16px', background: 'var(--bg-elevated)', borderRadius: 8, border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Attachments ({msg.attachments.length})
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                {msg.attachments.map(att => {
+                  const sizeKb = Math.round(att.size / 1024);
+                  // Download handler
+                  const handleDownload = async () => {
+                    try {
+                      const user = getAuth().currentUser;
+                      if (!user) return;
+                      const token = await user.getIdToken();
+                      const url = `/api/mail/attachment/${msg.id}/${att.id}?uid=${user.uid}&idToken=${token}&name=${encodeURIComponent(att.name)}&mimeType=${encodeURIComponent(att.mimeType)}`;
+                      // Force download by creating a temporary link
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = att.name;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                    } catch (e) {
+                      console.error('Download failed', e);
+                    }
+                  };
+
+                  return (
+                    <button
+                      key={att.id}
+                      onClick={handleDownload}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+                        borderRadius: 8, background: 'var(--bg-canvas)', border: '1px solid var(--border)',
+                        cursor: 'pointer', textAlign: 'left', maxWidth: 220, transition: 'background 0.15s'
+                      }}
+                      onMouseOver={e => e.currentTarget.style.background = 'var(--bg-surface)'}
+                      onMouseOut={e => e.currentTarget.style.background = 'var(--bg-canvas)'}
+                    >
+                      <div style={{ fontSize: 20 }}>📎</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                          {att.name}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                          {sizeKb} KB
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
             <button className="btn btn-secondary btn-sm" style={{ fontSize: 12, gap: 6, display: 'flex', alignItems: 'center' }}
               onClick={() => onReply(replyTo, subjectLine, msg.id, msg.threadId)}>

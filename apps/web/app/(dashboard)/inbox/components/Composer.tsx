@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { getAuth } from 'firebase/auth';
 import { useAuth } from '@/lib/AuthContext';
-import { X, ChevronDown } from 'lucide-react';
+import { X, ChevronDown, Paperclip, Trash2 } from 'lucide-react';
 
 interface Props {
   initialTo?:      string;
@@ -26,6 +26,8 @@ export function Composer({ initialTo, initialSubject, initialCc, replyToId, thre
   const [error,   setError]   = useState('');
   const [showCcBcc, setShowCcBcc] = useState(!!(initialCc));
   const [minimized, setMinimized] = useState(false);
+  const [attachments, setAttachments] = useState<{ name: string; type: string; data: string; size: number }[]>([]);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (initialTo)      setTo(initialTo);
@@ -54,6 +56,7 @@ export function Composer({ initialTo, initialSubject, initialCc, replyToId, thre
           body,
           tenantId:         tenant?.id,
           replyToMessageId: replyToId,
+          attachments:      attachments.map(a => ({ name: a.name, type: a.type, data: a.data })),
         }),
       });
       if (!res.ok) {
@@ -67,6 +70,42 @@ export function Composer({ initialTo, initialSubject, initialCc, replyToId, thre
     } finally {
       setSending(false);
     }
+  }
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    
+    files.forEach(file => {
+      // Don't allow massive files (> 20MB) to protect memory/API limits
+      if (file.size > 20 * 1024 * 1024) {
+        setError(`File ${file.name} is too large (max 20MB)`);
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const base64Url = event.target?.result as string;
+        // Strip the data:mime/type;base64, prefix
+        const base64Data = base64Url.split(',')[1];
+        if (base64Data) {
+          setAttachments(prev => [...prev, {
+            name: file.name,
+            type: file.type || 'application/octet-stream',
+            data: base64Data,
+            size: file.size,
+          }]);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    
+    // Clear input so same file can be selected again if removed
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  function removeAttachment(index: number) {
+    setAttachments(prev => prev.filter((_, i) => i !== index));
   }
 
   const subjectPreview = subject || 'New Message';
@@ -183,6 +222,37 @@ export function Composer({ initialTo, initialSubject, initialCc, replyToId, thre
             placeholder="Write your message…"
           />
 
+          {/* Attachments Section */}
+          {attachments.length > 0 && (
+            <div style={{ padding: '8px 16px', background: 'var(--bg-canvas)', borderTop: '1px solid var(--border)', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {attachments.map((att, i) => (
+                <div key={i} style={{ 
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', 
+                  background: 'var(--bg-surface)', border: '1px solid var(--border)', 
+                  borderRadius: 16, fontSize: 11, color: 'var(--text-secondary)' 
+                }}>
+                  <span style={{ maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{att.name}</span>
+                  <span style={{ color: 'var(--text-tertiary)' }}>({Math.round(att.size / 1024)}kb)</span>
+                  <button 
+                    onClick={() => removeAttachment(i)}
+                    style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Hidden file input */}
+          <input 
+            type="file" 
+            multiple 
+            ref={fileInputRef} 
+            onChange={handleFileSelect} 
+            style={{ display: 'none' }} 
+          />
+
           {/* Error */}
           {error && (
             <div style={{ fontSize: 12, color: '#ef4444', padding: '4px 16px' }}>{error}</div>
@@ -201,6 +271,14 @@ export function Composer({ initialTo, initialSubject, initialCc, replyToId, thre
                 disabled={sending}
               >
                 {sending ? '⏳ Sending…' : '📤 Send'}
+              </button>
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 13, gap: 4, display: 'flex', alignItems: 'center', padding: '0 8px', color: 'var(--text-secondary)' }}
+                onClick={() => fileInputRef.current?.click()}
+                title="Attach files"
+              >
+                <Paperclip size={15} />
               </button>
             </div>
             <button
