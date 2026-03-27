@@ -50,32 +50,43 @@ export function CommunicationPanel({ familyId, familyName, contactId, orgId }: C
   const [threads,  setThreads]  = useState<ActivityThread[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [selected, setSelected] = useState<ActivityThread | null>(null);
-  const [tenantId, setTenantId] = useState('');
-
-  useEffect(() => {
-    try {
-      const t = JSON.parse(localStorage.getItem('mfo_active_tenant') ?? '{}');
-      if (t?.id) setTenantId(t.id);
-    } catch { /* ignore */ }
-  }, []);
+  // tenant is provided by useAuth
 
   const loadThreads = useCallback(async () => {
-    if (!tenantId) return;
+    if (!tenant?.id) return;
     setLoading(true);
     try {
-      const constraints: any[] = [orderBy('createdAt', 'desc'), limit(50)];
+      const constraints: any[] = [];
+      if (familyId) constraints.push(where('linkedFamilyId', '==', familyId));
+      else if (contactId) constraints.push(where('linkedContactId', '==', contactId));
+      else if (orgId) constraints.push(where('linkedOrgId', '==', orgId));
 
-      // Filter to the appropriate linked record
-      if (familyId) constraints.unshift(where('linkedFamilyId', '==', familyId));
-      else if (contactId) constraints.unshift(where('linkedContactId', '==', contactId));
-      else if (orgId) constraints.unshift(where('linkedOrgId', '==', orgId));
+      let snap;
+      try {
+        const qIndexed = query(collection(db, 'tenants', tenant.id, 'activities'), ...constraints, orderBy('createdAt', 'desc'), limit(50));
+        snap = await getDocs(qIndexed);
+      } catch (err: any) {
+        if (err.message && err.message.includes('requires an index')) {
+          console.warn('Missing composite index for activities. Falling back to in-memory sort.');
+          const qFallback = query(collection(db, 'tenants', tenant.id, 'activities'), ...constraints);
+          snap = await getDocs(qFallback);
+        } else {
+          throw err;
+        }
+      }
 
-      const q    = query(collection(db, 'tenants', tenantId, 'activities'), ...constraints);
-      const snap = await getDocs(q);
-      setThreads(snap.docs.map(d => ({ id: d.id, ...d.data() } as ActivityThread)));
-    } catch (e) { console.error('[CommunicationPanel]', e); }
-    finally { setLoading(false); }
-  }, [tenantId, familyId, contactId, orgId]);
+      let results = snap.docs.map(d => ({ id: d.id, ...d.data() } as ActivityThread));
+      
+      // Enforce sort and limit manually if we hit the fallback (or just unconditionally to be safe)
+      results = results.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')).slice(0, 50);
+
+      setThreads(results);
+    } catch (e) {
+      console.error('[CommunicationPanel]', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [tenant?.id, familyId, contactId, orgId]);
 
   useEffect(() => { loadThreads(); }, [loadThreads]);
 
