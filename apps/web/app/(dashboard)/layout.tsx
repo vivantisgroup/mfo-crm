@@ -5,14 +5,10 @@ import Link from 'next/link';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
 import { Ticker } from '@/components/Ticker';
-import { UserSettingsProvider } from '@/lib/UserSettingsContext';
-import { I18nProvider } from '@/lib/i18n/context';
-import { AuthProvider, useAuth } from '@/lib/AuthContext';
-import { ThemeProvider } from '@/lib/ThemeContext';
-import { ThemeCustomizer } from '@/components/ThemeCustomizer';
-import { TaskQueueProvider } from '@/lib/TaskQueueContext';
 import { usePathname, useRouter } from 'next/navigation';
 import { PageTitleProvider } from '@/lib/PageTitleContext';
+import { useAuth } from '@/lib/AuthContext';
+import { ThemeCustomizer } from '@/components/ThemeCustomizer';
 
 function DashboardInner({ children }: { children: React.ReactNode }) {
   const [collapsed,    setCollapsed]    = useState(false);
@@ -162,19 +158,5 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <I18nProvider>
-      <AuthProvider>
-        <UserSettingsProvider>
-          <ThemeProvider>
-            <TaskQueueProvider>
-              <PageTitleProvider>
-                <DashboardInner>{children}</DashboardInner>
-              </PageTitleProvider>
-            </TaskQueueProvider>
-          </ThemeProvider>
-        </UserSettingsProvider>
-      </AuthProvider>
-    </I18nProvider>
-  );
+  return <DashboardInner>{children}</DashboardInner>;
 }
