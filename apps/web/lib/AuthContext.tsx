@@ -178,7 +178,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Retrieve previously selected tenant from storage
       const localLast   = typeof localStorage   !== 'undefined' ? localStorage.getItem(`lastTenantId_${profile.uid}`)   : null;
       const sessionLast = typeof sessionStorage  !== 'undefined' ? sessionStorage.getItem('activeTenantId')               : null;
-      const storedId    = sessionLast || localLast;
+      const storedId    = localLast || sessionLast || profile.tenantId || null;
 
       // ── Single tenant (or no tenants yet) — go straight to authenticated ──
       // Users with 0 tenants are newly created; we don't block them.
@@ -255,6 +255,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     return unsub;
   }, [auth, loadProfile]);
+
+  // Sync tenant changes to legacy local storage key used by some components
+  useEffect(() => {
+    if (tenantRecord && typeof localStorage !== 'undefined') {
+      localStorage.setItem('mfo_active_tenant', JSON.stringify({
+        id: tenantRecord.id,
+        name: tenantRecord.name,
+      }));
+    }
+  }, [tenantRecord]);
 
   // ── Actions ───────────────────────────────────────────────────────────────
   const signIn = useCallback(async (email: string, password: string) => {

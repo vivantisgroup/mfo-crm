@@ -69,7 +69,9 @@ async function searchCollection(
   return docs
     .map(doc => {
       const f = doc.fields ?? {};
-      const name     = f[nameField]?.stringValue ?? f.name?.stringValue ?? '';
+      const fName = f.firstName?.stringValue ?? '';
+      const lName = f.lastName?.stringValue ?? '';
+      const name  = f[nameField]?.stringValue ?? f.name?.stringValue ?? (fName || lName ? `${fName} ${lName}`.trim() : '');
       const subtitle = f[subtitleField]?.stringValue ?? f.email?.stringValue ?? '';
       return {
         type,

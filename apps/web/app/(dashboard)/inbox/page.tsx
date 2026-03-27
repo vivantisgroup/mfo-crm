@@ -352,7 +352,7 @@ export default function InboxPage() {
         syncCount={syncCount}
         onSyncCountChange={setSyncCount}
         onSelect={f => { setFolder(f); setSelected(undefined); setSearchQuery(''); }}
-        onSync={handleSync}
+        onSync={() => handleSync()}
         onLoadMore={() => handleSync(syncCount * 2)}
         onCompose={() => setComposer({})}
       />
