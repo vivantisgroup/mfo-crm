@@ -215,7 +215,7 @@ function OrgDetail({ org:initialOrg, subscriptions, onBack, onUpdated, performer
         )}
 
         {/* Comms */}
-        {tab==='communications' && <div style={{ height:600, maxWidth:900 }}><CommunicationPanel familyId={org.id} familyName={org.name} linkedRecordType="crm" linkedRecordId={org.id} /></div>}
+        {tab==='communications' && <div style={{ height:600, maxWidth:900 }}><CommunicationPanel orgId={org.id} familyName={org.name} linkedRecordType="org" linkedRecordId={org.id} /></div>}
 
         {/* Contacts */}
         {tab==='contacts' && (
