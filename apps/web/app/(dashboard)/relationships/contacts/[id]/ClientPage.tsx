@@ -102,47 +102,12 @@ export default function ContactClientPage() {
         <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{contact.firstName} {contact.lastName}</span>
       </div>
 
-      {/* Hero */}
-      <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: '24px 28px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 20 }}>
-        <div style={{
-          width: 72, height: 72, borderRadius: '50%', flexShrink: 0, fontSize: 24, fontWeight: 800,
-          background: `${color}22`, color, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>{initials}</div>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0 }}>{contact.firstName} {contact.lastName}</h1>
-            <span style={{ fontSize: 12, padding: '2px 10px', borderRadius: 8, background: `${color}22`, color, fontWeight: 700, textTransform: 'capitalize' }}>{contact.role}</span>
-            {contact.pepFlag && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 8, background: '#ef444422', color: '#ef4444', fontWeight: 700 }}>⚠️ PEP</span>}
-          </div>
-          <div style={{ display: 'flex', gap: 16, marginTop: 8, flexWrap: 'wrap' }}>
-            {contact.email && <span style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}><Mail size={11} />{contact.email}</span>}
-            {contact.phone && <span style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}><Phone size={11} />{contact.phone}</span>}
-            {contact.nationality && <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>🌍 {contact.nationality}</span>}
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-            {contact.linkedFamilyNames?.map(f => (
-              <span key={f} style={{ fontSize: 11, padding: '2px 10px', borderRadius: 8, background: 'var(--brand-500)22', color: 'var(--brand-400)', fontWeight: 700 }}>👥 {f}</span>
-            ))}
-            {contact.linkedOrgNames?.map(o => (
-              <span key={o} style={{ fontSize: 11, padding: '2px 10px', borderRadius: 8, background: '#8b5cf622', color: '#a78bfa', fontWeight: 700 }}>🏢 {o}</span>
-            ))}
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-          {contact.email && (
-            <a href={`mailto:${contact.email}`} className="btn btn-secondary btn-sm" style={{ gap: 5, display: 'flex', alignItems: 'center' }}>
-              <Mail size={12} /> Email
-            </a>
-          )}
-        </div>
-      </div>
-
       {/* Tabs */}
-      <div className="tabs" style={{ marginBottom: 20 }}>
+      <div className="tabs" style={{ marginBottom: 24, borderBottom: '1px solid var(--border)', display: 'flex', gap: 0, overflowX: 'auto' }}>
         {TABS.map(t => (
           <button key={t} className={`tab ${activeTab === t ? 'active' : ''}`}
             onClick={() => setActiveTab(t)}
-            style={{ background: 'transparent', borderTop: 'none', borderLeft: 'none', borderRight: 'none', textTransform: 'capitalize' }}>
+            style={{ padding:'10px 18px', fontSize:13, background:'none', border:'none', borderBottom:`2px solid ${activeTab===t?'var(--brand-500)':'transparent'}`, cursor:'pointer', whiteSpace:'nowrap', color:activeTab===t?'var(--brand-500)':'var(--text-secondary)', textTransform: 'capitalize' }}>
             {t}
           </button>
         ))}

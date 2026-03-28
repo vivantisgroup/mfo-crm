@@ -32,19 +32,7 @@ export default function FamiliesPage() {
       <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
         
         {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 pb-5 border-b border-tremor-border gap-4">
-          <div>
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-tremor-brand-faint rounded-tremor-default border border-tremor-brand-muted">
-                <Users size={24} className="text-tremor-brand" />
-              </div>
-              <h1 className="text-3xl font-bold text-tremor-content-strong tracking-tight">Clients</h1>
-            </div>
-            <Text className="mt-2 text-tremor-content pl-14">
-              Manage core family relationships, active wealth mandates, and multi-generational portfolios.
-              <Badge color="blue" className="ml-3 font-bold">{FAMILIES.length}</Badge>
-            </Text>
-          </div>
+        <div className="flex justify-end mb-6">
           <div className="flex gap-3">
             <Button size="md" variant="secondary" icon={Download} className="font-semibold shadow-sm">Export</Button>
             <Button size="md" icon={Plus} className="font-semibold shadow-tremor-card">Onboard Client</Button>

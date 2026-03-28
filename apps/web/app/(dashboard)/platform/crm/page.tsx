@@ -145,38 +145,27 @@ function OrgDetail({ org:initialOrg, subscriptions, onBack, onUpdated, performer
 
   return (
     <div className="animate-fade-in">
-      <div style={{ borderBottom:'1px solid var(--border)', paddingBottom:0 }}>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:14 }}>
-          <div>
-            <h1 style={{ fontSize:22, fontWeight:900, marginBottom:4 }}>{org.name}</h1>
-            <div style={{ fontSize:13, color:'var(--text-secondary)', marginBottom:8 }}>{org.country} · {ORG_SIZE_LABELS[org.size]}</div>
-            <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-              <Chip label={STAGE_LABELS[org.stage].replace(/^.+ /,'')} color={stageColor} />
-              {(org as any).region && <Chip label={REGION_LABELS[org.region as import('@/lib/crmService').SalesRegion]} color={REGION_COLORS[org.region as import('@/lib/crmService').SalesRegion]} />}
-              {org.tags.map(t=><Chip key={t} label={t} color={t==='hot'?'#ef4444':t==='warm'?'#f59e0b':'#6366f1'} />)}
-            </div>
-          </div>
-          <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-            <div style={{ fontSize:26, fontWeight:900, color:'#a78bfa' }}>{fmtAum(org.estAumUsd)}</div>
-            <button className={`btn btn-sm ${editMode?'btn-ghost':'btn-secondary'}`} onClick={()=>{setEditMode(v=>!v);setEditMsg('');}}>
-              {editMode?'✕ Cancel':'✏️ Edit'}
-            </button>
-            <button className="btn btn-ghost btn-sm" style={{ color:'#ef4444' }} onClick={async () => {
-              if (!window.confirm('Are you sure you want to delete this organization? This cannot be undone.')) return;
-              try { await deleteOrg(org.id); onUpdated(); onBack(); } catch (err: any) { alert(err.message); }
-            }}>
-              🗑️ Delete
-            </button>
-          </div>
-        </div>
-        <div style={{ display:'flex' }}>
-          {([{id:'info',label:'📋 Info'},{id:'communications',label:'💬 Comms'},{id:'contacts',label:`👤 Contacts (${contacts.length})`},{id:'tenants',label:`🏢 Tenants (${linkedSubs.length})`}] as const).map(t=>(
-            <button key={t.id} onClick={()=>setTab(t.id)} style={{ padding:'10px 18px', fontSize:13, background:'none', border:'none', cursor:'pointer', fontWeight:tab===t.id?700:500, borderBottom:`2px solid ${tab===t.id?'var(--brand-500)':'transparent'}`, color:tab===t.id?'var(--brand-500)':'var(--text-secondary)' }}>{t.label}</button>
-          ))}
-        </div>
+      <div style={{ display:'flex', justifyContent:'flex-end', alignItems:'center', marginBottom:16, gap:12 }}>
+        <button className={`btn btn-sm ${editMode?'btn-ghost':'btn-secondary'}`} onClick={()=>{setEditMode(v=>!v);setEditMsg('');}}>
+          {editMode?'✕ Cancel':'✏️ Edit Details'}
+        </button>
+        <button className="btn btn-ghost btn-sm" style={{ color:'#ef4444' }} onClick={async () => {
+          if (!window.confirm('Are you sure you want to delete this organization? This cannot be undone.')) return;
+          try { await deleteOrg(org.id); onUpdated(); onBack(); } catch (err: any) { alert(err.message); }
+        }}>
+          🗑️ Delete Record
+        </button>
       </div>
 
-      <div style={{ paddingTop:24 }}>
+      <div className="tabs" style={{ marginBottom: 24, borderBottom: '1px solid var(--border)', display: 'flex', gap: 0, overflowX: 'auto' }}>
+        {([{id:'info',label:'📋 Info'},{id:'communications',label:'💬 Comms'},{id:'contacts',label:`👤 Contacts (${contacts.length})`},{id:'tenants',label:`🏢 Tenants (${linkedSubs.length})`}] as const).map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id as any)} className={`tab ${tab === t.id ? 'active' : ''}`} style={{ padding:'10px 18px', fontSize:13, background:'none', border:'none', borderBottom:`2px solid ${tab===t.id?'var(--brand-500)':'transparent'}`, cursor:'pointer', whiteSpace:'nowrap', color:tab===t.id?'var(--brand-500)':'var(--text-secondary)' }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div>
         {/* Edit form */}
         {editMode && tab==='info' && (
           <form onSubmit={saveOrgEdit} style={{ maxWidth:680, marginBottom:24, padding:'22px 24px', background:'var(--bg-canvas)', borderRadius:14, border:'1px solid var(--border)' }}>

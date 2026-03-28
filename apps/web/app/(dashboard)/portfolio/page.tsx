@@ -26,21 +26,7 @@ export default function PortfolioPage() {
   return (
     <LiveModeGate emptyState={<PortfolioEmptyState />}>
     <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 pb-5 border-b border-tremor-border gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-tremor-content-strong tracking-tight">Portfolio Consolidation</h1>
-            <p className="mt-2 text-tremor-content">Smith Family Holdings across 4 custodians & 3 entities</p>
-        </div>
-        <div className="page-actions">
-          <select className="select-filter" defaultValue="fam-001">
-            <option value="fam-001">Smith Family</option>
-            <option value="fam-002">Rodríguez Family</option>
-            <option value="fam-003">Chen Family</option>
-            <option value="fam-004">Al-Rashid Family</option>
-          </select>
-          <button className="btn btn-secondary">Sync Custodians</button>
-        </div>
-      </div>
+      
 
       <div className="grid-4 mb-6">
         <StatCard label="Total Portfolio Value" value={formatCurrency(stats.totalValue, 'USD', true)} trendValue="+8.34% YTD" trendDirection="up" icon="📈" />

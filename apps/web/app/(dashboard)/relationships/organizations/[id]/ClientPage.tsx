@@ -85,35 +85,12 @@ export default function OrgClientPage() {
         <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{org.name}</span>
       </div>
 
-      {/* Hero */}
-      <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: '24px 28px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 20 }}>
-        <div style={{
-          width: 72, height: 72, borderRadius: 16, flexShrink: 0, fontSize: 30,
-          background: `${color}22`, color, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>{icon}</div>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0 }}>{org.name}</h1>
-            <span style={{ fontSize: 12, padding: '2px 10px', borderRadius: 8, background: `${color}22`, color, fontWeight: 700, textTransform: 'capitalize' }}>
-              {org.type.replace(/_/g, ' ')}
-            </span>
-          </div>
-          {org.jurisdiction && <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>📍 {org.jurisdiction}</div>}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-            {org.linkedFamilyNames?.map(f => (
-              <span key={f} style={{ fontSize: 11, padding: '2px 10px', borderRadius: 8, background: 'var(--brand-500)22', color: 'var(--brand-400)', fontWeight: 700 }}>👥 {f}</span>
-            ))}
-            <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{org.linkedContactIds?.length ?? 0} contacts</span>
-          </div>
-        </div>
-      </div>
-
       {/* Tabs */}
-      <div className="tabs" style={{ marginBottom: 20 }}>
+      <div className="tabs" style={{ marginBottom: 24, borderBottom: '1px solid var(--border)', display: 'flex', gap: 0, overflowX: 'auto' }}>
         {['overview', 'members', 'relationships', 'activities'].map(t => (
           <button key={t} className={`tab ${activeTab === t ? 'active' : ''}`}
             onClick={() => setActiveTab(t)}
-            style={{ background: 'transparent', borderTop: 'none', borderLeft: 'none', borderRight: 'none', textTransform: 'capitalize' }}>
+            style={{ padding:'10px 18px', fontSize:13, background:'none', border:'none', borderBottom:`2px solid ${activeTab===t?'var(--brand-500)':'transparent'}`, cursor:'pointer', whiteSpace:'nowrap', color:activeTab===t?'var(--brand-500)':'var(--text-secondary)', textTransform: 'capitalize' }}>
             {t}
           </button>
         ))}

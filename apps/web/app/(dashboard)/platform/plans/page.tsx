@@ -434,17 +434,7 @@ export default function PlanManagementPage() {
       )}
 
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 pb-5 border-b border-tremor-border gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-tremor-content-strong tracking-tight">Subscription Plans</h1>
-            <p className="mt-2 text-tremor-content">Define, version, and publish pricing plans. All changes are versioned for audit and grandfathering.</p>
-        </div>
-        <div className="page-actions">
-          <button className="btn btn-secondary" onClick={handleSeed}>↑ Seed Defaults</button>
-          <button className="btn btn-secondary" onClick={load}>↻ Refresh</button>
-          <button className="btn btn-primary" onClick={openNew}>+ New Plan</button>
-        </div>
-      </div>
+      
 
       {/* Message */}
       {msg && (

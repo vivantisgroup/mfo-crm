@@ -266,44 +266,7 @@ export default function ContactsPage() {
 
   return (
     <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 pb-5 border-b border-tremor-border gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-tremor-brand-faint rounded-tremor-default border border-tremor-brand-muted">
-              <User size={24} className="text-tremor-brand" />
-            </div>
-            <h1 className="text-3xl font-bold text-tremor-content-strong tracking-tight">Contacts</h1>
-          </div>
-          <Text className="mt-2 text-tremor-content pl-14">
-            Unified directory of individuals across all families and organizations
-            {!loading && <Badge color="blue" className="ml-3 font-bold">{contacts.length}</Badge>}
-          </Text>
-        </div>
-        <Button size="md" icon={Plus} onClick={() => setShowCreate(true)} className="font-semibold shadow-tremor-card">
-          New Contact
-        </Button>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-4 mb-8">
-        <div className="w-full md:flex-1 md:min-w-[300px]">
-          <TextInput 
-            icon={Search} 
-            placeholder="Search by name, email, organization, or family affiliation..." 
-            value={search} 
-            onChange={(e) => setSearch(e.target.value)} 
-          />
-        </div>
-        <div className="w-full md:w-64">
-          <Select value={roleFilter} onValueChange={setRoleFilter} enableClear={false}>
-            <SelectItem value="All">All Roles</SelectItem>
-            {ROLES.map(r => (
-               <SelectItem key={r} value={r}>
-                 {r.charAt(0).toUpperCase() + r.slice(1)}
-               </SelectItem>
-            ))}
-          </Select>
-        </div>
-      </div>
+      
 
       {loading ? (
         <Grid numItemsSm={1} numItemsMd={2} numItemsLg={3} className="gap-5">

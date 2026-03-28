@@ -49,33 +49,20 @@ export default function FamilyDetailPage() {
         <span style={{ color: 'var(--text-primary)' }}>{family.name}</span>
       </div>
 
-      <div className="page-header" style={{ marginBottom: 20 }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <h1 className="page-title" style={{ margin: 0 }}>{family.name}</h1>
-            <span className={`badge badge-${family.serviceTier === 'platinum' ? 'platinum' : family.serviceTier === 'gold' ? 'gold' : 'neutral'}`}>
-              {family.serviceTier.toUpperCase()}
-            </span>
-          </div>
-          <p className="page-subtitle" style={{ marginTop: 6 }}>
-            {family.code} · Domiciled in {family.domicileCountry} · Inception {formatDate(family.inceptionDate || '')}
-          </p>
-        </div>
-        <div className="page-actions">
-          <button className="btn btn-secondary">Edit Family</button>
-          <button className="btn btn-primary">Generate Report</button>
-        </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 16, gap: 12 }}>
+        <button className="btn btn-secondary btn-sm">Edit Family</button>
+        <button className="btn btn-primary btn-sm">Generate Report</button>
       </div>
 
-      <div className="tabs">
+      <div className="tabs" style={{ marginBottom: 24, borderBottom: '1px solid var(--border)', display: 'flex', gap: 0, overflowX: 'auto' }}>
         {['overview', 'communications', 'members', 'entities', 'network', 'suitability', 'advisory', 'tickets', 'settings'].map(t => (
           <button
             key={t}
             className={`tab ${activeTab === t ? 'active' : ''}`}
             onClick={() => setActiveTab(t)}
-            style={{ background: 'transparent', borderTop: 'none', borderLeft: 'none', borderRight: 'none' }}
+            style={{ padding:'10px 18px', fontSize:13, background:'none', border:'none', borderBottom:`2px solid ${activeTab===t?'var(--brand-500)':'transparent'}`, cursor:'pointer', whiteSpace:'nowrap', color:activeTab===t?'var(--brand-500)':'var(--text-secondary)', textTransform: 'capitalize' }}
           >
-            {t.charAt(0).toUpperCase() + t.slice(1)}
+            {t}
           </button>
         ))}
       </div>

@@ -264,20 +264,7 @@ export default function PlatformRolesPage() {
     <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
 
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 pb-5 border-b border-tremor-border gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-tremor-content-strong tracking-tight">Roles &amp; Permissions</h1>
-            <p className="mt-2 text-tremor-content">
-            System-defined roles and their permission sets. Roles are code-defined for security auditability.
-          </p>
-        </div>
-        <div className="page-actions">
-          <button className={`btn ${view === 'cards' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setView('cards')}>🃏 Role Cards</button>
-          <button className={`btn ${view === 'matrix' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setView('matrix')}>📊 Permission Matrix</button>
-        </div>
-      </div>
+      
 
       {/* Info banner */}
       <div style={{ padding: '12px 16px', borderRadius: 10, marginBottom: 24,

@@ -38,16 +38,7 @@ export default function FamiliesPage() {
   return (
     <LiveModeGate emptyState={<FamiliesEmptyState />}>
       <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 pb-5 border-b border-tremor-border gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-tremor-content-strong tracking-tight">Families</h1>
-            <p className="mt-2 text-tremor-content">Manage family relationships, KYC, and settings</p>
-          </div>
-          <div className="page-actions">
-            <button className="btn btn-secondary">Export CRM</button>
-            <button className="btn btn-primary">Onboard Family</button>
-          </div>
-        </div>
+        
         <div className="filter-bar">
           <div className="search-input-wrap"><span>🔍</span><input type="text" placeholder="Search by name, code, or RM..." /></div>
           <select className="select-filter"><option>All Tiers</option><option>Platinum</option><option>Gold</option><option>Standard</option></select>

@@ -548,15 +548,7 @@ export default function TenantUsersPage() {
           performer={performer} onClose={() => setSelectedGroup(null)} onRefresh={load} />
       )}
 
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 pb-5 border-b border-tremor-border gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-tremor-content-strong tracking-tight">User Management</h1>
-            <p className="mt-2 text-tremor-content">Manage members, groups, roles, and fine-grained permissions for {tenantName}.</p>
-        </div>
-        <div className="page-actions">
-          <button className="btn btn-secondary" onClick={load}>↻ Refresh</button>
-        </div>
-      </div>
+      
 
       {/* KPI */}
       <div className="stat-grid" style={{ marginBottom: 24 }}>

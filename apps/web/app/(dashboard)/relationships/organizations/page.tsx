@@ -170,44 +170,7 @@ export default function OrganizationsPage() {
 
   return (
     <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 pb-5 border-b border-tremor-border gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-tremor-brand-faint rounded-tremor-default border border-tremor-brand-muted">
-              <Building2 size={24} className="text-tremor-brand" />
-            </div>
-            <h1 className="text-3xl font-bold text-tremor-content-strong tracking-tight">Organizations</h1>
-          </div>
-          <Text className="mt-2 text-tremor-content pl-14">
-            Manage your network of trusts, funds, corporations, and structured entities
-            {!loading && <Badge color="blue" className="ml-3 font-bold">{orgs.length}</Badge>}
-          </Text>
-        </div>
-        <Button size="md" icon={Plus} onClick={() => setShowCreate(true)} className="font-semibold shadow-tremor-card">
-          New Entity
-        </Button>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-4 mb-8">
-        <div className="w-full md:flex-1 md:min-w-[300px]">
-          <TextInput 
-            icon={Search} 
-            placeholder="Search by name, type, jurisdiction, or linked members..." 
-            value={search} 
-            onChange={(e) => setSearch(e.target.value)} 
-          />
-        </div>
-        <div className="w-full md:w-64">
-          <Select value={typeFilter} onValueChange={setTypeFilter} enableClear={false}>
-            <SelectItem value="All">All Types</SelectItem>
-            {ORG_TYPES.map(t => (
-              <SelectItem key={t} value={t} icon={() => <span className="mr-2 text-sm">{TYPE_ICONS[t]}</span>}>
-                {t.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-              </SelectItem>
-            ))}
-          </Select>
-        </div>
-      </div>
+      
 
       {loading ? (
         <Grid numItemsSm={1} numItemsMd={2} numItemsLg={3} className="gap-6">

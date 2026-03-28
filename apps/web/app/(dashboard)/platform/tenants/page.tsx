@@ -1797,16 +1797,7 @@ export default function TenantManagementPage() {
       )}
 
       {/* Page Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 pb-5 border-b border-tremor-border gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-tremor-content-strong tracking-tight">Tenant Management</h1>
-            <p className="mt-2 text-tremor-content">Manage subscriptions, billing, demo environments, and trial periods.</p>
-        </div>
-        <div className="page-actions">
-          <button className="btn btn-secondary" onClick={load}>↻ Refresh</button>
-          <button className="btn btn-primary" onClick={() => setShowNew(true)}>+ New Tenant</button>
-        </div>
-      </div>
+      
 
       {/* KPI Row */}
       <div className="stat-grid" style={{ marginBottom: 24 }}>
