@@ -10,10 +10,10 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { collection, query, where, orderBy, getDocs, limit } from 'firebase/firestore';
+import { collection, query, where, orderBy, getDocs, limit, addDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/AuthContext';
-import { Mail, ExternalLink, Phone, MessageSquare, RefreshCw } from 'lucide-react';
+import { Mail, ExternalLink, Phone, MessageSquare, RefreshCw, Plus, Save, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 interface ActivityThread {
@@ -50,6 +50,12 @@ export function CommunicationPanel({ familyId, familyName, contactId, orgId }: C
   const [threads,  setThreads]  = useState<ActivityThread[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [selected, setSelected] = useState<ActivityThread | null>(null);
+  
+  const [isComposing, setIsComposing] = useState(false);
+  const [composeType, setComposeType] = useState('note');
+  const [composeSubject, setComposeSubject] = useState('');
+  const [composeContent, setComposeContent] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   // tenant is provided by useAuth
 
   const loadThreads = useCallback(async () => {
@@ -104,10 +110,13 @@ export function CommunicationPanel({ familyId, familyName, contactId, orgId }: C
             {!loading && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 400 }}>{threads.length}</span>}
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={() => { setIsComposing(true); setSelected(null); }} title="Log Activity" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--brand-500)', display: 'flex', alignItems: 'center' }}>
+              <Plus size={14} strokeWidth={3} />
+            </button>
             <button onClick={loadThreads} title="Refresh" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--text-tertiary)' }}>
               <RefreshCw size={13} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
             </button>
-            <button onClick={() => router.push('/inbox')} title="Open full inbox" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--brand-400)' }}>
+            <button onClick={() => router.push('/inbox')} title="Open full inbox" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--text-tertiary)' }}>
               <ExternalLink size={13} />
             </button>
           </div>
@@ -159,32 +168,118 @@ export function CommunicationPanel({ familyId, familyName, contactId, orgId }: C
       </div>
 
       {/* Detail pane */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {!selected ? (
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10, color: 'var(--text-tertiary)' }}>
-            <Mail size={36} style={{ opacity: 0.3 }} />
-            <div style={{ fontSize: 13, fontWeight: 600 }}>Select a communication</div>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-canvas)' }}>
+        {isComposing ? (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '24px 32px' }}>
+            <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Plus size={20} color="var(--brand-500)" /> Log New Activity
+            </div>
+            
+            <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+              {['note', 'call', 'meeting'].map(t => (
+                <button key={t} onClick={() => setComposeType(t)} style={{
+                  padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, textTransform: 'capitalize', cursor: 'pointer',
+                  background: composeType === t ? 'var(--brand-500)' : 'var(--bg-elevated)',
+                  color: composeType === t ? 'white' : 'var(--text-secondary)',
+                  border: `1px solid ${composeType === t ? 'var(--brand-500)' : 'var(--border)'}`,
+                  transition: 'all 0.1s'
+                }}>
+                  {TYPE_META[t].icon} {t}
+                </button>
+              ))}
+            </div>
+
+            <input 
+              autoFocus 
+              placeholder="Subject (e.g. Discussed Q3 portfolio rebalancing)" 
+              value={composeSubject} 
+              onChange={e => setComposeSubject(e.target.value)}
+              className="input"
+              style={{ padding: '12px 16px', fontSize: 14, marginBottom: 16, width: '100%', fontWeight: 600 }}
+            />
+
+            <textarea 
+              placeholder="Detailed notes or minutes from the interaction..." 
+              value={composeContent}
+              onChange={e => setComposeContent(e.target.value)}
+              className="input"
+              style={{ padding: '16px', fontSize: 13, flex: 1, resize: 'none', width: '100%', lineHeight: 1.6 }}
+            />
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 24 }}>
+              <button 
+                onClick={() => { setIsComposing(false); setComposeSubject(''); setComposeContent(''); }} 
+                className="btn btn-ghost" 
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                Cancel
+              </button>
+              <button 
+                disabled={isSaving || !composeSubject.trim()}
+                onClick={async () => {
+                  if (!tenant?.id) return;
+                  setIsSaving(true);
+                  try {
+                    await addDoc(collection(db, 'tenants', tenant.id, 'activities'), {
+                      type: composeType,
+                      subject: composeSubject.trim(),
+                      snippet: composeContent.trim(),
+                      linkedFamilyId: familyId || null,
+                      linkedContactId: contactId || null,
+                      linkedOrgId: orgId || null,
+                      createdAt: new Date().toISOString(),
+                      fromName: user?.displayName || user?.email || 'System User'
+                    });
+                    setIsComposing(false);
+                    setComposeSubject('');
+                    setComposeContent('');
+                    loadThreads();
+                  } catch(e) { console.error(e); } finally { setIsSaving(false); }
+                }}
+                className="btn btn-primary"
+                style={{ minWidth: 100, display: 'flex', justifyContent: 'center' }}
+              >
+                {isSaving ? <RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> : 'Log Activity'}
+              </button>
+            </div>
+          </div>
+        ) : !selected ? (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16, color: 'var(--text-tertiary)' }}>
+            <div style={{ padding: 20, background: 'var(--bg-elevated)', borderRadius: '50%' }}>
+              <MessageSquare size={32} style={{ opacity: 0.4 }} color="var(--brand-500)" />
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.02em' }}>Select a thread or log a new activity</div>
+            <button onClick={() => setIsComposing(true)} className="btn btn-secondary btn-sm" style={{ marginTop: 8 }}>+ Log Activity</button>
           </div>
         ) : (
           <>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-              <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>{selected.subject}</div>
-              <div style={{ display: 'flex', gap: 12, fontSize: 12, color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
-                {selected.fromName && <span>From: {selected.fromName}</span>}
-                {selected.fromEmail && <span>{selected.fromEmail}</span>}
-                <span>{formatDate(selected.createdAt)}</span>
+            <div style={{ padding: '24px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--bg-elevated)' }}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16 }}>
+                <span style={{ fontSize: 24 }}>{TYPE_META[selected.type]?.icon || '📝'}</span>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 18, color: 'var(--text-primary)', marginBottom: 4, letterSpacing: '-0.01em' }}>{selected.subject}</div>
+                  <div style={{ display: 'flex', gap: 12, fontSize: 12, color: 'var(--text-secondary)', fontWeight: 500 }}>
+                    {selected.fromName && <span>From: <span style={{ color: 'var(--text-primary)' }}>{selected.fromName}</span></span>}
+                    <span>•</span>
+                    <span>{formatDate(selected.createdAt)}</span>
+                  </div>
+                </div>
               </div>
+              
               {selected.type === 'email' && (
                 <button onClick={() => router.push('/inbox')} className="btn btn-secondary btn-sm"
-                  style={{ marginTop: 10, fontSize: 11, gap: 5, display: 'flex', alignItems: 'center' }}>
-                  <ExternalLink size={11} /> Open thread in Inbox
+                  style={{ fontSize: 11, gap: 5, display: 'flex', alignItems: 'center', padding: '6px 12px' }}>
+                  <ExternalLink size={12} /> Open original email thread
                 </button>
               )}
             </div>
-            <div style={{ flex: 1, padding: '20px', overflowY: 'auto' }}>
-              <p style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text-secondary)', margin: 0 }}>
-                {selected.snippet || 'No content preview available.'}
-              </p>
+            <div style={{ flex: 1, padding: '28px', overflowY: 'auto' }}>
+              <div style={{ 
+                fontSize: 14, lineHeight: 1.8, color: 'var(--text-primary)', margin: 0, 
+                whiteSpace: 'pre-wrap', fontFamily: 'system-ui, sans-serif' 
+              }}>
+                {selected.snippet || <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>No content logged for this activity.</span>}
+              </div>
             </div>
           </>
         )}

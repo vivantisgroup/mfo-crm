@@ -68,6 +68,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const audio     = form.get('audio') as Blob | null;
     const language  = (form.get('language') as string | null) ?? 'en';
     const sessionId = form.get('sessionId') as string | null;
+    const tenantId  = form.get('tenantId') as string | null;
 
     if (!audio || audio.size < 500) {
       // Too small to contain speech — return empty silently
@@ -76,7 +77,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     let text = '';
     
-    const aiKeys = sessionId ? await getAiKeysBySession(sessionId) : {};
+    let aiKeys: Record<string, string> = {};
+    const { getAiKeysByTenant, getAiKeysBySession } = await import('@/lib/tenantAiConfig');
+    if (tenantId && tenantId !== 'undefined') {
+      aiKeys = await getAiKeysByTenant(tenantId);
+    } else if (sessionId) {
+      aiKeys = await getAiKeysBySession(sessionId);
+    }
+    
     const groqKey = aiKeys['groq_api_key'] || process.env.GROQ_API_KEY || '';
     const openaiKey = aiKeys['openai_api_key'] || process.env.OPENAI_API_KEY || '';
 

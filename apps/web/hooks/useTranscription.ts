@@ -88,6 +88,11 @@ export function useTranscription({
         formData.append('audio', blob, 'audio.webm');
         formData.append('language', language);
         formData.append('sessionId', sessionId);
+        
+        try {
+          const t = JSON.parse(localStorage.getItem('mfo_active_tenant') ?? '{}');
+          if (t?.id) formData.append('tenantId', t.id);
+        } catch { /* ignore */ }
 
         const res  = await fetch('/api/copilot/transcribe', {
           method: 'POST',
@@ -107,7 +112,7 @@ export function useTranscription({
           sessionId,
           chunkId:   uuidv4(),
           speaker:   'system' as 'seller',
-          text:      '⚠️ No transcription API key configured. Set GROQ_API_KEY in .env.local to enable live transcription.',
+          text:      '⚠️ No transcription API key configured. Please configure your Groq API Key in Tenant Settings > AI Keys to enable live transcription.',
           confidence: 0,
           startMs,
           endMs:     Date.now() - startTimeRef.current,
