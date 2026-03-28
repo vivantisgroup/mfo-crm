@@ -37,11 +37,11 @@ export default function FamiliesPage() {
 
   return (
     <LiveModeGate emptyState={<FamiliesEmptyState />}>
-      <div className="page animate-fade-in">
-        <div className="page-header">
+      <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 pb-5 border-b border-tremor-border gap-4">
           <div>
-            <h1 className="page-title">Families</h1>
-            <p className="page-subtitle">Manage family relationships, KYC, and settings</p>
+            <h1 className="text-3xl font-bold text-tremor-content-strong tracking-tight">Families</h1>
+            <p className="mt-2 text-tremor-content">Manage family relationships, KYC, and settings</p>
           </div>
           <div className="page-actions">
             <button className="btn btn-secondary">Export CRM</button>
@@ -53,7 +53,7 @@ export default function FamiliesPage() {
           <select className="select-filter"><option>All Tiers</option><option>Platinum</option><option>Gold</option><option>Standard</option></select>
           <select className="select-filter"><option>KYC Status: All</option><option>Approved</option><option>In Review</option><option>Pending</option></select>
         </div>
-        <div className="card" style={{ borderTopLeftRadius: 0, borderTopRightRadius: 0, borderTop: 'none' }}>
+        <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ borderTopLeftRadius: 0, borderTopRightRadius: 0, borderTop: 'none' }}>
           <DataTable data={FAMILIES} columns={columns} onRowClick={(row) => router.push(`/families/${row.id}`)} />
         </div>
       </div>

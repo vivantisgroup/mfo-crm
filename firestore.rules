@@ -397,28 +397,22 @@ service cloud.firestore {
         isSaasMasterAdmin()
         || resource.data.get('userId', '') == request.auth.uid
       );
+
       // Sub-collections: chunks, flashcards, *_state
       match /chunks/{chunkId} {
-        allow read, write: if isSignedIn() && (
-          isSaasMasterAdmin()
-          || get(/databases/$(database)/documents/copilot_sessions/$(sessionId)).data.get('userId', '') == request.auth.uid
-        );
+        allow read: if isSignedIn() && (isSaasMasterAdmin() || get(/databases/$(database)/documents/copilot_sessions/$(sessionId)).data.get('userId', '') == request.auth.uid);
+        allow write: if isSignedIn() && (isSaasMasterAdmin() || getAfter(/databases/$(database)/documents/copilot_sessions/$(sessionId)).data.get('userId', '') == request.auth.uid);
       }
       match /flashcards/{cardId} {
-        allow read: if isSignedIn() && (
-          isSaasMasterAdmin()
-          || get(/databases/$(database)/documents/copilot_sessions/$(sessionId)).data.get('userId', '') == request.auth.uid
-        );
+        allow read: if isSignedIn() && (isSaasMasterAdmin() || get(/databases/$(database)/documents/copilot_sessions/$(sessionId)).data.get('userId', '') == request.auth.uid);
         allow update: if isSignedIn()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dismissed'])
-          && get(/databases/$(database)/documents/copilot_sessions/$(sessionId)).data.get('userId', '') == request.auth.uid;
+          && getAfter(/databases/$(database)/documents/copilot_sessions/$(sessionId)).data.get('userId', '') == request.auth.uid;
         allow create, delete: if false;
       }
       match /{subcol}/{docId} {
-        allow read, write: if isSignedIn() && (
-          isSaasMasterAdmin()
-          || get(/databases/$(database)/documents/copilot_sessions/$(sessionId)).data.get('userId', '') == request.auth.uid
-        );
+        allow read: if isSignedIn() && (isSaasMasterAdmin() || get(/databases/$(database)/documents/copilot_sessions/$(sessionId)).data.get('userId', '') == request.auth.uid);
+        allow write: if isSignedIn() && (isSaasMasterAdmin() || getAfter(/databases/$(database)/documents/copilot_sessions/$(sessionId)).data.get('userId', '') == request.auth.uid);
       }
     }
 

@@ -4,9 +4,8 @@ import React, { useState, useRef } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useTheme } from '@/lib/ThemeContext';
 import { useTaskQueue } from '@/lib/TaskQueueContext';
-import {
-  type TaskQueue,
-} from '@/lib/types';
+import { type TaskQueue } from '@/lib/types';
+import { Card, Title, Subtitle, Text, Divider, Flex, Grid, Col, Badge, TextInput, Select, SelectItem, Switch, Button } from '@tremor/react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -20,7 +19,8 @@ type TabId =
   | 'compliance'
   | 'tasks'
   | 'users'
-  | 'communications';
+  | 'communications'
+  | 'entity_types';
 
 interface ApiKeyField {
   id: string;
@@ -69,69 +69,59 @@ function ApiKeyCard({ field, onSave }: {
   };
 
   return (
-    <div style={{
-      padding: '20px 24px',
-      background: 'var(--bg-elevated)',
-      border: `1px solid ${field.saved ? 'var(--brand-500)44' : 'var(--border)'}`,
-      borderRadius: 'var(--radius-lg)',
-      display: 'flex', flexDirection: 'column', gap: 12,
-      transition: 'border-color 0.2s'
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+    <Card decoration={field.saved ? "left" : undefined} decorationColor="emerald" className="mb-4 shadow-sm">
+      <Flex alignItems="start" justifyContent="between">
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Flex alignItems="center" justifyContent="start" className="space-x-2">
             <StatusDot ok={field.saved} />
-            <span style={{ fontWeight: 700, fontSize: 14 }}>{field.label}</span>
-            {field.required && <span style={{ fontSize: 10, color: 'var(--color-red)', fontWeight: 700, textTransform: 'uppercase' }}>Required</span>}
-          </div>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}>{field.description}</div>
+            <Text className="font-bold text-tremor-content-strong text-sm">{field.label}</Text>
+            {field.required && <Badge color="rose" size="xs">Required</Badge>}
+          </Flex>
+          <Text className="mt-2 text-xs text-tremor-content">{field.description}</Text>
           {field.docsUrl && (
-            <a href={field.docsUrl} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: 'var(--brand-400)', textDecoration: 'none', marginTop: 2, display: 'inline-block' }}>
-              📖 Documentation →
+            <a href={field.docsUrl} target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:underline mt-2 inline-block font-medium">
+              📖 Documentation &rarr;
             </a>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {field.saved && <span className="badge badge-success" style={{ fontSize: 10 }}>Configured</span>}
-          <button
-            className={`btn btn-sm ${editing ? 'btn-primary' : 'btn-outline'}`}
+        <Flex className="space-x-3 w-auto" alignItems="center">
+          {field.saved && <Badge color="emerald" size="xs">Configured</Badge>}
+          <Button 
+            size="xs" 
+            variant={editing ? "primary" : field.saved ? "secondary" : "light"} 
             onClick={editing ? handleSave : () => setEditing(true)}
           >
             {editing ? '💾 Save' : field.saved ? '🔄 Rotate' : '+ Set Key'}
-          </button>
+          </Button>
           {editing && (
-            <button className="btn btn-sm btn-ghost" onClick={() => { setEditing(false); setDraft(''); }}>
+            <Button size="xs" variant="light" onClick={() => { setEditing(false); setDraft(''); }}>
               Cancel
-            </button>
+            </Button>
           )}
-        </div>
-      </div>
+        </Flex>
+      </Flex>
 
       {field.saved && !editing && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '8px 12px', background: 'var(--bg-canvas)',
-          borderRadius: 'var(--radius-md)', border: '1px solid var(--border)',
-          fontFamily: 'monospace', fontSize: 13, color: 'var(--text-secondary)'
-        }}>
+        <div className="mt-4 flex items-center gap-2 p-3 bg-tremor-background-subtle rounded-tremor-small border border-tremor-border font-mono text-xs text-tremor-content-strong shadow-inner">
           <span>🔑</span>
           <span>{mask(field.value)}</span>
         </div>
       )}
 
       {editing && (
-        <input
-          type="password"
-          autoFocus
-          value={draft}
-          onChange={e => setDraft(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && handleSave()}
-          placeholder={field.placeholder}
-          className="input"
-          style={{ fontFamily: 'monospace', fontSize: 13, padding: '10px 14px' }}
-        />
+        <div className="mt-4">
+          <TextInput
+            type="password"
+            autoFocus
+            value={draft}
+            onValueChange={setDraft}
+            onKeyDown={e => e.key === 'Enter' && handleSave()}
+            placeholder={field.placeholder}
+            className="font-mono text-sm"
+          />
+        </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -310,15 +300,60 @@ function DatabaseSection() {
 // ─── Section: MFA (TOTP — Free) ───────────────────────────────────────────────
 
 function MfaSection() {
-  const [mfaMode, setMfaMode] = useState<'totp' | 'disabled'>('totp');
+  const { tenant } = useAuth();
+  const [mfaMode, setMfaMode] = useState<'totp' | 'disabled'>('disabled');
   const [totpIssuer, setTotpIssuer] = useState('MFO Nexus');
   const [totpWindow, setTotpWindow] = useState(1);
   const [backupCodes, setBackupCodes] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+  React.useEffect(() => {
+    if (!tenant?.id) return;
+    const fetchConfig = async () => {
+      try {
+        const { getAuth } = await import('firebase/auth');
+        const token = await getAuth().currentUser?.getIdToken();
+        if (!token) return;
+        const res = await fetch(`/api/admin/tenant-config?tenantId=${tenant.id}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.mfaConfig) {
+          if (data.mfaConfig.mfaMode) setMfaMode(data.mfaConfig.mfaMode);
+          if (data.mfaConfig.totpIssuer) setTotpIssuer(data.mfaConfig.totpIssuer);
+          if (data.mfaConfig.totpWindow !== undefined) setTotpWindow(data.mfaConfig.totpWindow);
+          if (data.mfaConfig.backupCodes !== undefined) setBackupCodes(data.mfaConfig.backupCodes);
+        }
+      } catch (e) {
+        console.error('Failed to load tenant MFA config', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchConfig();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant?.id]);
+
+  const handleSave = async () => {
+    if (!tenant?.id) return;
+    try {
+      const { getAuth } = await import('firebase/auth');
+      const token = await getAuth().currentUser?.getIdToken();
+      if (!token) return;
+      await fetch('/api/admin/tenant-config', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId: tenant.id,
+          mfaConfig: { mfaMode, totpIssuer, totpWindow, backupCodes }
+        })
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (e) {
+      console.error('Failed to save MFA config to backend', e);
+    }
   };
 
   return (
@@ -556,6 +591,9 @@ function IntegrationsSection() {
 // ─── Section: AI Providers ────────────────────────────────────────────────────
 
 function AiKeysSection() {
+  const { tenant } = useAuth();
+  console.log('[AiKeysSection] Triggering forced HMR recompile for Groq UI synchronization');
+  
   const providers = [
     {
       group: 'OpenAI', icon: '🤖', color: '#10a37f', desc: 'GPT-4o, o1, DALL·E — for document analysis, meeting summaries, portfolio narratives',
@@ -578,6 +616,12 @@ function AiKeysSection() {
       ]
     },
     {
+      group: 'Groq', icon: '⚡', color: '#f55036', desc: 'Ultra-fast LPU inference — for real-time applications and low-latency models (Llama 3, Mixtral)',
+      keys: [
+        { id: 'groq_api_key', label: 'Groq API Key', value: '', saved: false, placeholder: 'gsk_xxxxxxxxxxxxxxxxxxxxxxxxx', description: 'Primary key for Groq inference cloud', docsUrl: 'https://console.groq.com/keys', required: true }
+      ]
+    },
+    {
       group: 'Additional Providers', icon: '⚙️', color: '#64748b', desc: 'Custom or specialized AI models',
       keys: [
         { id: 'azure_openai_key', label: 'Azure OpenAI API Key', value: '', saved: false, placeholder: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', description: 'For Azure-hosted OpenAI models (data residency compliance)', docsUrl: 'https://azure.microsoft.com/en-us/products/ai-services/openai-service' },
@@ -590,14 +634,65 @@ function AiKeysSection() {
   const [allKeys, setAllKeys] = useState<Record<string, ApiKeyField[]>>(
     Object.fromEntries(providers.map(p => [p.group, p.keys as ApiKeyField[]]))
   );
-
+  
   const [activeProvider, setActiveProvider] = useState('OpenAI');
+  const [loading, setLoading] = useState(true);
 
-  const handleSave = (group: string) => (id: string, val: string) => {
-    setAllKeys(prev => ({
-      ...prev,
-      [group]: prev[group].map(k => k.id === id ? { ...k, value: val, saved: true } : k)
-    }));
+  React.useEffect(() => {
+    if (!tenant?.id) return;
+    const fetchKeys = async () => {
+      try {
+        const { getAuth } = await import('firebase/auth');
+        const token = await getAuth().currentUser?.getIdToken();
+        if (!token) return;
+        const res = await fetch(`/api/admin/tenant-config?tenantId=${tenant.id}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.aiKeys && Object.keys(data.aiKeys).length > 0) {
+          // Merge fetched keys with the default provider template to ensure we don't lose new fields
+          const mergedKeys: Record<string, ApiKeyField[]> = {};
+          for (const p of providers) {
+            mergedKeys[p.group] = p.keys.map(defaultKey => {
+              const remoteGroup = data.aiKeys[p.group] || [];
+              const remoteKey = remoteGroup.find((k: any) => k.id === defaultKey.id);
+              return remoteKey ? { ...defaultKey, ...remoteKey } : defaultKey;
+            });
+          }
+          setAllKeys(mergedKeys);
+        }
+      } catch (e) {
+        console.error('Failed to load tenant aiKeys', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchKeys();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant?.id]);
+
+  const handleSave = (group: string) => async (id: string, val: string) => {
+    const newKeys = {
+      ...allKeys,
+      [group]: allKeys[group].map(k => k.id === id ? { ...k, value: val, saved: true } : k)
+    };
+    setAllKeys(newKeys);
+    
+    if (tenant?.id) {
+      try {
+        const { getAuth } = await import('firebase/auth');
+        const token = await getAuth().currentUser?.getIdToken();
+        if (token) {
+          await fetch('/api/admin/tenant-config', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tenantId: tenant.id, aiKeys: newKeys })
+          });
+        }
+      } catch (err) {
+        console.error('Failed to save key to backend', err);
+      }
+    }
   };
 
   const current = providers.find(p => p.group === activeProvider)!;
@@ -1241,6 +1336,7 @@ const TABS: { id: TabId; label: string; icon: string; superAdminOnly?: boolean }
   { id: 'firm',           label: 'Firm Identity',          icon: '🏢' },
   { id: 'compliance',     label: 'Compliance',             icon: '⚖️' },
   { id: 'tasks',          label: 'Task Queues',            icon: '🗂' },
+  { id: 'entity_types',   label: 'CRM Entities',           icon: '🏛️', superAdminOnly: true },
   { id: 'communications', label: 'Communications',         icon: '📧', superAdminOnly: true },
 ];
 
@@ -1268,6 +1364,134 @@ function CommunicationsSection() {
   );
 }
 
+// ─── Section: CRM Entities Types ───────────────────────────────────────────────
+
+function EntityTypesSection() {
+  const { tenant } = useAuth();
+  
+  const [types, setTypes] = useState({
+    clientTypes: [] as string[],
+    organizationTypes: [] as string[],
+    contactTypes: [] as string[]
+  });
+  
+  const [drafts, setDrafts] = useState({
+    clientTypes: '',
+    organizationTypes: '',
+    contactTypes: ''
+  });
+  
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  React.useEffect(() => {
+    if (!tenant?.id) return;
+    const fetchTypes = async () => {
+      try {
+        const { getAuth } = await import('firebase/auth');
+        const token = await getAuth().currentUser?.getIdToken();
+        const res = await fetch(`/api/admin/tenant-config?tenantId=${tenant.id}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.entityTypes) setTypes(data.entityTypes);
+      } catch (err) {
+        console.error('Failed to load entity types', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchTypes();
+  }, [tenant?.id]);
+
+  const handleSave = async (updatedTypes: typeof types) => {
+    if (!tenant?.id) return;
+    setSaving(true);
+    setTypes(updatedTypes);
+    try {
+      const { getAuth } = await import('firebase/auth');
+      const token = await getAuth().currentUser?.getIdToken();
+      await fetch('/api/admin/tenant-config', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantId: tenant.id, entityTypes: updatedTypes })
+      });
+    } catch (err) {
+      console.error('Failed to save entity types', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAdd = (key: keyof typeof types) => {
+    const draft = drafts[key].trim();
+    if (!draft || types[key].includes(draft)) return;
+    const updated = { ...types, [key]: [...types[key], draft] };
+    setDrafts(prev => ({ ...prev, [key]: '' }));
+    handleSave(updated);
+  };
+
+  const handleRemove = (key: keyof typeof types, itemToRemove: string) => {
+    const updated = { ...types, [key]: types[key].filter(i => i !== itemToRemove) };
+    handleSave(updated);
+  };
+
+  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}>Loading Types...</div>;
+
+  const renderSection = (title: string, desc: string, key: keyof typeof types) => (
+    <Card className="mb-6 shadow-sm">
+      <Title>{title}</Title>
+      <Text className="mb-4 text-xs">{desc}</Text>
+      
+      <div className="flex flex-wrap gap-2 mb-4">
+        {types[key].map(item => (
+          <Badge key={item} color="indigo" size="sm" className="cursor-pointer">
+            <div className="flex items-center gap-1">
+              <span>{item}</span>
+              <button 
+                onClick={() => handleRemove(key, item)}
+                className="ml-1 text-indigo-800 hover:text-red-500 rounded-full"
+                title={`Remove ${item}`}
+              >
+                ✕
+              </button>
+            </div>
+          </Badge>
+        ))}
+        {types[key].length === 0 && <Text className="text-xs italic">No types configured.</Text>}
+      </div>
+
+      <div className="flex gap-2 max-w-sm">
+        <TextInput 
+          placeholder={`Add new ${title.toLowerCase()}...`}
+          value={drafts[key]}
+          onChange={e => setDrafts(prev => ({ ...prev, [key]: e.target.value }))}
+          onKeyDown={e => e.key === 'Enter' && handleAdd(key)}
+        />
+        <Button size="sm" onClick={() => handleAdd(key)} disabled={!drafts[key].trim() || saving}>
+          Add
+        </Button>
+      </div>
+    </Card>
+  );
+
+  return (
+    <div className="animate-fade-in">
+      <div style={{ marginBottom: 24 }}>
+        <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>🏛️ CRM Entities Configuration</h2>
+        <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+          Customize the classifications available for Clients, Organizations, and Contacts throughout the platform.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-4">
+        {renderSection('Client Types', 'Used to classify the primary Wealth owner (e.g., Family Group, Single Family Office).', 'clientTypes')}
+        {renderSection('Organization Types', 'Used to classify connected institutions (e.g., Bank, Law Firm, Fund).', 'organizationTypes')}
+        {renderSection('Contact Types', 'Used to classify individual professionals or family members (e.g., Private Banker, Trustee).', 'contactTypes')}
+      </div>
+    </div>
+  );
+}
 
 // ─── Main Admin Page ───────────────────────────────────────────────────────────
 
@@ -1283,28 +1507,36 @@ export default function AdminPage() {
   });
 
   return (
-    <div className="page-wrapper animate-fade-in">
-      <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 48 }}>
+    <div className="page-wrapper animate-fade-in max-w-[1400px] mx-auto py-10 px-6">
+      <div className="mb-10 pl-2 border-l-4 border-indigo-500">
+        <Title className="text-3xl font-bold tracking-tight text-tremor-content-strong">Firm Administration & Security</Title>
+        <Text className="mt-2 text-tremor-content">Manage platform configurations, billing metrics, API keys, compliance, and user lifecycles.</Text>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-[250px_1fr] gap-12">
         {/* Sidebar Nav */}
-        <aside style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <aside className="flex flex-col gap-2">
           {visibleTabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`btn ${activeTab === tab.id ? 'btn-secondary' : 'btn-ghost'}`}
-              style={{ justifyContent: 'flex-start', border: 'none', gap: 10, padding: '11px 14px', fontSize: 13, fontWeight: activeTab === tab.id ? 700 : 500 }}
+              className={`flex items-center gap-3 px-4 py-3 rounded-tremor-default text-sm transition-all text-left border ${
+                activeTab === tab.id 
+                  ? 'bg-indigo-50/50 dark:bg-indigo-900/20 text-indigo-600 font-semibold shadow-sm border-indigo-200' 
+                  : 'text-tremor-content hover:bg-tremor-background-subtle hover:text-tremor-content-emphasis border-transparent hover:border-tremor-border'
+              }`}
             >
-              <span style={{ fontSize: 16 }}>{tab.icon}</span>
-              {tab.label}
+              <span className="text-lg w-6 text-center">{tab.icon}</span>
+              <span className="flex-1">{tab.label}</span>
               {tab.superAdminOnly && (
-                <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--brand-400)', fontWeight: 700, textTransform: 'uppercase', opacity: 0.8 }}>SA</span>
+                <Badge size="xs" color="blue" className="ml-auto px-1.5 opacity-80">SA</Badge>
               )}
             </button>
           ))}
         </aside>
 
         {/* Content */}
-        <main style={{ padding: 40, background: 'var(--bg-surface)', borderRadius: 'var(--radius-xl)', border: '1px solid var(--border)', minHeight: 600 }}>
+        <Card className="min-h-[600px] shadow-sm ring-1 ring-tremor-border p-8 md:p-10">
           {activeTab === 'platform'       && <PlatformSection />}
           {activeTab === 'database'       && <DatabaseSection />}
           {activeTab === 'mfa'            && <MfaSection />}
@@ -1313,8 +1545,9 @@ export default function AdminPage() {
           {activeTab === 'firm'           && <FirmSection />}
           {activeTab === 'compliance'     && <ComplianceSection />}
           {activeTab === 'tasks'          && <QueueSettingsSection />}
+          {activeTab === 'entity_types'   && <EntityTypesSection />}
           {activeTab === 'communications' && <CommunicationsSection />}
-        </main>
+        </Card>
       </div>
     </div>
   );

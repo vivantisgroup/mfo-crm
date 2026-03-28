@@ -261,13 +261,13 @@ export default function PlatformRolesPage() {
   }, [users]);
 
   return (
-    <div className="page animate-fade-in">
+    <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
 
       {/* Header */}
-      <div className="page-header">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 pb-5 border-b border-tremor-border gap-4">
         <div>
-          <h1 className="page-title">Roles &amp; Permissions</h1>
-          <p className="page-subtitle">
+          <h1 className="text-3xl font-bold text-tremor-content-strong tracking-tight">Roles &amp; Permissions</h1>
+            <p className="mt-2 text-tremor-content">
             System-defined roles and their permission sets. Roles are code-defined for security auditability.
           </p>
         </div>
@@ -332,7 +332,7 @@ export default function PlatformRolesPage() {
       )}
 
       {view === 'matrix' && (
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 0, overflow: 'hidden' }}>
           <PermMatrix roles={ALL_ROLES} />
         </div>
       )}

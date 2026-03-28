@@ -11,18 +11,15 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getAiKeysBySession } from '@/lib/tenantAiConfig';
 
 export const runtime     = 'nodejs';
 export const maxDuration = 30;
 
-const GROQ_API_KEY   = process.env.GROQ_API_KEY   ?? '';
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY  ?? '';
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY  ?? '';
-
 /**
  * Transcribe via Groq Whisper (fastest option — typically <500ms for 3s chunks).
  */
-async function transcribeWithGroq(audioBlob: Blob, language: string): Promise<string> {
+async function transcribeWithGroq(audioBlob: Blob, language: string, apiKey: string): Promise<string> {
   const form = new FormData();
   form.append('file', audioBlob, 'audio.webm');
   form.append('model', 'whisper-large-v3-turbo');
@@ -31,7 +28,7 @@ async function transcribeWithGroq(audioBlob: Blob, language: string): Promise<st
 
   const r = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
     method:  'POST',
-    headers: { Authorization: `Bearer ${GROQ_API_KEY}` },
+    headers: { Authorization: `Bearer ${apiKey}` },
     body:    form,
   });
 
@@ -47,7 +44,7 @@ async function transcribeWithGroq(audioBlob: Blob, language: string): Promise<st
 /**
  * Transcribe via OpenAI Whisper — fallback if Groq is unavailable.
  */
-async function transcribeWithOpenAI(audioBlob: Blob, language: string): Promise<string> {
+async function transcribeWithOpenAI(audioBlob: Blob, language: string, apiKey: string): Promise<string> {
   const form = new FormData();
   form.append('file', audioBlob, 'audio.webm');
   form.append('model', 'whisper-1');
@@ -56,7 +53,7 @@ async function transcribeWithOpenAI(audioBlob: Blob, language: string): Promise<
 
   const r = await fetch('https://api.openai.com/v1/audio/transcriptions', {
     method:  'POST',
-    headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
+    headers: { Authorization: `Bearer ${apiKey}` },
     body:    form,
   });
 
@@ -67,9 +64,10 @@ async function transcribeWithOpenAI(audioBlob: Blob, language: string): Promise<
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
-    const form     = await req.formData();
-    const audio    = form.get('audio') as Blob | null;
-    const language = (form.get('language') as string | null) ?? 'en';
+    const form      = await req.formData();
+    const audio     = form.get('audio') as Blob | null;
+    const language  = (form.get('language') as string | null) ?? 'en';
+    const sessionId = form.get('sessionId') as string | null;
 
     if (!audio || audio.size < 500) {
       // Too small to contain speech — return empty silently
@@ -77,22 +75,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     let text = '';
+    
+    const aiKeys = sessionId ? await getAiKeysBySession(sessionId) : {};
+    const groqKey = aiKeys['groq_api_key'] || process.env.GROQ_API_KEY || '';
+    const openaiKey = aiKeys['openai_api_key'] || process.env.OPENAI_API_KEY || '';
 
     // Try providers in priority order
-    if (GROQ_API_KEY) {
+    if (groqKey) {
       try {
-        text = await transcribeWithGroq(audio, language);
+        text = await transcribeWithGroq(audio, language, groqKey);
       } catch (e: any) {
         console.warn('[copilot/transcribe] Groq failed, trying OpenAI:', e.message);
-        if (OPENAI_API_KEY) {
-          text = await transcribeWithOpenAI(audio, language);
+        if (openaiKey) {
+          text = await transcribeWithOpenAI(audio, language, openaiKey);
         }
       }
-    } else if (OPENAI_API_KEY) {
-      text = await transcribeWithOpenAI(audio, language);
+    } else if (openaiKey) {
+      text = await transcribeWithOpenAI(audio, language, openaiKey);
     } else {
       // No API key configured — return indicator so UI can show prompt
-      console.warn('[copilot/transcribe] No transcription API key configured. Set GROQ_API_KEY or OPENAI_API_KEY.');
+      console.warn('[copilot/transcribe] No transcription API key configured. Configure BYOK AI Keys.');
       return NextResponse.json({ text: '', noApiKey: true });
     }
 

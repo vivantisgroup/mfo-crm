@@ -165,7 +165,7 @@ export function PortfolioEmptyState() {
           title="No portfolio data"
           description="There is no investment or portfolio data in this workspace yet. Onboard families with assets to get started."
           actions={[
-            { label: 'Onboard Families', href: '/families', primary: true },
+            { label: 'Onboard Clients', href: '/clients', primary: true },
           ]}
         />
       </div>

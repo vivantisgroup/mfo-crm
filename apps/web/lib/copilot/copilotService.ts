@@ -50,17 +50,18 @@ export async function createSession(
   const sessionPayload = Object.fromEntries(
     Object.entries(session).filter(([, v]) => v !== undefined),
   ) as SessionContext;
-  await setDoc(sessionRef(sessionId), sessionPayload);
 
-
-  // Initialize the methodology state doc
   const method = ctx.methodology.toLowerCase().replace(' ', '_');
   let initState: MethodologyState;
   if (ctx.methodology === 'MEDDIC') initState = defaultMeddicState(sessionId);
   else if (ctx.methodology === 'SPIN') initState = defaultSpinState(sessionId);
   else initState = defaultChallengerState(sessionId);
 
-  await setDoc(stateDocRef(sessionId, method), initState);
+  const batch = writeBatch(db);
+  batch.set(sessionRef(sessionId), sessionPayload);
+  batch.set(stateDocRef(sessionId, method), initState);
+  await batch.commit();
+
   return session;
 }
 
@@ -129,25 +130,29 @@ export async function dismissFlashcard(sessionId: string, cardId: string): Promi
 
 export function subscribeToFlashcards(
   sessionId: string,
-  onCards: (cards: Flashcard[]) => void,
+  onUpdate: (cards: Flashcard[]) => void,
 ): Unsubscribe {
   const q = query(
     cardsRef(sessionId),
     orderBy('createdAt', 'desc'),
     limit(50),
   );
-  return onSnapshot(q, snap => {
-    onCards(snap.docs.map(d => d.data() as Flashcard));
+  return onSnapshot(q, (snap) => {
+    onUpdate(snap.docs.map(d => d.data() as Flashcard));
+  }, (error) => {
+    console.warn('[subscribeToFlashcards] error:', error.message);
   });
 }
 
 export function subscribeToChunks(
   sessionId: string,
-  onChunks: (chunks: TranscriptChunk[]) => void,
+  onUpdate: (chunks: TranscriptChunk[]) => void,
 ): Unsubscribe {
   const q = query(chunksRef(sessionId), orderBy('startMs', 'asc'));
-  return onSnapshot(q, snap => {
-    onChunks(snap.docs.map(d => d.data() as TranscriptChunk));
+  return onSnapshot(q, (snap) => {
+    onUpdate(snap.docs.map(d => d.data() as TranscriptChunk));
+  }, (error) => {
+    console.warn('[subscribeToChunks] error:', error.message);
   });
 }
 
@@ -157,8 +162,10 @@ export function subscribeToMethodologyState(
   onState: (state: MethodologyState) => void,
 ): Unsubscribe {
   const method = methodology.toLowerCase().replace(' ', '_');
-  return onSnapshot(stateDocRef(sessionId, method), snap => {
+  return onSnapshot(stateDocRef(sessionId, method), (snap) => {
     if (snap.exists()) onState(snap.data() as MethodologyState);
+  }, (error) => {
+    console.warn('[subscribeToMethodologyState] error:', error.message);
   });
 }
 

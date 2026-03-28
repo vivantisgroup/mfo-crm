@@ -95,7 +95,7 @@ export default function ContactClientPage() {
     <div className="page animate-fade-in" style={{ maxWidth: 1100, margin: '0 auto' }}>
       {/* Breadcrumb */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, fontSize: 13, color: 'var(--text-tertiary)' }}>
-        <button onClick={() => router.push('/contacts')} className="btn btn-ghost btn-sm" style={{ gap: 4, display: 'flex', alignItems: 'center' }}>
+        <button onClick={() => router.push('/relationships/contacts')} className="btn btn-ghost btn-sm" style={{ gap: 4, display: 'flex', alignItems: 'center' }}>
           <ArrowLeft size={13} /> Contacts
         </button>
         <span>/</span>
@@ -103,7 +103,7 @@ export default function ContactClientPage() {
       </div>
 
       {/* Hero */}
-      <div className="card" style={{ padding: '24px 28px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 20 }}>
+      <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: '24px 28px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 20 }}>
         <div style={{
           width: 72, height: 72, borderRadius: '50%', flexShrink: 0, fontSize: 24, fontWeight: 800,
           background: `${color}22`, color, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -151,7 +151,7 @@ export default function ContactClientPage() {
       {/* Tab content */}
       {activeTab === 'overview' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 20 }}>
-          <div className="card" style={{ padding: 24 }}>
+          <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 24 }}>
             <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 16, color: 'var(--text-primary)' }}>Details</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <KV label="Role"         value={contact.role?.charAt(0).toUpperCase() + contact.role?.slice(1)} />
@@ -168,7 +168,7 @@ export default function ContactClientPage() {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Families */}
-            <div className="card" style={{ padding: 20 }}>
+            <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 20 }}>
               <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Users size={14} style={{ color: 'var(--brand-400)' }} /> Families
               </div>
@@ -177,7 +177,7 @@ export default function ContactClientPage() {
               )) : <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>No linked families</div>}
             </div>
             {/* Organizations */}
-            <div className="card" style={{ padding: 20 }}>
+            <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 20 }}>
               <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Building2 size={14} style={{ color: '#8b5cf6' }} /> Organizations
               </div>
@@ -194,7 +194,7 @@ export default function ContactClientPage() {
       )}
 
       {activeTab === 'activities' && (
-        <div className="card" style={{ padding: 0 }}>
+        <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 0 }}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 14 }}>
             Activity History <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 400 }}>{activities.length} items</span>
           </div>

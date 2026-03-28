@@ -133,6 +133,13 @@ export interface TenantRecord {
   crmContactId?:      string;
   /** Display name of the linked contact */
   crmContactName?:    string;
+
+  // ── Security & Authentication ────────────────────────────────────────────────
+  mfaConfig?: {
+    mfaMode?: string;
+    mfaEnforced?: boolean;
+    allowedMethods?: string[];
+  };
 }
 
 

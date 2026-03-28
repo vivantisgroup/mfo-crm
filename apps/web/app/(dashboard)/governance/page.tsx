@@ -9,11 +9,11 @@ import type { GovernanceMeeting, Vote } from '@/lib/types';
 
 export default function GovernancePage() {
   return (
-    <div className="page animate-fade-in">
-      <div className="page-header">
+    <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 pb-5 border-b border-tremor-border gap-4">
         <div>
-          <h1 className="page-title">Family Governance</h1>
-          <p className="page-subtitle">Manage Family Councils, Advisory Boards, and Investment Committees</p>
+          <h1 className="text-3xl font-bold text-tremor-content-strong tracking-tight">Family Governance</h1>
+            <p className="mt-2 text-tremor-content">Manage Family Councils, Advisory Boards, and Investment Committees</p>
         </div>
         <div className="page-actions">
           <button className="btn btn-secondary">Record Resolution</button>
@@ -22,7 +22,7 @@ export default function GovernancePage() {
       </div>
 
       <div className="grid-2 mt-6">
-        <div className="card">
+        <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6">
           <div className="card-header">
             <h2 className="card-title">Governance Structures</h2>
           </div>
@@ -44,7 +44,7 @@ export default function GovernancePage() {
           </div>
         </div>
 
-        <div className="card">
+        <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6">
           <div className="card-header">
             <h2 className="card-title">Upcoming & Recent Meetings</h2>
           </div>

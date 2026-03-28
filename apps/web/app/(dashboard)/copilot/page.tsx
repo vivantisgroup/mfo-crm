@@ -144,21 +144,23 @@ export default function CopilotPage() {
       const s = await createSession(ctx);
       await updateSessionStatus(s.sessionId, 'recording');
 
-      // ── Step 3: Start recording (may throw if mic revoked) ────────────────
-      try {
-        await startRecording();
-      } catch (recErr: any) {
-        // Recording failed after session was created — mark ended and surface error
-        await updateSessionStatus(s.sessionId, 'ended').catch(() => {});
-        const msg = recErr?.message ?? 'Microphone error.';
-        setStartError(msg.toLowerCase().includes('notallowed') || msg.toLowerCase().includes('denied')
-          ? '🎤 Microphone access denied.'
-          : `⚠️ ${msg}`);
-        return;
-      }
-
-      // ── Step 4: All good — expose session to UI ───────────────────────────
+      // ── Step 3: All good — expose session to UI ───────────────────────────
       setSession(s);
+
+      // ── Step 4: Start recording (may throw if mic revoked) ────────────────
+      // Note: we use a tiny timeout to ensure React state propagates the sessionId to the useTranscription hook
+      setTimeout(async () => {
+        try {
+          await startRecording();
+        } catch (recErr: any) {
+          await updateSessionStatus(s.sessionId, 'ended').catch(() => {});
+          const msg = recErr?.message ?? 'Microphone error.';
+          setStartError(msg.toLowerCase().includes('notallowed') || msg.toLowerCase().includes('denied')
+            ? '🎤 Microphone access denied.'
+            : `⚠️ ${msg}`);
+          setSession(null);
+        }
+      }, 50);
     } catch (e: any) {
       console.error('[copilot] session start failed:', e);
       const msg = e?.message ?? 'Failed to start session.';

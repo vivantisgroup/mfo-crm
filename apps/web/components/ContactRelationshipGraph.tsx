@@ -30,17 +30,17 @@ interface FsContact {
   id:                string;
   firstName:         string;
   lastName:          string;
-  role?:             string;
-  linkedFamilyIds?:  string[];
-  linkedOrgIds?:     string[];
+  role?:             string; // subType mapping
+  clientIds?:        string[];
+  organizationIds?:  string[];
 }
 
 interface FsOrg {
   id:                string;
   name:              string;
-  type?:             string;
-  linkedContactIds?: string[];
-  linkedFamilyIds?:  string[];
+  type?:             string; // subType mapping
+  contactIds?:       string[];
+  clientIds?:        string[];
 }
 
 interface FsRelationship {
@@ -113,21 +113,25 @@ export function ContactRelationshipGraph({ tenantId, focusContactId, focusOrgId,
     if (focusContactId) {
       // 1-hop: the focused contact + directly linked orgs
       const focusedContact = contacts.find(c => c.id === focusContactId);
-      const linkedOrgIds   = new Set(focusedContact?.linkedOrgIds ?? []);
+      const linkedOrgIds   = new Set(focusedContact?.organizationIds ?? []);
       includeContactIds    = new Set([focusContactId]);
       includeOrgIds        = linkedOrgIds;
       // also include contacts that share orgs with the focused one
       for (const c of contacts) {
         if (c.id === focusContactId) continue;
-        if (c.linkedOrgIds?.some(oid => linkedOrgIds.has(oid))) includeContactIds.add(c.id);
+        if (c.organizationIds?.some(oid => linkedOrgIds.has(oid))) includeContactIds.add(c.id);
       }
     } else if (focusOrgId) {
       const org = orgs.find(o => o.id === focusOrgId);
       includeOrgIds     = new Set([focusOrgId]);
-      includeContactIds = new Set(org?.linkedContactIds ?? []);
+      includeContactIds = new Set(org?.contactIds ?? []);
+      // Backwards compatible loop: if contact declares association, include it
+      for (const c of contacts) {
+        if (c.organizationIds?.includes(focusOrgId)) includeContactIds.add(c.id);
+      }
     } else if (familyId) {
-      includeContactIds = new Set(contacts.filter(c => c.linkedFamilyIds?.includes(familyId)).map(c => c.id));
-      includeOrgIds     = new Set(orgs.filter(o => o.linkedFamilyIds?.includes(familyId)).map(o => o.id));
+      includeContactIds = new Set(contacts.filter(c => c.clientIds?.includes(familyId)).map(c => c.id));
+      includeOrgIds     = new Set(orgs.filter(o => o.clientIds?.includes(familyId)).map(o => o.id));
     }
 
     const nodes: NetworkNode[] = [
@@ -137,10 +141,14 @@ export function ContactRelationshipGraph({ tenantId, focusContactId, focusOrgId,
 
     const allowedIds = new Set(nodes.map(n => n.id));
 
-    // Also build implicit edges from org membership (linkedContactIds)
+    // Also build implicit edges from org membership 
     const implicitEdges: RelationshipEdge[] = [];
     for (const org of orgs.filter(o => includeOrgIds.has(o.id))) {
-      for (const cId of org.linkedContactIds ?? []) {
+      const declaredMembers = org.contactIds ?? [];
+      const derivedMembers  = contacts.filter(c => c.organizationIds?.includes(org.id)).map(c => c.id);
+      const allMembers      = new Set([...declaredMembers, ...derivedMembers]);
+      
+      for (const cId of Array.from(allMembers)) {
         if (includeContactIds.has(cId)) {
           implicitEdges.push({
             id:           `imp-${cId}-${org.id}`,

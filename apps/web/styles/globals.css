@@ -367,25 +367,18 @@ html[data-mode="light"] {
 .nav-item:hover {
   background: var(--bg-elevated);
   color: var(--text-primary);
-  font-weight: 500;
 }
 
 .nav-item.active {
-  background: var(--brand-900);
-  color: var(--brand-500);
+  background: var(--bg-surface);
+  color: var(--text-primary);
   font-weight: 600;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
 }
 
 .nav-item.active::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3px;
-  height: 20px;
-  background: var(--brand-500);
-  border-radius: 0 3px 3px 0;
+  display: none;
 }
 
 .nav-item-icon {

@@ -1,0 +1,8 @@
+﻿ΓÇëWARNΓÇë Cannot switch to pnpm@9: "9" is not a valid version
+app/(dashboard)/relationships/contacts/page.tsx(119,28): error TS2322: Type '"date"' is not assignable to type '"number" | "email" | "search" | "text" | "password" | "tel" | "url" | undefined'.
+app/(dashboard)/relationships/contacts/page.tsx(309,60): error TS2322: Type '{ children: Element[]; numItemsSm: number; numItemsMd: number; numItemsLg: number; xl: number; className: string; }' is not assignable to type 'IntrinsicAttributes & GridProps & RefAttributes<HTMLDivElement>'.
+  Property 'xl' does not exist on type 'IntrinsicAttributes & GridProps & RefAttributes<HTMLDivElement>'.
+lib/AuthContext.tsx(195,59): error TS2339: Property 'mfaConfig' does not exist on type 'TenantRecord'.
+lib/AuthContext.tsx(199,23): error TS2339: Property 'mfaConfig' does not exist on type 'TenantRecord'.
+lib/AuthContext.tsx(222,57): error TS2339: Property 'mfaConfig' does not exist on type 'TenantRecord'.
+lib/AuthContext.tsx(226,22): error TS2339: Property 'mfaConfig' does not exist on type 'TenantRecord'.

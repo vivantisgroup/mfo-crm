@@ -533,7 +533,7 @@ export default function TenantUsersPage() {
   ];
 
   return (
-    <div className="page animate-fade-in">
+    <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
       {confirmOpts && <ConfirmDialog {...confirmOpts} />}
       {showPerms && (
         <PermissionsPanel uid={showPerms.uid} tenantId={tenantId} role={showPerms.role}
@@ -548,10 +548,10 @@ export default function TenantUsersPage() {
           performer={performer} onClose={() => setSelectedGroup(null)} onRefresh={load} />
       )}
 
-      <div className="page-header">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 pb-5 border-b border-tremor-border gap-4">
         <div>
-          <h1 className="page-title">User Management</h1>
-          <p className="page-subtitle">Manage members, groups, roles, and fine-grained permissions for {tenantName}.</p>
+          <h1 className="text-3xl font-bold text-tremor-content-strong tracking-tight">User Management</h1>
+            <p className="mt-2 text-tremor-content">Manage members, groups, roles, and fine-grained permissions for {tenantName}.</p>
         </div>
         <div className="page-actions">
           <button className="btn btn-secondary" onClick={load}>↻ Refresh</button>
@@ -585,7 +585,7 @@ export default function TenantUsersPage() {
       {/* ── MEMBERS ── */}
       {tab === 'members' && (
         <>
-          <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+          <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 16, marginBottom: 16 }}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>➕ Add Member</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 2fr) 1fr auto', gap: 10, alignItems: 'flex-end' }}>
               <div>
@@ -730,7 +730,7 @@ export default function TenantUsersPage() {
           </div>
           {loading ? <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-tertiary)' }}>Loading…</div> :
             groups.length === 0 ? (
-              <div className="card" style={{ textAlign: 'center', padding: '60px 40px' }}>
+              <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ textAlign: 'center', padding: '60px 40px' }}>
                 <div style={{ fontSize: 48, marginBottom: 12 }}>👥</div>
                 <h2 style={{ fontWeight: 800, marginBottom: 8 }}>No groups yet</h2>
                 <p style={{ color: 'var(--text-secondary)', marginBottom: 20 }}>Create groups to batch-assign roles and permissions.</p>

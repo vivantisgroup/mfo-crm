@@ -63,7 +63,7 @@ export type ModuleId =
 
 export interface NavSection {
   section:  string;
-  items:    Array<{ href: string; icon: string; label: string; badge?: string }>;
+  items:    Array<{ href: string; icon: string; label: string; badge?: string; subItems?: Array<{ href: string; label: string }> }>;
 }
 
 export interface VerticalDefinition {
@@ -94,11 +94,18 @@ const MFO_NAV: NavSection[] = [
     ],
   },
   {
-    section: 'CRM',
+    section: 'CRM Central',
     items: [
-      { href: '/families',       icon: '👥', label: 'Families' },
-      { href: '/contacts',       icon: '👤', label: 'Contacts' },
-      { href: '/organizations',  icon: '🏢', label: 'Organizations' },
+      {
+        href: '/relationships',
+        icon: '👥',
+        label: 'Relationships',
+        subItems: [
+          { href: '/clients',                     label: 'Clients (360°)' },
+          { href: '/relationships/organizations', label: 'Organizations' },
+          { href: '/relationships/contacts',      label: 'Contacts' },
+        ]
+      },
       { href: '/activities',     icon: '💬', label: 'Activities' },
       { href: '/tasks',          icon: '✓',  label: 'Tasks' },
       { href: '/calendar',       icon: '📅', label: 'Calendar' },

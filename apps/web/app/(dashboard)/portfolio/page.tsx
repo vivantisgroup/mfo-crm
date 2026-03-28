@@ -25,11 +25,11 @@ export default function PortfolioPage() {
 
   return (
     <LiveModeGate emptyState={<PortfolioEmptyState />}>
-    <div className="page animate-fade-in">
-      <div className="page-header">
+    <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 pb-5 border-b border-tremor-border gap-4">
         <div>
-          <h1 className="page-title">Portfolio Consolidation</h1>
-          <p className="page-subtitle">Smith Family Holdings across 4 custodians & 3 entities</p>
+          <h1 className="text-3xl font-bold text-tremor-content-strong tracking-tight">Portfolio Consolidation</h1>
+            <p className="mt-2 text-tremor-content">Smith Family Holdings across 4 custodians & 3 entities</p>
         </div>
         <div className="page-actions">
           <select className="select-filter" defaultValue="fam-001">
@@ -50,7 +50,7 @@ export default function PortfolioPage() {
       </div>
 
       <div className="grid-2 mb-6">
-        <div className="card" style={{ height: '400px', display: 'flex', flexDirection: 'column' }}>
+        <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ height: '400px', display: 'flex', flexDirection: 'column' }}>
           <div className="card-header">
             <h2 className="card-title">Performance vs Benchmark</h2>
           </div>
@@ -59,7 +59,7 @@ export default function PortfolioPage() {
           </div>
         </div>
         
-        <div className="card" style={{ height: '400px', display: 'flex', flexDirection: 'column' }}>
+        <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ height: '400px', display: 'flex', flexDirection: 'column' }}>
           <div className="card-header">
             <h2 className="card-title">Asset Allocation</h2>
           </div>

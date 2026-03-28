@@ -60,7 +60,7 @@ export default function DocumentsPage() {
       </div>
 
       {/* Toolbar */}
-      <div className="card" style={{ padding: '12px 24px', display: 'flex', gap: 24, alignItems: 'center', background: 'var(--bg-surface)' }}>
+      <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: '12px 24px', display: 'flex', gap: 24, alignItems: 'center', background: 'var(--bg-surface)' }}>
         <div style={{ display: 'flex', gap: 8 }}>
           {(['all', 'onboarding', 'suitability', 'investment', 'compliance', 'tax'] as const).map(cat => (
             <button 

@@ -19,19 +19,17 @@ import type {
   AnalyzeRequest, AnalyzeResponse, IntentLabel,
   FlashcardType, IntentResult, Flashcard,
 } from '@/lib/copilot/copilot.types';
+import { getAiKeysBySession } from '@/lib/tenantAiConfig';
 
 export const runtime     = 'nodejs';
 export const maxDuration = 30;
 
 // ─── AI Provider (raw fetch — no SDK dependency) ──────────────────────────────
 
-const GROQ_API_KEY   = process.env.GROQ_API_KEY   ?? '';
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY  ?? '';
-
-async function callGroq(system: string, user: string): Promise<string> {
+async function callGroq(system: string, user: string, apiKey: string): Promise<string> {
   const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method:  'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_API_KEY}` },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
     body: JSON.stringify({
       model:       'llama-3.3-70b-versatile',
       temperature: 0.2,
@@ -48,8 +46,8 @@ async function callGroq(system: string, user: string): Promise<string> {
   return d.choices?.[0]?.message?.content ?? '';
 }
 
-async function callGemini(system: string, user: string): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+async function callGemini(system: string, user: string, apiKey: string): Promise<string> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
   const r   = await fetch(url, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -169,12 +167,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const now = new Date().toISOString();
     let rawData: ReturnType<typeof buildDemoResponse>;
 
+    // Resolve Tenant AI Keys securely
+    const aiKeys = await getAiKeysBySession(body.context.sessionId);
+    const groqKey = aiKeys['groq_api_key'] || process.env.GROQ_API_KEY || '';
+    const geminiKey = aiKeys['gemini_api_key'] || process.env.GEMINI_API_KEY || '';
+
     // Try AI providers in order
-    if (GROQ_API_KEY || GEMINI_API_KEY) {
+    if (groqKey || geminiKey) {
       try {
         const sys  = buildSystemPrompt(body);
         const user = buildUserPrompt(body);
-        const raw  = GROQ_API_KEY ? await callGroq(sys, user) : await callGemini(sys, user);
+        const raw  = groqKey ? await callGroq(sys, user, groqKey) : await callGemini(sys, user, geminiKey);
         const parsed = JSON.parse(raw.replace(/^```json?\n?/, '').replace(/\n?```$/, '').trim());
         rawData = {
           label:         parsed.intent?.label          ?? 'neutral',

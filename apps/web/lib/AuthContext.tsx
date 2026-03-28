@@ -192,11 +192,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // After they set their real password, mfaEnrollRequired will gate the next login.
         if (profile.mustChangePassword) {
           setStage('authenticated');
-        } else if (profile.mfaEnrollRequired) {
+        } else if (profile.mfaEnrollRequired || (tRecord?.mfaConfig?.mfaMode === 'totp' && !profile.mfaEnabled)) {
+          if (tRecord) setPendingTenantId(tRecord.id);
           setStage('mfa_enroll');
         } else if (tRecord?.mfaRequired) {
-          setPendingTenantId(tenantId!);
-          setStage('mfa_required');
+          if (tRecord.mfaConfig?.mfaMode === 'totp' && profile.mfaEnabled) {
+             // The user already cleared `verifyTotpLogin` at /login
+             setStage('authenticated');
+          } else {
+             setPendingTenantId(tenantId!);
+             setStage('mfa_required');
+          }
         } else {
           setStage('authenticated');
         }
@@ -213,11 +219,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setTenantRecord(stored);
         if (profile.mustChangePassword) {
           setStage('authenticated');
-        } else if (profile.mfaEnrollRequired) {
+        } else if (profile.mfaEnrollRequired || (stored.mfaConfig?.mfaMode === 'totp' && !profile.mfaEnabled)) {
+          setPendingTenantId(stored.id);
           setStage('mfa_enroll');
         } else if (stored.mfaRequired) {
-          setPendingTenantId(storedId);
-          setStage('mfa_required');
+          if (stored.mfaConfig?.mfaMode === 'totp' && profile.mfaEnabled) {
+             setStage('authenticated');
+          } else {
+             setPendingTenantId(storedId!);
+             setStage('mfa_required');
+          }
         } else {
           setStage('authenticated');
         }

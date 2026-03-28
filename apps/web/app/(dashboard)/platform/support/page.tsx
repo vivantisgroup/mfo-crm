@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { CommunicationPanel } from '@/components/CommunicationPanel';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -25,64 +27,7 @@ interface Ticket {
 
 // ─── Mock Data ────────────────────────────────────────────────────────────────
 
-const TICKETS: Ticket[] = [
-  {
-    id: 'TKT-2026-0089', title: 'Cannot configure Google OAuth — redirect URI mismatch',
-    description: 'When I try to authorize Google Workspace in the integrations panel, I get a "redirect_uri_mismatch" error from Google. I have set the correct URI in Google Cloud Console.',
-    tenantName: 'Apex Wealth Partners', submittedBy: 'Carlos Mendes', email: 'c.mendes@apexwp.com',
-    status: 'in_progress', priority: 'high', category: 'integration', team: 'engineering',
-    assignedTo: 'Admin', createdAt: '2026-03-20T09:30:00Z', updatedAt: '2026-03-20T10:45:00Z',
-    slaDeadline: '2026-03-20T17:30:00Z', slaBreached: false, tags: ['google', 'integration', 'oauth'],
-    responses: [
-      { author: 'Support Bot', message: 'Thank you for reporting this. We have assigned this to our engineering team.', timestamp: '2026-03-20T09:31:00Z', internal: false },
-      { author: 'Dev Team', message: 'The allowed redirect URIs in our OAuth app need to match exactly. Confirm your configured URI path. Also check tenant subdomain config.', timestamp: '2026-03-20T10:45:00Z', internal: true },
-    ],
-    activities: [
-      { type: 'status_change', title: 'Status changed to In Progress', timestamp: '2026-03-20T09:35:00Z' },
-      { type: 'assignment', title: 'Assigned to Dev Team', timestamp: '2026-03-20T09:35:00Z' }
-    ]
-  },
-  {
-    id: 'TKT-2026-0088', title: 'Invoice INV-2026-026 overdue — payment was made',
-    description: 'We made a bank transfer for invoice INV-2026-026 on Feb 25th. The invoice still shows as overdue in the billing panel. Please confirm receipt.',
-    tenantName: 'Pacific Family Office', submittedBy: 'Tom Baxter', email: 't.baxter@pacificfo.au',
-    status: 'waiting_client', priority: 'high', category: 'billing', team: 'operations',
-    assignedTo: null, createdAt: '2026-03-19T14:20:00Z', updatedAt: '2026-03-19T16:00:00Z',
-    slaDeadline: '2026-03-20T14:20:00Z', slaBreached: true, tags: ['billing', 'invoice', 'overdue'],
-    responses: [
-      { author: 'Finance Ops', message: 'We can see the invoice in our system. Please share the bank transfer receipt so we can match the payment.', timestamp: '2026-03-19T16:00:00Z', internal: false },
-    ],
-    activities: [
-      { type: 'sla_breach', title: 'SLA Breached', timestamp: '2026-03-20T14:20:00Z' }
-    ]
-  },
-  {
-    id: 'TKT-2026-0087', title: 'Feature Request: Export audit log to Excel',
-    description: 'We require the ability to export our full audit log to Excel format (XLSX) for our ANBIMA regulatory reporting. CSV is available but our compliance team uses Excel macros.',
-    tenantName: 'Vivants Multi-Family Office', submittedBy: 'Alexandra Torres', email: 'a.torres@vivants.com',
-    status: 'open', priority: 'normal', category: 'feature_request', team: 'engineering',
-    assignedTo: null, createdAt: '2026-03-18T11:00:00Z', updatedAt: '2026-03-18T11:00:00Z',
-    slaDeadline: '2026-03-25T11:00:00Z', slaBreached: false, tags: ['export', 'excel', 'compliance', 'audit'],
-    responses: [],
-    activities: []
-  },
-  {
-    id: 'TKT-2026-0086', title: 'CRITICAL: MFA codes rejected for all users after timezone change',
-    description: 'After our server timezone was changed to UTC, all MFA codes are being rejected by the platform. All users are locked out. This is a production incident.',
-    tenantName: 'Legacy Trust Group', submittedBy: 'Michael Grant', email: 'm.grant@legacytrust.co.uk',
-    status: 'resolved', priority: 'critical', category: 'security', team: 'engineering',
-    assignedTo: 'Security Team', createdAt: '2026-03-17T08:15:00Z', updatedAt: '2026-03-17T09:30:00Z',
-    slaDeadline: '2026-03-17T10:15:00Z', slaBreached: false, tags: ['mfa', 'critical', 'security', 'production'],
-    responses: [
-      { author: 'Security Team', message: 'Root cause identified: TOTP window was set to "Strict (±0)" — timezone change caused clock drift outside tolerance. Increased TOTP window to ±1 (30s). All users can now log in.', timestamp: '2026-03-17T09:30:00Z', internal: false },
-      { author: 'Security Team', message: 'Post-mortem: Recommend setting TOTP window to ±1 for production. Added monitoring for MFA rejection rates.', timestamp: '2026-03-17T10:00:00Z', internal: true },
-    ],
-    activities: [
-      { type: 'escalation', title: 'Ticket Escalated', timestamp: '2026-03-17T08:20:00Z' },
-      { type: 'status_change', title: 'Status changed to Resolved', timestamp: '2026-03-17T09:30:00Z' }
-    ]
-  },
-];
+// Tickets will be fetched from Firestore
 
 const STATUS_COLORS: Record<TicketStatus, string> = {
   open: '#6366f1', in_progress: '#f59e0b', waiting_client: '#22d3ee',
@@ -211,44 +156,54 @@ export default function SupportPage() {
   const [teamFilter, setTeamFilter] = useState<TicketTeam | 'all'>('all');
   const [queueFilter, setQueueFilter] = useState<TicketQueue>('all');
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(collection(db, 'platform_tickets'), orderBy('createdAt', 'desc'));
+    const unsub = onSnapshot(q, snap => {
+      setTickets(snap.docs.map(d => ({ id: d.id, ...d.data() } as Ticket)));
+      setLoading(false);
+    }, () => setLoading(false));
+    return unsub;
+  }, []);
 
   // Derived filtered tickets
   const filtered = useMemo(() => {
-    return TICKETS.filter(t => {
+    return tickets.filter(t => {
       if (search && !`${t.title} ${t.tenantName} ${t.submittedBy} ${t.id}`.toLowerCase().includes(search.toLowerCase())) return false;
       if (teamFilter !== 'all' && t.team !== teamFilter) return false;
       
       if (queueFilter === 'unassigned' && t.assignedTo !== null) return false;
-      if (queueFilter === 'my_tickets' && t.assignedTo !== 'Admin') return false; // Mocking 'Admin' as current user
+      if (queueFilter === 'my_tickets' && t.assignedTo !== 'Admin') return false; // Defaulting assigned filter for now
       if (queueFilter === 'pending_client' && t.status !== 'waiting_client') return false;
       if (queueFilter === 'escalated' && t.priority !== 'critical') return false;
 
       return true;
     });
-  }, [search, teamFilter, queueFilter]);
+  }, [search, teamFilter, queueFilter, tickets]);
 
-  const selectedTicket = useMemo(() => TICKETS.find(t => t.id === selectedTicketId) || null, [selectedTicketId]);
+  const selectedTicket = useMemo(() => tickets.find(t => t.id === selectedTicketId) || null, [selectedTicketId, tickets]);
 
   // Support health metrics
   const metrics = useMemo(() => {
-    const active = TICKETS.filter(t => t.status !== 'closed' && t.status !== 'resolved');
+    const active = tickets.filter(t => t.status !== 'closed' && t.status !== 'resolved');
     const breached = active.filter(t => t.slaBreached).length;
     const unassignedCount = active.filter(t => !t.assignedTo).length;
-    const avgResolutionHours = 4.2; // Mock metric
     return {
       activeTickets: active.length,
       slaBreachRate: active.length ? Math.round((breached / active.length) * 100) : 0,
       unassigned: unassignedCount,
-      avgResTime: avgResolutionHours
+      avgResTime: 0
     };
-  }, []);
+  }, [tickets]);
 
   const queueOptions: { id: TicketQueue; label: string; count: number }[] = [
-    { id: 'all', label: 'All Open Tickets', count: TICKETS.length },
-    { id: 'my_tickets', label: 'My Tickets', count: TICKETS.filter(t => t.assignedTo === 'Admin').length },
-    { id: 'unassigned', label: 'Unassigned', count: TICKETS.filter(t => !t.assignedTo).length },
-    { id: 'pending_client', label: 'Pending Client', count: TICKETS.filter(t => t.status === 'waiting_client').length },
-    { id: 'escalated', label: 'Escalated/Critical', count: TICKETS.filter(t => t.priority === 'critical').length },
+    { id: 'all', label: 'All Open Tickets', count: tickets.length },
+    { id: 'my_tickets', label: 'My Tickets', count: tickets.filter(t => t.assignedTo === 'Admin').length },
+    { id: 'unassigned', label: 'Unassigned', count: tickets.filter(t => !t.assignedTo).length },
+    { id: 'pending_client', label: 'Pending Client', count: tickets.filter(t => t.status === 'waiting_client').length },
+    { id: 'escalated', label: 'Escalated/Critical', count: tickets.filter(t => t.priority === 'critical').length },
   ];
 
   if (selectedTicket) {

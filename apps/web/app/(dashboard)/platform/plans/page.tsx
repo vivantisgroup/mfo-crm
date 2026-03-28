@@ -424,7 +424,7 @@ export default function PlanManagementPage() {
   };
 
   return (
-    <div className="page animate-fade-in">
+    <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
       {confirmOpts && <ConfirmDialog {...confirmOpts} />}
       {editing && (
         <PlanEditorModal plan={editing} isNew={isNew} onClose={() => { setEditing(null); setIsNew(false); }} onSave={handleSave} />
@@ -434,10 +434,10 @@ export default function PlanManagementPage() {
       )}
 
       {/* Header */}
-      <div className="page-header">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 pb-5 border-b border-tremor-border gap-4">
         <div>
-          <h1 className="page-title">Subscription Plans</h1>
-          <p className="page-subtitle">Define, version, and publish pricing plans. All changes are versioned for audit and grandfathering.</p>
+          <h1 className="text-3xl font-bold text-tremor-content-strong tracking-tight">Subscription Plans</h1>
+            <p className="mt-2 text-tremor-content">Define, version, and publish pricing plans. All changes are versioned for audit and grandfathering.</p>
         </div>
         <div className="page-actions">
           <button className="btn btn-secondary" onClick={handleSeed}>↑ Seed Defaults</button>
@@ -462,7 +462,7 @@ export default function PlanManagementPage() {
       {loading ? (
         <div style={{ textAlign: 'center', padding: 80, color: 'var(--text-tertiary)' }}>Loading plans…</div>
       ) : plans.length === 0 ? (
-        <div className="card" style={{ textAlign: 'center', padding: '60px 40px' }}>
+        <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ textAlign: 'center', padding: '60px 40px' }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>📦</div>
           <h2 style={{ fontWeight: 800, marginBottom: 8 }}>No plans yet</h2>
           <p style={{ color: 'var(--text-secondary)', marginBottom: 20 }}>Seed the defaults or create your first plan.</p>

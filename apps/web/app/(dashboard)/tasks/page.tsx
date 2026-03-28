@@ -820,7 +820,7 @@ function ListView({ tasks: allTasks, onSelectTask }: { tasks: Task[]; onSelectTa
       )}
 
       {/* ── Table ──────────────────────────────────────────────────────────── */}
-      <div className="card" style={{ overflow: 'auto', borderRadius: showFilters ? '0 0 var(--radius-lg) var(--radius-lg)' : 'var(--radius-lg)', marginTop: 0 }}>
+      <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ overflow: 'auto', borderRadius: showFilters ? '0 0 var(--radius-lg) var(--radius-lg)' : 'var(--radius-lg)', marginTop: 0 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr style={{ borderBottom: '2px solid var(--border)', background: 'var(--bg-surface)' }}>
@@ -979,14 +979,14 @@ function TaskDetailView({ task, onClose }: { task: Task; onClose: () => void }) 
             </div>
           </div>
 
-          <div className="card" style={{ padding: 20 }}>
+          <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 20 }}>
             <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: 'var(--text-secondary)' }}>Description</h3>
             <div style={{ fontSize: 14, color: 'var(--text-primary)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
               {task.description || <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>No description provided.</span>}
             </div>
           </div>
 
-          <div className="card" style={{ padding: 20 }}>
+          <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 20 }}>
             <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: 'var(--text-secondary)' }}>Details</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 24px' }}>
               <div>

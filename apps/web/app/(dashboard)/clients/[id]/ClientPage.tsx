@@ -34,8 +34,8 @@ export default function FamilyDetailPage() {
     return (
       <div className="empty-state">
         <div className="empty-state-icon">⚠️</div>
-        <div className="empty-state-title">Family Not Found</div>
-        <button className="btn btn-secondary mt-4" onClick={() => router.push('/families')}>← Back to Families</button>
+        <div className="empty-state-title">Client Not Found</div>
+        <button className="btn btn-secondary mt-4" onClick={() => router.push('/clients')}>← Back to Clients</button>
       </div>
     );
   }
@@ -44,7 +44,7 @@ export default function FamilyDetailPage() {
     <div className="page animate-fade-in" style={{ maxWidth: 1400, margin: '0 auto' }}>
       {/* Breadcrumbs */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, fontSize: 13, color: 'var(--text-tertiary)', fontWeight: 600 }}>
-        <button onClick={() => router.push('/families')} style={{ background: 'none', border: 'none', color: 'var(--brand-400)', cursor: 'pointer', padding: 0, fontWeight: 600 }}>Families</button>
+        <button onClick={() => router.push('/clients')} style={{ background: 'none', border: 'none', color: 'var(--brand-400)', cursor: 'pointer', padding: 0, fontWeight: 600 }}>Clients</button>
         <span>/</span>
         <span style={{ color: 'var(--text-primary)' }}>{family.name}</span>
       </div>
@@ -62,7 +62,7 @@ export default function FamilyDetailPage() {
           </p>
         </div>
         <div className="page-actions">
-          <button className="btn btn-secondary">Edit Family</button>
+          <button className="btn btn-secondary">Edit Client</button>
           <button className="btn btn-primary">Generate Report</button>
         </div>
       </div>

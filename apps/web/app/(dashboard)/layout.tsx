@@ -55,7 +55,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
     // Tenant-restricted route guard (internal users can't access family routes)
     if (isAuthenticated && tenant?.isInternal) {
       const privateRoutes = [
-        '/families', '/contacts', '/organizations', '/activities', '/tasks', '/portfolio',
+        '/clients', '/relationships/contacts', '/relationships/organizations', '/activities', '/tasks', '/portfolio',
         '/documents', '/governance', '/estate', '/concierge', '/calendar',
       ];
       if (privateRoutes.some(r => pathname.startsWith(r))) {

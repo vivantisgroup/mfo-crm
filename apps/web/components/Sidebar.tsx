@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
@@ -11,7 +11,7 @@ import {
   LayoutDashboard, Inbox, BarChart2, Building2, Target,
   Ticket, Receipt, DollarSign, RotateCcw, CreditCard,
   LineChart, Bot, ShieldCheck, Settings2, Database,
-  Server, Search, HardDrive, ChevronLeft, ChevronRight,
+  Server, Search, HardDrive, ChevronLeft, ChevronRight, ChevronDown,
   Mail, Users, Calendar, CheckSquare, FolderOpen, FileText,
   MessageSquare, TrendingUp, Briefcase, Settings, UserCog,
   type LucideIcon,
@@ -111,6 +111,8 @@ export default function Sidebar({ collapsed, toggle }: SidebarProps) {
   const pathname = usePathname();
   const { tenant } = useAuth();
   const { companyLogoSmall } = useTheme();
+  
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const nav = useMemo(() => {
     if (tenant?.isInternal) return PLATFORM_NAV;
@@ -123,6 +125,7 @@ export default function Sidebar({ collapsed, toggle }: SidebarProps) {
         icon:  HREF_ICON_MAP[item.href as string] ?? LayoutDashboard,
         label: item.label ?? item.labelKey,
         badge: item.badge,
+        subItems: item.subItems,
       })),
     }));
   }, [tenant]);
@@ -162,8 +165,60 @@ export default function Sidebar({ collapsed, toggle }: SidebarProps) {
           <React.Fragment key={section}>
             {!collapsed && <div className="nav-section-label">{section}</div>}
             {items.map((item: any) => {
-              const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
+              const hasSub = item.subItems && item.subItems.length > 0;
+              const isChildActive = hasSub && item.subItems.some((s: any) => pathname === s.href || pathname.startsWith(s.href));
+              const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href)) || isChildActive;
+              const isExpanded = expanded[item.href] || active;
+
               const IconComponent: LucideIcon = item.icon;
+              
+              if (hasSub) {
+                return (
+                  <div key={item.href} style={{ display: 'flex', flexDirection: 'column' }}>
+                    <button
+                      onClick={() => setExpanded(p => ({ ...p, [item.href]: !isExpanded }))}
+                      className={`nav-item${active ? ' active' : ''}`}
+                      title={collapsed ? item.label : undefined}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%' }}
+                    >
+                      <span className="nav-item-icon">
+                        <IconComponent size={16} strokeWidth={active ? 2.2 : 1.8} />
+                      </span>
+                      {!collapsed && (
+                        <>
+                          <span className="nav-item-label">{item.label}</span>
+                          <span style={{ marginLeft: 'auto', display: 'flex', color: 'var(--text-tertiary)' }}>
+                            {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          </span>
+                        </>
+                      )}
+                    </button>
+                    {!collapsed && isExpanded && (
+                      <div style={{ display: 'flex', flexDirection: 'column', marginTop: 2, marginBottom: 4 }}>
+                        {item.subItems.map((s: any) => {
+                          const subActive = pathname === s.href || pathname.startsWith(s.href);
+                          return (
+                            <Link
+                              key={s.href}
+                              href={s.href}
+                              className={`nav-item${subActive ? ' active' : ''}`}
+                              style={{ minHeight: 32 }}
+                            >
+                              <span className="nav-item-icon" style={{ opacity: 0.3 }}>
+                                <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'currentColor' }} />
+                              </span>
+                              <span className="nav-item-label" style={{ fontSize: 13, color: subActive ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                                {s.label}
+                              </span>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
               return (
                 <Link
                   key={item.href}

@@ -383,7 +383,7 @@ export default function PlatformUsersPage() {
   }
 
   return (
-    <div className="page animate-fade-in">
+    <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
 
       {/* Modals */}
       {showAdd && (
@@ -400,10 +400,10 @@ export default function PlatformUsersPage() {
       )}
 
       {/* Header */}
-      <div className="page-header">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 pb-5 border-b border-tremor-border gap-4">
         <div>
-          <h1 className="page-title">Platform Users</h1>
-          <p className="page-subtitle">Create, edit, suspend, and manage platform-wide user access and roles.</p>
+          <h1 className="text-3xl font-bold text-tremor-content-strong tracking-tight">Platform Users</h1>
+            <p className="mt-2 text-tremor-content">Create, edit, suspend, and manage platform-wide user access and roles.</p>
         </div>
         <div className="page-actions">
           <button className="btn btn-secondary" onClick={load}>↻ Refresh</button>

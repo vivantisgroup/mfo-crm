@@ -9,6 +9,11 @@ import { getPlatformConfig, getAllTenants, getAllUsers } from '@/lib/platformSer
 import type { PlatformConfig, TenantRecord, UserProfile } from '@/lib/platformService';
 import { getAllOpportunities, getAllActivities, getSalesTeams } from '@/lib/crmService';
 import type { Opportunity, CrmActivity, SalesTeam } from '@/lib/crmService';
+import {
+  Card, Metric, Text, Title, Subtitle, Flex, Grid, Col,
+  AreaChart, BarList, DonutChart, BadgeDelta, ProgressBar, Badge,
+  Tracker, Divider, Button, Icon
+} from '@tremor/react';
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
 
@@ -23,53 +28,17 @@ function getGreeting() {
   return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
 }
 
-// ─── UI Components ────────────────────────────────────────────────────────────
-
-function KPI({ label, value, sub, color = 'var(--brand-500)', icon }: {
-  label: string; value: string; sub?: string; color?: string; icon?: string;
-}) {
-  return (
-    <div style={{
-      padding: '20px 24px', background: 'var(--bg-elevated)',
-      borderRadius: 14, border: '1px solid var(--border)',
-    }}>
-      {icon && <div style={{ fontSize: 24, marginBottom: 8 }}>{icon}</div>}
-      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 28, fontWeight: 900, color }}>{value}</div>
-      {sub && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>{sub}</div>}
-    </div>
-  );
-}
-
-function Section({ title, link, children }: { title: string; link?: { href: string; label: string }; children: React.ReactNode }) {
-  return (
-    <div style={{ background: 'var(--bg-elevated)', borderRadius: 14, border: '1px solid var(--border)', overflow: 'hidden', marginTop: 20 }}>
-      <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontWeight: 800, fontSize: 15 }}>{title}</div>
-        {link && <Link href={link.href} style={{ fontSize: 12, color: 'var(--brand-500)', fontWeight: 600 }}>{link.label} →</Link>}
-      </div>
-      <div style={{ padding: 20 }}>{children}</div>
-    </div>
-  );
-}
-
 function GreetingBar({ name, role, action }: { name: string; role: string; action?: { href: string; label: string } }) {
   return (
-    <div style={{
-      marginBottom: 24, padding: '18px 24px',
-      background: 'linear-gradient(135deg, var(--brand-500) 0%, #a78bfa 100%)',
-      borderRadius: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    }}>
+    <div className="mb-6 p-6 rounded-tremor-default bg-gradient-to-br from-blue-600 to-indigo-900 flex justify-between items-center shadow-lg">
       <div>
-        <div style={{ fontSize: 20, fontWeight: 900, color: 'white' }}>{getGreeting()}, {name} 👋</div>
-        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.8)', marginTop: 4 }}>{role}</div>
+        <h1 className="text-2xl font-bold text-white tracking-tight">{getGreeting()}, {name} 👋</h1>
+        <p className="text-sm text-blue-100 mt-1 font-medium bg-white/10 inline-block px-3 py-1 rounded-full">{role}</p>
       </div>
       {action && (
-        <Link href={action.href} style={{
-          padding: '10px 20px', background: 'rgba(255,255,255,0.2)',
-          color: 'white', borderRadius: 10, fontWeight: 700, fontSize: 13,
-          textDecoration: 'none', border: '1px solid rgba(255,255,255,0.3)',
-        }}>{action.label}</Link>
+        <Link href={action.href} className="px-5 py-2.5 bg-white/20 hover:bg-white/30 transition-colors text-white rounded-tremor-default font-semibold text-sm border border-white/30 backdrop-blur-sm shadow-sm">
+          {action.label}
+        </Link>
       )}
     </div>
   );
@@ -88,65 +57,111 @@ function PlatformAdminDashboard({ user, platformCfg, tenants, users }: {
   const trials    = tenants.filter(t => t.status === 'trial').length;
   const suspended = tenants.filter(t => t.status === 'suspended').length;
 
+  const tenantData = [
+    { name: 'Active', value: active },
+    { name: 'Trial', value: trials },
+    { name: 'Suspended', value: suspended }
+  ].filter(d => d.value > 0);
+
+  // Mock area chart data for tenant growth
+  const chartData = [
+    { date: 'Jan 26', "New Tenants": 2, "Churned": 0 },
+    { date: 'Feb 26', "New Tenants": 5, "Churned": 1 },
+    { date: 'Mar 26', "New Tenants": active + trials, "Churned": suspended },
+  ];
+
   return (
-    <div className="page animate-fade-in">
+    <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
       <GreetingBar
         name={user?.name?.split(' ')[0] ?? 'Admin'}
         role="Platform Administration"
         action={{ href: '/platform/tenants', label: '+ New Tenant' }}
       />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 20 }}>
-        <KPI label="Active Tenants"  value={active.toString()}        sub="Platform clients"         icon="🏢" />
-        <KPI label="Trial Tenants"   value={trials.toString()}        sub="Evaluating"               icon="⏳" color="#f59e0b" />
-        <KPI label="Total Users"     value={users.length.toString()}  sub="Across all tenants"       icon="👥" />
-        <KPI label="Platform Status" value="Healthy"                   sub="All systems operational"  icon="💚" color="#22c55e" />
-      </div>
+      
+      <Grid numItemsSm={2} numItemsLg={4} className="gap-6 mb-6">
+        <Card decoration="top" decorationColor="emerald">
+          <Text>Active Tenants</Text>
+          <Metric>{active}</Metric>
+          <Text className="mt-2 text-tremor-content">Platform clients</Text>
+        </Card>
+        <Card decoration="top" decorationColor="amber">
+          <Text>Trial Tenants</Text>
+          <Metric>{trials}</Metric>
+          <Text className="mt-2 text-tremor-content">Evaluating</Text>
+        </Card>
+        <Card decoration="top" decorationColor="blue">
+          <Text>Total Users</Text>
+          <Metric>{users.length}</Metric>
+          <Text className="mt-2 text-tremor-content">Across all tenants</Text>
+        </Card>
+        <Card decoration="top" decorationColor="teal">
+          <Text>Platform Status</Text>
+          <Metric>Healthy</Metric>
+          <Text className="mt-2 text-tremor-content">All systems operational</Text>
+        </Card>
+      </Grid>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        <Section title="Tenant Breakdown" link={{ href: '/platform/tenants', label: 'Manage' }}>
-          {[
-            { label: 'Active',    count: active,    color: '#22c55e' },
-            { label: 'Trial',     count: trials,    color: '#f59e0b' },
-            { label: 'Suspended', count: suspended, color: '#ef4444' },
-          ].map(s => (
-            <div key={s.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
-              <span>{s.label}</span>
-              <span style={{ fontWeight: 700, color: s.color }}>{s.count}</span>
+      <Grid numItemsSm={1} numItemsLg={2} className="gap-6">
+        <Card>
+          <Flex alignItems="start">
+            <div>
+              <Title>Tenant Breakdown</Title>
+              <Subtitle>Distribution by subscription status</Subtitle>
             </div>
-          ))}
-        </Section>
+            <Link href="/platform/tenants" className="text-sm font-medium text-blue-500 hover:underline">Manage &rarr;</Link>
+          </Flex>
+          <div className="mt-6 flex items-center justify-center h-52">
+            <DonutChart
+              data={tenantData}
+              category="value"
+              index="name"
+              colors={['emerald', 'amber', 'rose']}
+              className="w-40 h-40"
+              variant="pie"
+            />
+          </div>
+          <div className="mt-6">
+            <BarList data={tenantData.map(d => ({ name: d.name, value: d.value }))} className="mt-2" color="blue" />
+          </div>
+        </Card>
 
-        <Section title="Recent Tenants" link={{ href: '/platform/tenants', label: 'View All' }}>
-          {tenants.slice(-5).reverse().map(t => (
-            <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
-              <span style={{ fontWeight: 600 }}>{t.name}</span>
-              <span style={{
-                fontSize: 11, padding: '2px 8px', borderRadius: 20, fontWeight: 600,
-                background: t.status === 'active' ? '#22c55e15' : '#f59e0b15',
-                color: t.status === 'active' ? '#22c55e' : '#f59e0b',
-              }}>{t.status}</span>
+        <Card>
+           <Flex alignItems="start">
+            <div>
+              <Title>Platform Growth</Title>
+              <Subtitle>Tenant acquisition over last 90 days</Subtitle>
             </div>
-          ))}
-        </Section>
-      </div>
+          </Flex>
+          <AreaChart
+            className="h-72 mt-4"
+            data={chartData}
+            index="date"
+            categories={["New Tenants", "Churned"]}
+            colors={["indigo", "rose"]}
+            yAxisWidth={30}
+            showAnimation={true}
+          />
+        </Card>
+      </Grid>
 
-      <Section title="Quick Links">
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+      <Card className="mt-6">
+        <Title>Quick Engine Access</Title>
+        <Subtitle>Jump to a centralized module</Subtitle>
+        <div className="mt-4 flex flex-wrap gap-3">
           {[
-            { href: '/platform/crm',       label: '📊 CRM Suite' },
-            { href: '/platform/users',     label: '👤 Users' },
-            { href: '/platform/roles',     label: '🔐 Roles' },
+            { href: '/platform/crm',       label: '📊 Global CRM' },
+            { href: '/platform/users',     label: '👤 User Directory' },
+            { href: '/platform/roles',     label: '🔐 Role Policies' },
             { href: '/platform/analytics', label: '📈 Analytics' },
-            { href: '/platform/support',   label: '🎧 Support' },
+            { href: '/platform/support',   label: '🎧 Support Center' },
+            { href: '/admin',              label: '⚙️ Settings (BYOK)' },
           ].map(l => (
-            <Link key={l.href} href={l.href} style={{
-              padding: '8px 16px', background: 'var(--bg-canvas)',
-              border: '1px solid var(--border)', borderRadius: 10,
-              fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', textDecoration: 'none',
-            }}>{l.label}</Link>
+            <Link key={l.href} href={l.href} className="px-4 py-2 bg-tremor-background-muted hover:bg-tremor-background-subtle border border-tremor-border rounded-tremor-small text-sm font-medium text-tremor-content-strong transition-colors">
+              {l.label}
+            </Link>
           ))}
         </div>
-      </Section>
+      </Card>
     </div>
   );
 }
@@ -167,75 +182,109 @@ function SalesLeaderDashboard({ user, opps, activities, teams }: {
     if (!o.closeDate) return false;
     const days = (new Date(o.closeDate).getTime() - Date.now()) / 86_400_000;
     return days >= 0 && days <= 30;
-  });
+  }).sort((a,b) => (b.valueUsd??0) - (a.valueUsd??0));
 
   const closedTotal = opps.filter(o => ['closed_won','closed_lost'].includes(o.stage)).length;
   const winRate = closedTotal > 0 ? Math.round((wonOpps.length / closedTotal) * 100) : 0;
 
+  const teamAttainment = teams.map(t => {
+    const teamWon = opps.filter(o => o.stage === 'closed_won' && t.memberIds.includes(o.assignedToUid ?? o.ownerId ?? '')).reduce((s, o) => s + (o.valueUsd ?? 0), 0);
+    return {
+      name: t.name,
+      value: t.quota > 0 ? Math.min(100, Math.round((teamWon / t.quota) * 100)) : 0,
+      wonAmount: teamWon,
+      quota: t.quota
+    };
+  }).sort((a, b) => b.value - a.value);
+
   return (
-    <div className="page animate-fade-in">
+    <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
       <GreetingBar
         name={user?.name?.split(' ')[0] ?? 'Manager'}
         role="Sales Leadership"
-        action={{ href: '/platform/crm', label: '→ Open CRM' }}
+        action={{ href: '/platform/crm', label: '→ View Pipeline' }}
       />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 20 }}>
-        <KPI label="Pipeline Value" value={fmtUsd(pipeline)} sub={`${openOpps.length} active deals`}      icon="🎯" />
-        <KPI label="Won Revenue"    value={fmtUsd(won)}      sub="Closed won"                               icon="🏆" color="#22c55e" />
-        <KPI label="Win Rate"       value={`${winRate}%`}    sub="Of closed deals"                          icon="📊" color={winRate >= 30 ? '#22c55e' : '#f59e0b'} />
-        <KPI label="Closing ≤30d"  value={closingSoon.length.toString()} sub="Deals at risk if missed"    icon="⏰" color={closingSoon.length > 3 ? '#ef4444' : '#f59e0b'} />
-      </div>
+      
+      <Grid numItemsSm={2} numItemsLg={4} className="gap-6 mb-6">
+        <Card decoration="top" decorationColor="indigo">
+          <Text>Total Pipeline</Text>
+          <Metric>{fmtUsd(pipeline)}</Metric>
+          <Flex className="mt-2 text-sm text-tremor-content">
+            <Text>{openOpps.length} active deals</Text>
+          </Flex>
+        </Card>
+        <Card decoration="top" decorationColor="emerald">
+          <Text>Won Revenue</Text>
+          <Metric>{fmtUsd(won)}</Metric>
+          <Text className="mt-2 text-tremor-content">Closed won this cycle</Text>
+        </Card>
+        <Card decoration="top" decorationColor={winRate >= 30 ? "emerald" : "amber"}>
+          <Text>Win Rate</Text>
+          <Metric>{winRate}%</Metric>
+          <Text className="mt-2 text-tremor-content">Across {closedTotal} closed opportunities</Text>
+        </Card>
+        <Card decoration="top" decorationColor={closingSoon.length > 3 ? "rose" : "amber"}>
+          <Text>Closing ≤30d</Text>
+          <Metric>{closingSoon.length}</Metric>
+          <Text className="mt-2 text-tremor-content">Deals fast approaching close date</Text>
+        </Card>
+      </Grid>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        <Section title="Closing Soon" link={{ href: '/platform/crm', label: 'View Pipeline' }}>
-          {closingSoon.length === 0 ? (
-            <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>No deals closing in the next 30 days.</div>
-          ) : closingSoon.slice(0, 6).map(o => (
-            <div key={o.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
-              <div>
-                <div style={{ fontWeight: 600 }}>{o.orgName}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{o.ownerName} · {o.stage}</div>
+      <Grid numItemsSm={1} numItemsLg={2} className="gap-6 mb-6">
+         <Card>
+          <Title>Sales Teams Attainment</Title>
+          <Subtitle>Quota completion percentage</Subtitle>
+          <BarList 
+            data={teamAttainment} 
+            className="mt-6"
+            color="indigo" 
+            valueFormatter={(val: number) => `${val}%`}
+          />
+        </Card>
+
+        <Card>
+          <Flex alignItems="start">
+            <div>
+              <Title>Hot Deals Closing Soon</Title>
+              <Subtitle>Top 6 deals scheduled to close in next 30 days</Subtitle>
+            </div>
+            <Badge color="rose">{closingSoon.length} Deals</Badge>
+          </Flex>
+          <div className="mt-6 flex flex-col gap-4">
+            {closingSoon.length === 0 ? (
+              <Text>No deals closing in the next 30 days.</Text>
+            ) : closingSoon.slice(0, 6).map(o => (
+              <div key={o.id} className="flex justify-between items-center border-b border-tremor-border pb-3 last:border-0 last:pb-0">
+                <div>
+                  <Text className="font-semibold text-tremor-content-strong">{o.orgName}</Text>
+                  <Text className="text-xs text-tremor-content">{o.ownerName} &bull; {o.stage.replace('_', ' ')}</Text>
+                </div>
+                <div className="text-right">
+                  <Text className="font-bold text-tremor-content-strong">{fmtUsd(o.valueUsd ?? 0)}</Text>
+                  <Text className="text-xs text-tremor-brand">{o.closeDate?.slice(0,10)}</Text>
+                </div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontWeight: 700 }}>{fmtUsd(o.valueUsd ?? 0)}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{o.closeDate?.slice(0,10)}</div>
+            ))}
+          </div>
+        </Card>
+      </Grid>
+
+      <Card>
+        <Title>Recent Activities Feed</Title>
+        <div className="mt-4 flex flex-col gap-3">
+          {activities.slice(0, 5).map(a => (
+            <div key={a.id} className="flex items-center gap-4 py-3 border-b border-tremor-border last:border-0 last:pb-0">
+              <div className="w-10 h-10 rounded-tremor-default bg-tremor-background-muted flex items-center justify-center text-lg shadow-sm border border-tremor-border">
+                {a.type === 'call' ? '📞' : a.type === 'email' ? '📧' : a.type === 'meeting' ? '🤝' : '📝'}
+              </div>
+              <div className="flex-1">
+                <Text className="font-semibold text-tremor-content-strong leading-tight">{a.subject}</Text>
+                <Text className="text-xs text-tremor-content mt-1">{a.performedByName} &bull; {new Date(a.scheduledAt).toLocaleDateString()}</Text>
               </div>
             </div>
           ))}
-        </Section>
-
-        <Section title="Sales Teams" link={{ href: '/platform/crm', label: 'View Teams' }}>
-          {teams.slice(0, 6).map(t => {
-            const won = opps.filter(o => o.stage === 'closed_won' && t.memberIds.includes(o.assignedToUid ?? o.ownerId ?? '')).reduce((s, o) => s + (o.valueUsd ?? 0), 0);
-            const pct = t.quota > 0 ? Math.min(100, Math.round((won / t.quota) * 100)) : 0;
-            return (
-              <div key={t.id} style={{ marginBottom: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
-                  <span style={{ fontWeight: 600 }}>{t.name}</span>
-                  <span style={{ fontWeight: 700, color: pct >= 80 ? '#22c55e' : '#f59e0b' }}>{pct}%</span>
-                </div>
-                <div style={{ height: 6, background: 'var(--bg-canvas)', borderRadius: 3, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${pct}%`, background: pct >= 80 ? '#22c55e' : '#f59e0b', borderRadius: 3, transition: 'width 0.6s' }} />
-                </div>
-              </div>
-            );
-          })}
-        </Section>
-      </div>
-
-      <Section title="Recent Activities" link={{ href: '/platform/crm', label: 'Activity Log' }}>
-        {activities.slice(0, 5).map(a => (
-          <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ width: 34, height: 34, borderRadius: 8, background: 'var(--bg-canvas)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>
-              {a.type === 'call' ? '📞' : a.type === 'email' ? '📧' : a.type === 'meeting' ? '🤝' : '📝'}
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 13 }}>{a.subject}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{a.performedByName} · {new Date(a.scheduledAt).toLocaleDateString()}</div>
-            </div>
-          </div>
-        ))}
-      </Section>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -255,54 +304,91 @@ function SalesRepDashboard({ user, opps, activities }: {
 
   const stageOrder = ['lead', 'qualification', 'demo', 'proposal', 'negotiation', 'closed_won', 'closed_lost'];
   const byStage = stageOrder.map(s => ({
-    stage: s,
-    count: myOpps.filter(o => o.stage === s).length,
+    name: s.replace('_', ' ').charAt(0).toUpperCase() + s.replace('_', ' ').slice(1),
     value: myOpps.filter(o => o.stage === s).reduce((sum, o) => sum + (o.valueUsd ?? 0), 0),
+    count: myOpps.filter(o => o.stage === s).length,
   })).filter(s => s.count > 0);
 
   const myActivities = activities.filter(a => a.performedByUid === uid || a.performedByName === name);
 
   return (
-    <div className="page animate-fade-in">
+    <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
       <GreetingBar
-        name={user?.name?.split(' ')[0] ?? 'Rep'}
-        role="Account Executive"
-        action={{ href: '/platform/crm', label: '+ New Opportunity' }}
+        name={user?.name?.split(' ')[0] ?? 'Account Executive'}
+        role="Sales Representative"
+        action={{ href: '/platform/crm', label: 'Launch Copilot ⚡' }}
       />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 20 }}>
-        <KPI label="My Pipeline"    value={fmtUsd(pipeline)}                  sub={`${openOpps.length} open deals`} icon="🎯" />
-        <KPI label="Won This Cycle" value={fmtUsd(won)}                        sub="Closed won"                     icon="🏆" color="#22c55e" />
-        <KPI label="Activities"     value={myActivities.length.toString()}     sub="Logged by me"                   icon="📅" />
-        <KPI label="Open Deals"     value={openOpps.length.toString()}          sub="In progress"                    icon="🔄" color="#6366f1" />
-      </div>
+      
+      <Grid numItemsSm={2} numItemsLg={4} className="gap-6 mb-6">
+        <Card decoration="top" decorationColor="blue">
+          <Text>My Pipeline</Text>
+          <Metric>{fmtUsd(pipeline)}</Metric>
+          <Text className="mt-2 text-tremor-content">{openOpps.length} open deals</Text>
+        </Card>
+        <Card decoration="top" decorationColor="emerald">
+          <Text>Won This Cycle</Text>
+          <Metric>{fmtUsd(won)}</Metric>
+          <Text className="mt-2 text-tremor-content">Closed won revenue</Text>
+        </Card>
+        <Card decoration="top" decorationColor="amber">
+          <Text>My Activities</Text>
+          <Metric>{myActivities.length}</Metric>
+          <Text className="mt-2 text-tremor-content">Logged interactions</Text>
+        </Card>
+        <Card decoration="top" decorationColor="indigo">
+          <Text>In Progress</Text>
+          <Metric>{openOpps.length}</Metric>
+          <Text className="mt-2 text-tremor-content">Actively working deals</Text>
+        </Card>
+      </Grid>
 
-      <Section title="My Deals by Stage" link={{ href: '/platform/crm', label: 'Open Pipeline' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10 }}>
-          {byStage.map(s => (
-            <div key={s.stage} style={{ padding: '14px 16px', background: 'var(--bg-canvas)', borderRadius: 10, border: '1px solid var(--border)', textAlign: 'center' }}>
-              <div style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, marginBottom: 6 }}>{s.stage.replace('_',' ')}</div>
-              <div style={{ fontSize: 24, fontWeight: 900, color: 'var(--brand-500)' }}>{s.count}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>{fmtUsd(s.value)}</div>
+      <Grid numItemsSm={1} numItemsLg={2} className="gap-6">
+        <Card>
+          <Title>Pipeline Spread</Title>
+          <Subtitle>Deal value distributed by current stage</Subtitle>
+          <div className="mt-6">
+            <DonutChart
+              data={byStage}
+              category="value"
+              index="name"
+              valueFormatter={fmtUsd}
+              className="h-48"
+              colors={['slate', 'blue', 'indigo', 'violet', 'fuchsia', 'emerald', 'rose']}
+            />
+          </div>
+          <Divider />
+          <div className="mt-4 flex flex-col gap-3">
+             {byStage.map(s => (
+               <div key={s.name} className="flex justify-between items-center text-sm">
+                 <span className="text-tremor-content-strong text-xs font-semibold uppercase">{s.name} <span className="text-tremor-content ml-1">({s.count})</span></span>
+                 <span className="font-bold text-tremor-content-strong">{fmtUsd(s.value)}</span>
+               </div>
+             ))}
+          </div>
+        </Card>
+
+        <Card>
+          <Flex alignItems="center" className="mb-4">
+            <Title>Recent Activities</Title>
+            <Link href="/platform/crm" className="text-sm font-medium text-blue-500 hover:underline">Log New &rarr;</Link>
+          </Flex>
+          {myActivities.length === 0 ? (
+            <div className="text-tremor-content text-sm text-center py-10">
+              No activities logged yet. Get out there and hustle!
+            </div>
+          ) : myActivities.slice(0, 6).map(a => (
+            <div key={a.id} className="flex items-center gap-4 py-3 border-b border-tremor-border last:border-0 last:pb-0">
+               <div className="w-10 h-10 rounded-tremor-default bg-tremor-background-subtle flex items-center justify-center text-lg border border-tremor-border shadow-sm">
+                {a.type === 'call' ? '📞' : a.type === 'email' ? '📧' : a.type === 'meeting' ? '🤝' : '📝'}
+              </div>
+              <div className="flex-1">
+                <Text className="font-semibold text-tremor-content-strong">{a.subject}</Text>
+                <Text className="text-xs text-tremor-content mt-1">{a.orgName} &bull; {new Date(a.scheduledAt).toLocaleDateString()}</Text>
+              </div>
             </div>
           ))}
-        </div>
-      </Section>
-
-      <Section title="My Recent Activities" link={{ href: '/platform/crm', label: 'Log Activity' }}>
-        {myActivities.length === 0 ? (
-          <div style={{ color: 'var(--text-tertiary)', fontSize: 13, textAlign: 'center', padding: '20px 0' }}>
-            No activities logged yet. <Link href="/platform/crm" style={{ color: 'var(--brand-500)' }}>Log your first activity →</Link>
-          </div>
-        ) : myActivities.slice(0, 5).map(a => (
-          <div key={a.id} style={{ display: 'flex', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 13, alignItems: 'center' }}>
-            <span style={{ fontSize: 18 }}>{a.type === 'call' ? '📞' : a.type === 'email' ? '📧' : a.type === 'meeting' ? '🤝' : '📝'}</span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600 }}>{a.subject}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{a.orgName} · {new Date(a.scheduledAt).toLocaleDateString()}</div>
-            </div>
-          </div>
-        ))}
-      </Section>
+        </Card>
+      </Grid>
     </div>
   );
 }
@@ -322,47 +408,78 @@ function CustomerSuccessDashboard({ user, opps, activities }: {
     if (!o.closeDate) return false;
     const days = (new Date(o.closeDate).getTime() - Date.now()) / 86_400_000;
     return days < 30 && days >= 0;
-  });
+  }).sort((a,b) => (b.valueUsd??0) - (a.valueUsd??0));
 
   return (
-    <div className="page animate-fade-in">
+    <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
       <GreetingBar
         name={user?.name?.split(' ')[0] ?? 'CSM'}
-        role="Customer Success"
-        action={{ href: '/platform/crm', label: '→ Activity Log' }}
+        role="Customer Success / AM"
+        action={{ href: '/platform/crm', label: '→ View Accounts' }}
       />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 20 }}>
-        <KPI label="Renewals Tracked" value={renewals.length.toString()}  sub="Active accounts"       icon="🔁" />
-        <KPI label="At Risk ≤30d"     value={atRisk.length.toString()}      sub="Need attention"        icon="⚠️" color={atRisk.length > 0 ? '#ef4444' : '#22c55e'} />
-        <KPI label="Total Activities" value={activities.length.toString()} sub="All interactions"      icon="📅" />
-        <KPI label="Accounts"         value={opps.length.toString()}        sub="In CRM"                icon="🏢" color="#6366f1" />
-      </div>
+      
+      <Grid numItemsSm={2} numItemsLg={4} className="gap-6 mb-6">
+        <Card decoration="top" decorationColor="indigo">
+          <Text>Client Renewals</Text>
+          <Metric>{renewals.length}</Metric>
+          <Text className="mt-2 text-tremor-content">Tracked active cycles</Text>
+        </Card>
+        <Card decoration="top" decorationColor={atRisk.length > 0 ? "rose" : "emerald"}>
+          <Text>At Risk ≤30d</Text>
+          <Metric>{atRisk.length}</Metric>
+          <Text className="mt-2 text-tremor-content">Impending expirations</Text>
+        </Card>
+        <Card decoration="top" decorationColor="teal">
+          <Text>Total Engagements</Text>
+          <Metric>{activities.length}</Metric>
+          <Text className="mt-2 text-tremor-content">All client interactions</Text>
+        </Card>
+        <Card decoration="top" decorationColor="amber">
+          <Text>Accounts Map</Text>
+          <Metric>{opps.length}</Metric>
+          <Text className="mt-2 text-tremor-content">Managed in CRM</Text>
+        </Card>
+      </Grid>
 
-      <Section title="Renewals at Risk" link={{ href: '/platform/crm', label: 'View All' }}>
-        {atRisk.length === 0 ? (
-          <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>No renewals at risk in the next 30 days. 🎉</div>
-        ) : atRisk.map(o => (
-          <div key={o.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
-            <div>
-              <div style={{ fontWeight: 600 }}>{o.orgName}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Closes {o.closeDate?.slice(0,10)}</div>
+      <Grid numItemsSm={1} numItemsLg={2} className="gap-6">
+        <Card>
+           <Flex alignItems="center" className="mb-4">
+            <Title>Renewals at Risk</Title>
+            <Badge color={atRisk.length === 0 ? "emerald" : "rose"}>{atRisk.length} Urgent</Badge>
+          </Flex>
+          {atRisk.length === 0 ? (
+            <Text>No renewals at risk in the next 30 days. 🎉</Text>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {atRisk.map(o => (
+                <div key={o.id} className="flex justify-between items-center py-2 border-b border-tremor-border last:border-0 last:pb-0">
+                  <div>
+                    <Text className="font-semibold text-tremor-content-strong text-sm">{o.orgName}</Text>
+                    <Text className="text-xs text-tremor-content">Closes {o.closeDate?.slice(0,10)}</Text>
+                  </div>
+                  <Text className="font-bold text-rose-500">{fmtUsd(o.valueUsd ?? 0)}</Text>
+                </div>
+              ))}
             </div>
-            <div style={{ fontWeight: 700, color: '#ef4444' }}>{fmtUsd(o.valueUsd ?? 0)}</div>
-          </div>
-        ))}
-      </Section>
+          )}
+        </Card>
 
-      <Section title="Recent Client Interactions" link={{ href: '/platform/crm', label: 'Log Activity' }}>
-        {activities.slice(0, 6).map(a => (
-          <div key={a.id} style={{ display: 'flex', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 13, alignItems: 'center' }}>
-            <span style={{ fontSize: 18 }}>{a.type === 'call' ? '📞' : a.type === 'email' ? '📧' : '🤝'}</span>
-            <div>
-              <div style={{ fontWeight: 600 }}>{a.subject}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{a.performedByName} · {new Date(a.scheduledAt).toLocaleDateString()}</div>
-            </div>
+        <Card>
+          <Title>Recent Engagements</Title>
+          <Subtitle>Last noted client interactions</Subtitle>
+          <div className="mt-4 flex flex-col gap-3">
+            {activities.slice(0, 6).map(a => (
+              <div key={a.id} className="flex items-center gap-4 py-2 border-b border-tremor-border last:border-0 last:pb-0">
+                <div className="text-xl w-8 text-center">{a.type === 'call' ? '📞' : a.type === 'email' ? '📧' : '🤝'}</div>
+                <div>
+                  <Text className="font-semibold text-tremor-content-strong text-sm">{a.subject}</Text>
+                  <Text className="text-xs text-tremor-content mt-0.5">{a.performedByName} &bull; {new Date(a.scheduledAt).toLocaleDateString()}</Text>
+                </div>
+              </div>
+            ))}
           </div>
-        ))}
-      </Section>
+        </Card>
+      </Grid>
     </div>
   );
 }
@@ -373,31 +490,45 @@ function TenantUserDashboard({ user, roleLabel }: {
 }) {
   usePageTitle('Dashboard');
   return (
-    <div className="page animate-fade-in">
-      <GreetingBar name={user?.name?.split(' ')[0] ?? 'there'} role={roleLabel} action={{ href: '/families', label: '→ Client Families' }} />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 20 }}>
-        <KPI label="Client Families"  value="—" sub="Navigate to Families" icon="👨‍👩‍👧‍👦" />
-        <KPI label="Active Tasks"     value="—" sub="Navigate to Tasks"    icon="✅" />
-        <KPI label="Upcoming Events"  value="—" sub="Navigate to Calendar" icon="📅" />
-      </div>
-      <Section title="Quick Actions">
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+    <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
+      <GreetingBar name={user?.name?.split(' ')[0] ?? 'there'} role={roleLabel} action={{ href: '/clients', label: 'Launch Workspace 🚀' }} />
+      
+      <Grid numItemsSm={1} numItemsLg={3} className="gap-6 mb-8">
+        <Card decoration="top" decorationColor="blue">
+          <Text>Client Families</Text>
+          <Metric>—</Metric>
+          <Text className="mt-2 text-tremor-content">Active wealth groups</Text>
+        </Card>
+        <Card decoration="top" decorationColor="emerald">
+          <Text>Active Tasks</Text>
+          <Metric>—</Metric>
+          <Text className="mt-2 text-tremor-content">Pending action items</Text>
+        </Card>
+        <Card decoration="top" decorationColor="amber">
+          <Text>Upcoming Events</Text>
+          <Metric>—</Metric>
+          <Text className="mt-2 text-tremor-content">Next 14 days</Text>
+        </Card>
+      </Grid>
+      
+      <Card>
+        <Title>Workspace Navigation</Title>
+        <Subtitle>Jump directly to your operational modules</Subtitle>
+        <div className="mt-6 flex gap-3 flex-wrap">
           {[
-            { href: '/families',   label: '👨‍👩‍👧‍👦 Families' },
+            { href: '/clients',   label: '👥 Clients' },
             { href: '/tasks',      label: '✅ Tasks' },
             { href: '/activities', label: '📋 Activities' },
             { href: '/calendar',   label: '📅 Calendar' },
             { href: '/documents',  label: '📁 Documents' },
             { href: '/reports',    label: '📊 Reports' },
           ].map(l => (
-            <Link key={l.href} href={l.href} style={{
-              padding: '10px 18px', background: 'var(--bg-canvas)',
-              border: '1px solid var(--border)', borderRadius: 10,
-              fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', textDecoration: 'none',
-            }}>{l.label}</Link>
+            <Link key={l.href} href={l.href} className="px-5 py-2.5 bg-tremor-background-muted border border-tremor-border rounded-tremor-default hover:bg-tremor-background-subtle font-semibold text-sm text-tremor-content-emphasis transition-all shadow-sm">
+              {l.label}
+            </Link>
           ))}
         </div>
-      </Section>
+      </Card>
     </div>
   );
 }
@@ -466,23 +597,23 @@ export default function DashboardPage() {
 
   if (!isLive) {
     return (
-      <div className="page animate-fade-in">
+      <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
         <GreetingBar name="Demo" role="Platform Demo Mode" />
-        <div style={{ textAlign: 'center', padding: '60px 40px' }}>
-          <div style={{ fontSize: 56 }}>🏛️</div>
-          <h2 style={{ fontSize: 20, fontWeight: 800, margin: '16px 0 8px' }}>MFO Nexus Platform</h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Switch to Live Mode to see your real data.</p>
-        </div>
+        <Card className="flex flex-col items-center justify-center py-24 text-center">
+          <div className="text-6xl mb-6">🏛️</div>
+          <Title className="text-2xl font-bold">MFO Nexus Platform</Title>
+          <Text className="mt-2 max-w-sm mx-auto">Switch to Live Mode using the toggle in the header to view your actual database records and interactive Tremor charts.</Text>
+        </Card>
       </div>
     );
   }
 
   if (loading) {
     return (
-      <div className="page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 32, height: 32, border: '3px solid #6366f133', borderTopColor: '#6366f1', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-          <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>Loading your dashboard…</div>
+      <div className="page flex items-center justify-center min-h-[60vh]">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4" />
+          <Text>Loading advanced analytics…</Text>
         </div>
       </div>
     );

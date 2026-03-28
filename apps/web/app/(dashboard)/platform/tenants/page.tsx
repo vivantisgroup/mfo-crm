@@ -601,7 +601,7 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
         {tab === 'overview' && (
           <div>
             {/* ── CRM Association card — shown first as per requirement ── */}
-            <div className="card" style={{ marginTop: 20, padding: '20px 22px' }}>
+            <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ marginTop: 20, padding: '20px 22px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <div style={{ width: 32, height: 32, borderRadius: 8, background: '#6366f115', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>🔗</div>
@@ -681,12 +681,12 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
             </div>
             {/* ── KPI cards ── */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20, marginTop: 20 }}>
-              <div className="card" style={{ padding: '16px 20px' }}>
+              <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: '16px 20px' }}>
                 <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>Monthly Estimate</div>
                 <div style={{ fontSize: 32, fontWeight: 900, color: 'var(--brand-500)' }}>{formatUsd(monthly)}</div>
                 <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>{sub.billingCycle} billing</div>
               </div>
-              <div className="card" style={{ padding: '16px 20px' }}>
+              <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: '16px 20px' }}>
                 <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>Usage</div>
                 <div style={{ fontSize: 14, fontWeight: 700 }}>{sub.licensedSeats} / {SUBSCRIPTION_PLANS[sub.planId].maxSeats === -1 ? '∞' : SUBSCRIPTION_PLANS[sub.planId].maxSeats} seats</div>
                 <div style={{ fontSize: 14, fontWeight: 700, marginTop: 4 }}>{formatAum(sub.currentAumUsd)} AUM</div>
@@ -723,7 +723,7 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
 
             {/* Trial Extension */}
             {(sub.status === 'trial') && (
-              <div className="card" style={{ padding: 20 }}>
+              <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 20 }}>
                 <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 12 }}>⏱️ Extend Trial</div>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                   <div>
@@ -744,7 +744,7 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
             )}
 
             {/* Plan Change */}
-            <div className="card" style={{ padding: 20 }}>
+            <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 20 }}>
               <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 12 }}>📦 Change Plan</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
                 <div>
@@ -774,7 +774,7 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
             </div>
 
             {/* Seats & AUM */}
-            <div className="card" style={{ padding: 20 }}>
+            <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 20 }}>
               <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 12 }}>👥 Licensed Seats & AUM</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
                 <div>
@@ -797,7 +797,7 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
             </div>
 
             {/* Pricing Preview */}
-            <div className="card" style={{ padding: 20, background: 'var(--bg-canvas)' }}>
+            <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 20, background: 'var(--bg-canvas)' }}>
               <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 12 }}>💰 Monthly Price Estimate</div>
               {(() => {
                 const p = SUBSCRIPTION_PLANS[sub.planId];
@@ -1787,7 +1787,7 @@ export default function TenantManagementPage() {
   }
 
   return (
-    <div className="page animate-fade-in">
+    <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
       {showNew && (
         <NewSubscriptionModal
           performer={performer}
@@ -1797,10 +1797,10 @@ export default function TenantManagementPage() {
       )}
 
       {/* Page Header */}
-      <div className="page-header">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 pb-5 border-b border-tremor-border gap-4">
         <div>
-          <h1 className="page-title">Tenant Management</h1>
-          <p className="page-subtitle">Manage subscriptions, billing, demo environments, and trial periods.</p>
+          <h1 className="text-3xl font-bold text-tremor-content-strong tracking-tight">Tenant Management</h1>
+            <p className="mt-2 text-tremor-content">Manage subscriptions, billing, demo environments, and trial periods.</p>
         </div>
         <div className="page-actions">
           <button className="btn btn-secondary" onClick={load}>↻ Refresh</button>
@@ -1857,7 +1857,7 @@ export default function TenantManagementPage() {
           {loading ? (
             <div style={{ textAlign: 'center', padding: 60, color: 'var(--text-tertiary)' }}>Loading…</div>
           ) : filtered.length === 0 ? (
-            <div className="card" style={{ textAlign: 'center', padding: '60px 40px' }}>
+            <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ textAlign: 'center', padding: '60px 40px' }}>
               <div style={{ fontSize: 48, marginBottom: 16 }}>🏢</div>
               <h2 style={{ fontWeight: 800, marginBottom: 8 }}>No tenants found</h2>
               <p style={{ color: 'var(--text-secondary)', marginBottom: 24 }}>Create your first tenant subscription to get started.</p>
@@ -1949,7 +1949,7 @@ export default function TenantManagementPage() {
         return (
           <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 16, alignItems: 'start' }}>
             {/* ── Left: Plan list ── */}
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 0, overflow: 'hidden' }}>
               <div style={{ padding: '12px 16px', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)' }}>Subscription Plans</div>
               {Object.values(SUBSCRIPTION_PLANS).map(pl => {
                 const tenantCount = subs.filter(s => s.planId === pl.id && s.tenantId !== 'master').length;
@@ -1976,7 +1976,7 @@ export default function TenantManagementPage() {
             {/* ── Right: Plan detail ── */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {/* Header card */}
-              <div className="card" style={{ padding: '24px 28px', background: `linear-gradient(135deg, ${p.color}10, transparent)`, border: `1px solid ${p.color}30` }}>
+              <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: '24px 28px', background: `linear-gradient(135deg, ${p.color}10, transparent)`, border: `1px solid ${p.color}30` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
                     <div style={{ fontSize: 36 }}>{p.icon}</div>
@@ -2007,7 +2007,7 @@ export default function TenantManagementPage() {
 
               {/* Pricing & Limits */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                <div className="card" style={{ padding: '18px 20px' }}>
+                <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: '18px 20px' }}>
                   <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12 }}>💰 Pricing</div>
                   {[
                     ['Base (monthly)', p.baseMonthly > 0 ? formatUsd(p.baseMonthly) + '/mo' : p.id === 'enterprise' ? 'Custom' : 'Free'],
@@ -2022,7 +2022,7 @@ export default function TenantManagementPage() {
                     </div>
                   ))}
                 </div>
-                <div className="card" style={{ padding: '18px 20px' }}>
+                <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: '18px 20px' }}>
                   <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12 }}>📊 Limits</div>
                   {[
                     ['Max Seats', p.maxSeats === -1 ? 'Unlimited' : String(p.maxSeats)],
@@ -2038,7 +2038,7 @@ export default function TenantManagementPage() {
               </div>
 
               {/* Features */}
-              <div className="card" style={{ padding: '18px 20px' }}>
+              <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: '18px 20px' }}>
                 <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12 }}>✅ Included Features</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 6 }}>
                   {p.features.map(feat => (
@@ -2086,7 +2086,7 @@ export default function TenantManagementPage() {
 
       {/* ── GLOBAL EVENTS ── */}
       {mainTab === 'events' && (
-        <div className="card">
+        <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6">
           <div style={{ padding: '16px 20px', fontWeight: 800, fontSize: 15, borderBottom: '1px solid var(--border)' }}>📜 Global Subscription Audit Log</div>
           {allEvents.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 60, color: 'var(--text-tertiary)' }}>No global events yet.</div>

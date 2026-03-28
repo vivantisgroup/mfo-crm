@@ -83,15 +83,16 @@ export function useTranscription({
     if (processingRef.current || blob.size < 2000) return; // skip tiny/empty blobs
     processingRef.current = true;
 
-    try {
-      const formData = new FormData();
-      formData.append('audio', blob, 'audio.webm');
-      formData.append('language', language);
+      try {
+        const formData = new FormData();
+        formData.append('audio', blob, 'audio.webm');
+        formData.append('language', language);
+        formData.append('sessionId', sessionId);
 
-      const res  = await fetch('/api/copilot/transcribe', {
-        method: 'POST',
-        body:   formData,
-      });
+        const res  = await fetch('/api/copilot/transcribe', {
+          method: 'POST',
+          body:   formData,
+        });
 
       if (!res.ok) {
         console.warn('[useTranscription] API error:', res.status);

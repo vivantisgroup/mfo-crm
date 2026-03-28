@@ -78,7 +78,7 @@ export default function OrgClientPage() {
     <div className="page animate-fade-in" style={{ maxWidth: 1100, margin: '0 auto' }}>
       {/* Breadcrumb */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, fontSize: 13, color: 'var(--text-tertiary)' }}>
-        <button onClick={() => router.push('/organizations')} className="btn btn-ghost btn-sm" style={{ gap: 4, display: 'flex', alignItems: 'center' }}>
+        <button onClick={() => router.push('/relationships/organizations')} className="btn btn-ghost btn-sm" style={{ gap: 4, display: 'flex', alignItems: 'center' }}>
           <ArrowLeft size={13} /> Organizations
         </button>
         <span>/</span>
@@ -86,7 +86,7 @@ export default function OrgClientPage() {
       </div>
 
       {/* Hero */}
-      <div className="card" style={{ padding: '24px 28px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 20 }}>
+      <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: '24px 28px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 20 }}>
         <div style={{
           width: 72, height: 72, borderRadius: 16, flexShrink: 0, fontSize: 30,
           background: `${color}22`, color, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -120,7 +120,7 @@ export default function OrgClientPage() {
       </div>
 
       {activeTab === 'overview' && (
-        <div className="card" style={{ padding: 24 }}>
+        <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 24 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Type</div>
@@ -149,7 +149,7 @@ export default function OrgClientPage() {
       )}
 
       {activeTab === 'members' && (
-        <div className="card" style={{ padding: 0 }}>
+        <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 0 }}>
           <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 14 }}>
             Contacts in this Organization
           </div>
@@ -174,7 +174,7 @@ export default function OrgClientPage() {
       )}
 
       {activeTab === 'activities' && (
-        <div className="card" style={{ padding: 0 }}>
+        <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 0 }}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 14 }}>
             Activity History
           </div>

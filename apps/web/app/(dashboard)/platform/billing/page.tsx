@@ -1,12 +1,26 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { getMockRenewals, renewalDaysLeft, formatRenewalDate } from '@/lib/renewalService';
 import { usePageTitle } from '@/lib/PageTitleContext';
 
+import type { PlanDefinition } from '@/lib/planService';
+import { getPlans } from '@/lib/planService';
+import type { TenantSubscription, Invoice as LiveInvoice } from '@/lib/subscriptionService';
+import { getAllSubscriptions, getAllInvoices, planMonthlyTotal } from '@/lib/subscriptionService';
+import type { PlatformExpense } from '@/lib/expenseService';
+import { getAllExpenses, monthlyEquivalent } from '@/lib/expenseService';
+import type { RenewalRecord } from '@/lib/renewalService';
+import { listRenewals } from '@/lib/renewalService';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+import {
+  Card, Metric, Text, Title, Subtitle, Flex, Grid, Col,
+  BarList, Badge, Table, TableHead, TableHeaderCell, TableBody, TableRow, TableCell,
+  TabGroup, TabList, Tab, TabPanels, TabPanel, Button, TextInput, Select, SelectItem
+} from '@tremor/react';
+
+// ─── Interfaces ─────────────────────────────────────────────────────────────
 
 interface Plan {
   id: string; name: string; priceMonthly: number; priceAnnual: number;
@@ -21,339 +35,351 @@ interface Subscriber {
 }
 
 interface Invoice {
-  id: string; tenantName: string; amount: number; status: 'paid' | 'pending' | 'overdue';
+  id: string; tenantName: string; amount: number; status: 'paid' | 'pending' | 'overdue' | 'void' | 'cancelled';
   date: string; dueDate: string; plan: string;
 }
 
-// ─── Mock Data ────────────────────────────────────────────────────────────────
-
-const PLANS: Plan[] = [
-  {
-    id: 'starter', name: 'Starter', priceMonthly: 490, priceAnnual: 4900, seats: 2, families: 5,
-    aiTokens: '50k/mo', storage: '5 GB', color: '#64748b',
-    features: ['Core CRM', 'Document Vault', 'Basic Reports', 'Email Support', 'TOTP MFA']
-  },
-  {
-    id: 'growth', name: 'Growth', priceMonthly: 1290, priceAnnual: 12900, seats: 10, families: 25,
-    aiTokens: '500k/mo', storage: '50 GB', color: '#6366f1', popular: true,
-    features: ['Everything in Starter', 'Suitability Assessments', 'Calendar Sync', 'AI Summaries', 'Priority Support', 'Custom Branding']
-  },
-  {
-    id: 'enterprise', name: 'Enterprise', priceMonthly: 3490, priceAnnual: 34900, seats: 999, families: 999,
-    aiTokens: 'Unlimited', storage: '500 GB', color: '#f59e0b',
-    features: ['Everything in Growth', 'Unlimited Families', 'Multi-tenant Admin', 'BYOK AI Keys', 'SLA 99.9%', 'Dedicated CSM', 'Custom Integrations']
-  },
-];
-
-const SUBSCRIBERS: Subscriber[] = [
-  { id: 't-001', name: 'Vivants Multi-Family Office', plan: 'Enterprise', seats: 8, mrr: 3490, arr: 34900, status: 'active', startDate: '2024-01-01', nextBilling: '2026-04-01', country: 'Brazil' },
-  { id: 't-002', name: 'Apex Wealth Partners', plan: 'Growth', seats: 6, mrr: 1290, arr: 12900, status: 'active', startDate: '2024-03-15', nextBilling: '2026-04-15', country: 'Brazil' },
-  { id: 't-003', name: 'Summit Capital', plan: 'Growth', seats: 4, mrr: 1290, arr: 12900, status: 'active', startDate: '2024-06-01', nextBilling: '2026-04-01', country: 'USA' },
-  { id: 't-004', name: 'Legacy Trust Group', plan: 'Enterprise', seats: 12, mrr: 3490, arr: 34900, status: 'active', startDate: '2023-11-01', nextBilling: '2026-04-01', country: 'UK' },
-  { id: 't-005', name: 'AlphaPath Advisory', plan: 'Starter', seats: 2, mrr: 490, arr: 4900, status: 'trial', startDate: '2026-03-01', nextBilling: '2026-04-01', country: 'Hong Kong' },
-  { id: 't-006', name: 'Meridian Wealth', plan: 'Growth', seats: 5, mrr: 1290, arr: 12900, status: 'active', startDate: '2025-01-10', nextBilling: '2026-04-10', country: 'Brazil' },
-  { id: 't-007', name: 'Pacific Family Office', plan: 'Starter', seats: 2, mrr: 0, arr: 0, status: 'churned', startDate: '2024-05-01', nextBilling: '—', country: 'Australia' },
-];
-
-const INVOICES: Invoice[] = [
-  { id: 'INV-2026-031', tenantName: 'Vivants Multi-Family Office', amount: 3490, status: 'pending', date: '2026-03-20', dueDate: '2026-04-01', plan: 'Enterprise' },
-  { id: 'INV-2026-030', tenantName: 'Apex Wealth Partners', amount: 1290, status: 'pending', date: '2026-03-15', dueDate: '2026-04-15', plan: 'Growth' },
-  { id: 'INV-2026-029', tenantName: 'Legacy Trust Group', amount: 3490, status: 'paid', date: '2026-03-01', dueDate: '2026-03-01', plan: 'Enterprise' },
-  { id: 'INV-2026-028', tenantName: 'Summit Capital', amount: 1290, status: 'paid', date: '2026-03-01', dueDate: '2026-03-01', plan: 'Growth' },
-  { id: 'INV-2026-027', tenantName: 'Meridian Wealth', amount: 1290, status: 'paid', date: '2026-03-10', dueDate: '2026-03-10', plan: 'Growth' },
-  { id: 'INV-2026-026', tenantName: 'Pacific Family Office', amount: 490, status: 'overdue', date: '2026-02-01', dueDate: '2026-02-28', plan: 'Starter' },
-];
-
-const EXPENSES = [
-  { category: 'Firebase / GCP', monthly: 380, ytd: 1140 },
-  { category: 'OpenAI API (shared)', monthly: 210, ytd: 630 },
-  { category: 'Sendgrid Email', monthly: 45, ytd: 135 },
-  { category: 'Domain & DNS', monthly: 12, ytd: 36 },
-  { category: 'Monitoring (Datadog)', monthly: 120, ytd: 360 },
-  { category: 'Legal & Compliance', monthly: 500, ytd: 1500 },
-  { category: 'Team Salaries (ops share)', monthly: 4200, ytd: 12600 },
-];
+interface Expense {
+  category: string; monthly: number; ytd: number;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmt(n: number) { return `$${n.toLocaleString()}` }
 
-function StatusPill({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    active: '#22c55e', trial: '#f59e0b', suspended: '#ef4444', churned: '#64748b',
-    paid: '#22c55e', pending: '#6366f1', overdue: '#ef4444'
+function getStatusColor(status: string) {
+  const map: Record<string, string> = {
+    active: 'emerald', trial: 'amber', suspended: 'rose', churned: 'slate',
+    paid: 'emerald', pending: 'indigo', overdue: 'rose'
   };
-  const color = colors[status] || '#64748b';
-  return <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 10, background: `${color}22`, color, border: `1px solid ${color}44`, textTransform: 'capitalize' }}>{status}</span>;
+  return map[status] || 'slate';
+}
+
+function StatusBadge({ status }: { status: string }) {
+  return <Badge color={getStatusColor(status) as any} className="capitalize">{status}</Badge>;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function OverviewTab() {
-  const totalMRR = SUBSCRIBERS.filter(s => s.status === 'active').reduce((s, t) => s + t.mrr, 0);
+function OverviewTab({ plans, subscribers, expenses }: { plans: Plan[], subscribers: Subscriber[], expenses: Expense[] }) {
+  const totalMRR = subscribers.filter(s => s.status === 'active').reduce((s, t) => s + t.mrr, 0);
   const totalARR = totalMRR * 12;
-  const totalExpenses = EXPENSES.reduce((s, e) => s + e.monthly, 0);
+  const totalExpenses = expenses.reduce((s, e) => s + e.monthly, 0);
   const grossProfit = totalMRR - totalExpenses;
-  const margin = Math.round((grossProfit / totalMRR) * 100);
-  const activeCount = SUBSCRIBERS.filter(s => s.status === 'active').length;
-  const trialCount = SUBSCRIBERS.filter(s => s.status === 'trial').length;
-  const avgMRR = Math.round(totalMRR / activeCount);
+  const margin = totalMRR ? Math.round((grossProfit / totalMRR) * 100) : 0;
+  const activeCount = subscribers.filter(s => s.status === 'active').length;
+  const trialCount = subscribers.filter(s => s.status === 'trial').length;
+  const avgMRR = activeCount ? Math.round(totalMRR / activeCount) : 0;
+
+  const revenueByPlan = plans.map(plan => {
+    const subs = subscribers.filter(s => s.plan === plan.name && s.status !== 'churned');
+    return {
+      name: plan.name,
+      value: subs.reduce((a, s) => a + s.mrr, 0),
+      count: subs.length,
+      color: plan.color
+    };
+  }).filter(p => p.value > 0).sort((a,b) => b.value - a.value);
 
   return (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in py-6">
       {/* KPI Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 16, marginBottom: 32 }}>
-        {[
-          { label: 'MRR', value: fmt(totalMRR), sub: '+11.2% MoM', color: '#6366f1' },
-          { label: 'ARR', value: fmt(totalARR), sub: 'Annualized', color: '#22d3ee' },
-          { label: 'Gross Profit', value: fmt(grossProfit), sub: `${margin}% margin`, color: '#22c55e' },
-          { label: 'Monthly OPEX', value: fmt(totalExpenses), sub: 'All infra + ops', color: '#f59e0b' },
-          { label: 'Active Tenants', value: activeCount, sub: `${trialCount} trial`, color: '#6366f1' },
-          { label: 'Avg MRR/Tenant', value: fmt(avgMRR), sub: 'Per customer', color: '#22d3ee' },
-        ].map(kpi => (
-          <div key={kpi.label} style={{ padding: '20px', background: 'var(--bg-elevated)', border: `1px solid ${kpi.color}33`, borderRadius: 'var(--radius-lg)' }}>
-            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.07em', marginBottom: 6 }}>{kpi.label}</div>
-            <div style={{ fontSize: 24, fontWeight: 900, color: kpi.color }}>{kpi.value}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>{kpi.sub}</div>
+      <Grid numItemsSm={2} numItemsLg={3} className="gap-6 mb-6">
+        <Card decoration="top" decorationColor="indigo">
+          <Text>Monthly Recurring Revenue (MRR)</Text>
+          <Metric>{fmt(totalMRR)}</Metric>
+          <Text className="mt-2 text-tremor-content">Annualized: {fmt(totalARR)}</Text>
+        </Card>
+        <Card decoration="top" decorationColor="emerald">
+          <Text>Gross Profit Margin</Text>
+          <Metric>{margin}%</Metric>
+          <Text className="mt-2 text-tremor-content">{fmt(grossProfit)} monthly profit</Text>
+        </Card>
+        <Card decoration="top" decorationColor="amber">
+          <Text>Platform OPEX</Text>
+          <Metric>{fmt(totalExpenses)}</Metric>
+          <Text className="mt-2 text-tremor-content">Infrastructure & Operations</Text>
+        </Card>
+        <Card decoration="top" decorationColor="blue">
+          <Text>Active Tenants</Text>
+          <Metric>{activeCount}</Metric>
+          <Text className="mt-2 text-tremor-content">{trialCount} accounts evaluating</Text>
+        </Card>
+        <Card decoration="top" decorationColor="fuchsia">
+          <Text>Average MRR (ARPU)</Text>
+          <Metric>{fmt(avgMRR)}</Metric>
+          <Text className="mt-2 text-tremor-content">Per active configured tenant</Text>
+        </Card>
+      </Grid>
+
+      <Grid numItemsSm={1} numItemsLg={2} className="gap-6 mb-6">
+        <Card>
+          <Title>Revenue by Plan</Title>
+          <Subtitle>Contribution to MRR</Subtitle>
+          <div className="mt-6">
+             <BarList 
+               data={revenueByPlan}
+               color="indigo" 
+               className="mt-2"
+               valueFormatter={(val: number) => fmt(val)}
+             />
           </div>
-        ))}
-      </div>
+        </Card>
 
-      {/* Revenue by Plan */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 32 }}>
-        <div style={{ padding: 24, background: 'var(--bg-elevated)', borderRadius: 'var(--radius-xl)', border: '1px solid var(--border)' }}>
-          <h3 style={{ fontWeight: 800, marginBottom: 20, fontSize: 16 }}>Revenue by Plan</h3>
-          {PLANS.map(plan => {
-            const subs = SUBSCRIBERS.filter(s => s.plan === plan.name && s.status !== 'churned');
-            const rev = subs.reduce((a, s) => a + s.mrr, 0);
-            const pct = Math.round((rev / totalMRR) * 100) || 0;
-            return (
-              <div key={plan.id} style={{ marginBottom: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>{plan.name}</span>
-                  <span style={{ fontSize: 13, color: plan.color, fontWeight: 700 }}>{fmt(rev)} <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>({pct}%)</span></span>
+        <Card>
+          <Title>Monthly OPEX Breakdown</Title>
+          <Subtitle>Cost centers and infrastructure overhead</Subtitle>
+          <div className="mt-6 flex flex-col gap-3">
+            {expenses.map(exp => (
+              <div key={exp.category} className="flex justify-between items-center py-2 border-b border-tremor-border last:border-0 last:pb-0">
+                <Text className="font-medium text-tremor-content-strong">{exp.category}</Text>
+                <div className="text-right">
+                  <Text className="font-bold text-tremor-content-strong">{fmt(exp.monthly)}<span className="text-xs font-normal">/mo</span></Text>
+                  <Text className="text-xs text-tremor-content">YTD: {fmt(exp.ytd)}</Text>
                 </div>
-                <div style={{ height: 6, background: 'var(--bg-canvas)', borderRadius: 3, overflow: 'hidden' }}>
-                  <div style={{ width: `${pct}%`, height: '100%', background: plan.color, borderRadius: 3, transition: 'width 0.6s' }} />
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>{subs.length} subscribers</div>
               </div>
-            );
-          })}
-        </div>
-
-        {/* Expense Breakdown */}
-        <div style={{ padding: 24, background: 'var(--bg-elevated)', borderRadius: 'var(--radius-xl)', border: '1px solid var(--border)' }}>
-          <h3 style={{ fontWeight: 800, marginBottom: 20, fontSize: 16 }}>Monthly OPEX Breakdown</h3>
-          {EXPENSES.map(exp => (
-            <div key={exp.category} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-              <span style={{ fontSize: 13 }}>{exp.category}</span>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>{fmt(exp.monthly)}/mo</div>
-                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>YTD: {fmt(exp.ytd)}</div>
-              </div>
+            ))}
+            <div className="flex justify-between items-center pt-3 mt-1 border-t border-tremor-border">
+              <Text className="font-bold text-sm text-tremor-content-strong uppercase tracking-wider">Total OPEX</Text>
+              <Text className="font-bold text-rose-500">{fmt(totalExpenses)}<span className="text-xs font-normal">/mo</span></Text>
             </div>
-          ))}
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0 0', fontWeight: 800 }}>
-            <span>Total OPEX</span>
-            <span style={{ color: '#ef4444' }}>{fmt(totalExpenses)}/mo</span>
           </div>
-        </div>
-      </div>
+        </Card>
+      </Grid>
 
       {/* ROI Summary */}
-      <div style={{ padding: 24, background: 'linear-gradient(135deg, #6366f108, #22d3ee08)', border: '1px solid var(--brand-500)33', borderRadius: 'var(--radius-xl)', marginBottom: 32 }}>
-        <h3 style={{ fontWeight: 800, marginBottom: 16, fontSize: 16 }}>📊 Platform ROI Dashboard</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 20 }}>
-          {[
-            { label: 'Customer LTV (avg)', value: '$' + (avgMRR * 24).toLocaleString(), sub: '24-mo average' },
-            { label: 'CAC (est.)', value: '$820', sub: 'Sales + marketing' },
-            { label: 'LTV / CAC Ratio', value: `${Math.round((avgMRR * 24) / 820)}x`, sub: 'Target: >3x ✅' },
-            { label: 'Payback Period', value: `${Math.round(820 / avgMRR)} months`, sub: 'Target: <12 months ✅' },
-          ].map(m => (
-            <div key={m.label} style={{ padding: '16px 20px', background: 'var(--bg-canvas)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>{m.label}</div>
-              <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--brand-400)' }}>{m.value}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>{m.sub}</div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <Card decoration="left" decorationColor="blue" className="bg-gradient-to-br from-indigo-50/50 to-cyan-50/50 dark:from-indigo-900/10 dark:to-cyan-900/10">
+        <Title>Platform ROI Model (Estimated)</Title>
+        <Grid numItemsSm={2} numItemsLg={4} className="gap-4 mt-4">
+          <Card className="shadow-sm">
+            <Text>Customer LTV</Text>
+            <Metric className="text-2xl">${(avgMRR * 24).toLocaleString()}</Metric>
+            <Text className="mt-1 text-xs text-tremor-content">24-month horizon avg</Text>
+          </Card>
+          <Card className="shadow-sm">
+            <Text>CAC</Text>
+            <Metric className="text-2xl">$820</Metric>
+            <Text className="mt-1 text-xs text-tremor-content">Sales + marketing</Text>
+          </Card>
+          <Card className="shadow-sm border-emerald-500/30">
+            <Text>LTV / CAC Ratio</Text>
+            <Metric className="text-2xl text-emerald-600 dark:text-emerald-400">{Math.round((avgMRR * 24) / 820)}x</Metric>
+            <Text className="mt-1 text-xs text-emerald-700/70 dark:text-emerald-300">Target: &gt; 3.0x</Text>
+          </Card>
+          <Card className="shadow-sm border-emerald-500/30">
+            <Text>Payback Period</Text>
+            <Metric className="text-2xl text-emerald-600 dark:text-emerald-400">{Math.round(820 / avgMRR)} mo</Metric>
+            <Text className="mt-1 text-xs text-emerald-700/70 dark:text-emerald-300">Target: &lt; 12 Months</Text>
+          </Card>
+        </Grid>
+      </Card>
     </div>
   );
 }
 
-function SubscribersTab() {
+function SubscribersTab({ plans, subscribers }: { plans: Plan[], subscribers: Subscriber[] }) {
   const [search, setSearch] = useState('');
-  const filtered = SUBSCRIBERS.filter(s => s.name.toLowerCase().includes(search.toLowerCase()));
+  const filtered = subscribers.filter(s => s.name.toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <div className="animate-fade-in">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <input type="text" placeholder="🔍 Search tenants…" value={search} onChange={e => setSearch(e.target.value)} className="input" style={{ padding: '8px 14px', width: 280 }} />
-        <button className="btn btn-primary btn-sm">+ Onboard Tenant</button>
-      </div>
-      <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-xl)', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
-              {['Tenant', 'Plan', 'Seats', 'MRR', 'ARR', 'Status', 'Country', 'Next Billing', ''].map(h => (
-                <th key={h} style={{ padding: '12px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(sub => (
-              <tr key={sub.id} style={{ borderBottom: '1px solid var(--border)' }} className="hover-lift">
-                <td style={{ padding: '14px 14px', fontWeight: 600, fontSize: 14 }}>{sub.name}</td>
-                <td style={{ padding: '14px 14px' }}>
-                  <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 8, background: PLANS.find(p => p.name === sub.plan)?.color + '22', color: PLANS.find(p => p.name === sub.plan)?.color, fontWeight: 700 }}>
-                    {sub.plan}
-                  </span>
-                </td>
-                <td style={{ padding: '14px 14px', fontSize: 13 }}>{sub.seats}</td>
-                <td style={{ padding: '14px 14px', fontWeight: 700, color: '#22c55e' }}>{fmt(sub.mrr)}</td>
-                <td style={{ padding: '14px 14px', fontSize: 13, color: 'var(--text-secondary)' }}>{fmt(sub.arr)}</td>
-                <td style={{ padding: '14px 14px' }}><StatusPill status={sub.status} /></td>
-                <td style={{ padding: '14px 14px', fontSize: 12, color: 'var(--text-secondary)' }}>{sub.country}</td>
-                <td style={{ padding: '14px 14px', fontSize: 12, color: 'var(--text-secondary)' }}>{sub.nextBilling}</td>
-                <td style={{ padding: '14px 14px' }}>
-                  <button className="btn btn-ghost btn-sm">Manage</button>
-                </td>
-              </tr>
+    <div className="animate-fade-in py-6">
+      <Flex justifyContent="between" alignItems="center" className="mb-6">
+        <TextInput 
+          placeholder="🔍 Search subscribers..." 
+          className="max-w-xs"
+          value={search}
+          onValueChange={setSearch}
+        />
+        <Button size="sm" variant="primary">Onboard Tenant</Button>
+      </Flex>
+      
+      <Card className="p-0 overflow-hidden">
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableHeaderCell>Tenant</TableHeaderCell>
+              <TableHeaderCell>Plan</TableHeaderCell>
+              <TableHeaderCell>Seats</TableHeaderCell>
+              <TableHeaderCell>MRR</TableHeaderCell>
+              <TableHeaderCell>Status</TableHeaderCell>
+              <TableHeaderCell>Next Billing</TableHeaderCell>
+              <TableHeaderCell></TableHeaderCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {filtered.map((sub) => (
+              <TableRow key={sub.id} className="hover:bg-tremor-background-subtle">
+                <TableCell className="font-semibold text-tremor-content-strong">{sub.name}</TableCell>
+                <TableCell>
+                  <Badge size="xs" color="indigo" className="uppercase">{sub.plan}</Badge>
+                </TableCell>
+                <TableCell>{sub.seats}</TableCell>
+                <TableCell className="font-bold text-emerald-500">{fmt(sub.mrr)}</TableCell>
+                <TableCell><StatusBadge status={sub.status} /></TableCell>
+                <TableCell>{sub.nextBilling}</TableCell>
+                <TableCell className="text-right">
+                  <Button size="xs" variant="light">Manage</Button>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </Card>
     </div>
   );
 }
 
-function InvoicesTab() {
+function InvoicesTab({ invoices }: { invoices: Invoice[] }) {
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
+  
+  const filtered = invoices.filter(i => {
+    const matchesSearch = i.tenantName.toLowerCase().includes(search.toLowerCase()) || i.id.toLowerCase().includes(search.toLowerCase());
+    const matchesStatus = statusFilter === 'All' || i.status.toLowerCase() === statusFilter.toLowerCase();
+    return matchesSearch && matchesStatus;
+  });
+
   return (
-    <div className="animate-fade-in">
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input type="text" placeholder="🔍 Search invoices…" className="input" style={{ padding: '8px 14px', width: 240 }} />
-          <select className="input" style={{ padding: '8px 12px' }}><option>All Statuses</option><option>Paid</option><option>Pending</option><option>Overdue</option></select>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-outline btn-sm">📥 Export</button>
-          <button className="btn btn-primary btn-sm">+ Generate Invoice</button>
-        </div>
-      </div>
-      <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-xl)', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
-              {['Invoice', 'Tenant', 'Plan', 'Amount', 'Status', 'Issued', 'Due Date', ''].map(h => (
-                <th key={h} style={{ padding: '12px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {INVOICES.map(inv => (
-              <tr key={inv.id} style={{ borderBottom: '1px solid var(--border)' }} className="hover-lift">
-                <td style={{ padding: '14px 14px', fontFamily: 'monospace', fontSize: 13, fontWeight: 600 }}>{inv.id}</td>
-                <td style={{ padding: '14px 14px', fontSize: 13, fontWeight: 600 }}>{inv.tenantName}</td>
-                <td style={{ padding: '14px 14px' }}>
-                  <span style={{ fontSize: 11, background: 'var(--bg-canvas)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 8px' }}>{inv.plan}</span>
-                </td>
-                <td style={{ padding: '14px 14px', fontWeight: 800, fontSize: 15 }}>{fmt(inv.amount)}</td>
-                <td style={{ padding: '14px 14px' }}><StatusPill status={inv.status} /></td>
-                <td style={{ padding: '14px 14px', fontSize: 12, color: 'var(--text-secondary)' }}>{inv.date}</td>
-                <td style={{ padding: '14px 14px', fontSize: 12, color: inv.status === 'overdue' ? '#ef4444' : 'var(--text-secondary)', fontWeight: inv.status === 'overdue' ? 700 : 400 }}>{inv.dueDate}</td>
-                <td style={{ padding: '14px 14px', display: 'flex', gap: 6 }}>
-                  <button className="btn btn-ghost btn-sm">📄 View</button>
-                  {inv.status !== 'paid' && <button className="btn btn-ghost btn-sm">📧 Send</button>}
-                </td>
-              </tr>
+    <div className="animate-fade-in py-6">
+      <Flex justifyContent="between" className="mb-6 gap-4 flex-wrap">
+        <Flex className="gap-4 w-auto">
+          <TextInput 
+            placeholder="🔍 Search invoices..." 
+            className="w-64"
+            value={search}
+            onValueChange={setSearch}
+          />
+          <Select value={statusFilter} onValueChange={setStatusFilter} className="w-40">
+            <SelectItem value="All">All Statuses</SelectItem>
+            <SelectItem value="Paid">Paid</SelectItem>
+            <SelectItem value="Pending">Pending</SelectItem>
+            <SelectItem value="Overdue">Overdue</SelectItem>
+          </Select>
+        </Flex>
+        <Flex className="gap-3 w-auto">
+          <Button size="sm" variant="secondary">📥 Export</Button>
+          <Button size="sm" variant="primary">Generate Invoice</Button>
+        </Flex>
+      </Flex>
+
+      <Card className="p-0 overflow-hidden">
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableHeaderCell>Invoice</TableHeaderCell>
+              <TableHeaderCell>Tenant</TableHeaderCell>
+              <TableHeaderCell>Amount</TableHeaderCell>
+              <TableHeaderCell>Status</TableHeaderCell>
+              <TableHeaderCell>Issued</TableHeaderCell>
+              <TableHeaderCell>Due Date</TableHeaderCell>
+              <TableHeaderCell></TableHeaderCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {filtered.map((inv) => (
+              <TableRow key={inv.id} className="hover:bg-tremor-background-subtle">
+                <TableCell className="font-mono text-xs font-semibold">{inv.id}</TableCell>
+                <TableCell className="font-semibold text-tremor-content-strong">{inv.tenantName}</TableCell>
+                <TableCell className="font-bold text-tremor-content-strong">{fmt(inv.amount)}</TableCell>
+                <TableCell><StatusBadge status={inv.status} /></TableCell>
+                <TableCell>{inv.date}</TableCell>
+                <TableCell className={inv.status === 'overdue' ? 'text-rose-500 font-bold' : ''}>{inv.dueDate}</TableCell>
+                <TableCell className="text-right space-x-2">
+                  <Button size="xs" variant="light">View</Button>
+                  {inv.status !== 'paid' && <Button size="xs" variant="light">Send</Button>}
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </Card>
     </div>
   );
 }
 
-// ─── Renewals embed tab ──────────────────────────────────────────────────────
-
-function RenewalsTab() {
-  const renewals = getMockRenewals();
+function RenewalsTab({ renewals }: { renewals: RenewalRecord[] }) {
   const dueSoon  = renewals.filter(r => !['completed', 'declined', 'expired'].includes(r.status) && renewalDaysLeft(r) <= 30);
   const highRisk = renewals.filter(r => r.risk === 'high' && !['declined', 'expired'].includes(r.status));
   const mrrAtRisk = renewals.filter(r => !['completed', 'declined', 'expired'].includes(r.status)).reduce((s, r) => s + r.currentMrr, 0);
 
-  const riskColors: Record<string, string> = { low: '#22c55e', medium: '#f59e0b', high: '#ef4444' };
-  const statColors: Record<string, string> = { pending: '#6366f1', sent: '#f59e0b', accepted: '#22c55e', declined: '#ef4444', expired: '#64748b', completed: '#22d3ee' };
-
   return (
-    <div className="animate-fade-in">
-      {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 28 }}>
-        {[
-          { label: 'MRR at stake',       value: fmt(mrrAtRisk),    color: '#22c55e' },
-          { label: 'Due ≤ 30 days',      value: dueSoon.length,    color: '#f59e0b' },
-          { label: 'High-risk renewals', value: highRisk.length,   color: '#ef4444' },
-        ].map(k => (
-          <div key={k.label} style={{ padding: '20px', background: 'var(--bg-elevated)', border: `1px solid ${k.color}33`, borderRadius: 14 }}>
-            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>{k.label}</div>
-            <div style={{ fontSize: 26, fontWeight: 900, color: k.color }}>{k.value}</div>
-          </div>
-        ))}
-      </div>
+    <div className="animate-fade-in py-6">
+      <Grid numItemsSm={1} numItemsLg={3} className="gap-6 mb-8">
+        <Card decoration="top" decorationColor="emerald">
+          <Text>MRR at stake</Text>
+          <Metric>{fmt(mrrAtRisk)}</Metric>
+        </Card>
+        <Card decoration="top" decorationColor="amber">
+          <Text>Due ≤ 30 days</Text>
+          <Metric>{dueSoon.length}</Metric>
+        </Card>
+        <Card decoration="top" decorationColor="rose">
+          <Text>High-risk renewals</Text>
+          <Metric>{highRisk.length}</Metric>
+        </Card>
+      </Grid>
 
-      {/* Quick list of upcoming renewals */}
-      <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h3 style={{ fontWeight: 800, fontSize: 16 }}>Renewals Due ≤ 30 Days</h3>
-        <Link href="/platform/renewals" style={{ fontSize: 13, color: 'var(--brand-400)', textDecoration: 'none', fontWeight: 600 }}>
-          Open full Renewals module →
+      <Flex justifyContent="between" alignItems="center" className="mb-6">
+        <Title>Renewals Pipeline (≤ 30 Days)</Title>
+        <Link href="/platform/renewals" className="text-sm font-semibold text-indigo-500 hover:text-indigo-600 transition-colors">
+          Open CRM Pipeline &rarr;
         </Link>
-      </div>
+      </Flex>
 
       {dueSoon.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-tertiary)', fontSize: 14, background: 'var(--bg-elevated)', borderRadius: 14, border: '1px solid var(--border)' }}>
-          🎉 No renewals due in the next 30 days!
-        </div>
+        <Card className="flex flex-col items-center justify-center py-16 text-center border-dashed border-2">
+          <div className="text-4xl mb-3">🎉</div>
+          <Title>All clear!</Title>
+          <Text className="mt-2 text-tremor-content">No active renewals are due within the next 30 days.</Text>
+        </Card>
       ) : (
-        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
-                {['Tenant', 'Plan', 'MRR', 'Period End', 'Days Left', 'Risk', 'Status'].map(h => (
-                  <th key={h} style={{ padding: '12px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {dueSoon.map(r => {
+        <Card className="p-0 overflow-hidden">
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeaderCell>Tenant</TableHeaderCell>
+                <TableHeaderCell>Plan Identity</TableHeaderCell>
+                <TableHeaderCell>MRR</TableHeaderCell>
+                <TableHeaderCell>Period End</TableHeaderCell>
+                <TableHeaderCell>Days Left</TableHeaderCell>
+                <TableHeaderCell>Risk</TableHeaderCell>
+                <TableHeaderCell>Status</TableHeaderCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {dueSoon.sort((a,b) => renewalDaysLeft(a) - renewalDaysLeft(b)).map((r) => {
                 const days = renewalDaysLeft(r);
-                const dayColor = days <= 14 ? '#ef4444' : days <= 30 ? '#f59e0b' : '#22c55e';
+                const dayColor = days <= 14 ? 'rose' : days <= 30 ? 'amber' : 'emerald';
+                const riskColor = r.risk === 'high' ? 'rose' : r.risk === 'medium' ? 'amber' : 'emerald';
+                
                 return (
-                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)' }} className="hover-lift">
-                    <td style={{ padding: '14px 14px', fontWeight: 700, fontSize: 14 }}>{r.tenantName}</td>
-                    <td style={{ padding: '14px 14px', fontSize: 12, color: 'var(--text-secondary)' }}>{r.planName} · {r.billingCycle}</td>
-                    <td style={{ padding: '14px 14px', fontWeight: 800, color: '#22c55e' }}>{fmt(r.currentMrr)}</td>
-                    <td style={{ padding: '14px 14px', fontSize: 13 }}>{formatRenewalDate(r.periodEnd)}</td>
-                    <td style={{ padding: '14px 14px' }}>
-                      <span style={{ fontSize: 12, fontWeight: 800, color: dayColor, background: `${dayColor}15`, padding: '2px 8px', borderRadius: 20 }}>
+                  <TableRow key={r.id} className="hover:bg-tremor-background-subtle w-full">
+                    <TableCell className="font-semibold text-tremor-content-strong">{r.tenantName}</TableCell>
+                    <TableCell>
+                      <Text>{r.planName}</Text>
+                      <Text className="text-xs text-tremor-content">{r.billingCycle}</Text>
+                    </TableCell>
+                    <TableCell className="font-bold text-emerald-500">{fmt(r.currentMrr)}</TableCell>
+                    <TableCell>{formatRenewalDate(r.periodEnd)}</TableCell>
+                    <TableCell>
+                      <Badge color={dayColor} size="xs" className="font-bold">
                         {days === 0 ? 'Today!' : `${days}d`}
-                      </span>
-                    </td>
-                    <td style={{ padding: '14px 14px', fontSize: 12, color: riskColors[r.risk] ?? '#64748b', fontWeight: 700 }}>
-                      {r.risk === 'high' ? '🔴' : r.risk === 'medium' ? '🟡' : '🟢'} {r.risk}
-                    </td>
-                    <td style={{ padding: '14px 14px' }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: `${statColors[r.status] ?? '#64748b'}15`, color: statColors[r.status] ?? '#64748b', border: `1px solid ${statColors[r.status] ?? '#64748b'}44`, textTransform: 'capitalize' }}>
-                        {r.status}
-                      </span>
-                    </td>
-                  </tr>
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge color={riskColor} size="xs" className="capitalize px-2 py-0.5">
+                        {r.risk}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={r.status} />
+                    </TableCell>
+                  </TableRow>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
+        </Card>
       )}
     </div>
   );
@@ -361,51 +387,112 @@ function RenewalsTab() {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-type Tab = 'overview' | 'subscribers' | 'invoices' | 'renewals';
-
-
 export default function BillingPage() {
-  const [tab, setTab] = useState<Tab>('overview');
-  const { renewalsDueSoon } = useMemo(() => {
-    const rnwls = getMockRenewals();
-    return { renewalsDueSoon: rnwls.filter(r => !['completed', 'declined', 'expired'].includes(r.status) && renewalDaysLeft(r) <= 30).length };
-  }, []);
   usePageTitle('Revenue');
 
-  const totalMRR = SUBSCRIBERS.filter(s => s.status === 'active').reduce((s, t) => s + t.mrr, 0);
+  const [loading, setLoading] = useState(true);
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [renewals, setRenewals] = useState<RenewalRecord[]>([]);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [livePlans, liveSubs, liveInvoices, liveExpenses, liveRenewals] = await Promise.all([
+          getPlans(),
+          getAllSubscriptions(),
+          getAllInvoices(),
+          getAllExpenses(),
+          listRenewals(),
+        ]);
+
+        setPlans(livePlans.map(p => ({
+          id: p.code, name: p.name, priceMonthly: p.baseMonthly, priceAnnual: p.baseAnnual,
+          seats: p.maxSeats, families: -1, aiTokens: '', storage: '', features: p.features,
+          color: p.color
+        })));
+
+        setSubscribers(liveSubs.map(s => {
+          const mrr = planMonthlyTotal(s);
+          let mappedStatus: Subscriber['status'] = 'active';
+          if (s.status === 'trial') mappedStatus = 'trial';
+          else if (s.status === 'suspended') mappedStatus = 'suspended';
+          else if (s.status === 'cancelled' || s.status === 'past_due') mappedStatus = 'churned';
+
+          return {
+            id: s.tenantId, name: s.tenantName, plan: s.planId.toUpperCase(),
+            seats: s.licensedSeats, mrr, arr: mrr * 12, status: mappedStatus,
+            startDate: s.subscriptionStart?.split('T')[0] || '',
+            nextBilling: s.nextInvoiceDate?.split('T')[0] || '',
+            country: 'Global'
+          };
+        }));
+
+        setInvoices(liveInvoices.map(i => ({
+          id: i.invoiceNumber, tenantName: i.tenantName, amount: i.totalAmount,
+          status: i.status === 'draft' ? 'pending' : i.status === 'sent' ? 'pending' : i.status as any,
+          date: i.issuedAt.split('T')[0], dueDate: i.dueAt.split('T')[0], plan: i.planId.toUpperCase()
+        })));
+
+        setExpenses(liveExpenses.map(e => ({
+          category: e.name, monthly: monthlyEquivalent(e), ytd: monthlyEquivalent(e) * 3
+        })));
+
+        setRenewals(liveRenewals);
+      } catch (e) {
+        console.error('Failed to load live billing data:', e);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, []);
+
+  const { renewalsDueSoon } = useMemo(() => {
+    return { renewalsDueSoon: renewals.filter(r => !['completed', 'declined', 'expired'].includes(r.status) && renewalDaysLeft(r) <= 30).length };
+  }, [renewals]);
+
+  const totalMRR = subscribers.filter(s => s.status === 'active').reduce((s, t) => s + t.mrr, 0);
+
+  if (loading) {
+    return (
+      <div className="page flex flex-col items-center justify-center min-h-[60vh] gap-4">
+        <div className="w-8 h-8 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin"></div>
+        <Text className="text-tremor-content font-medium">Synchronizing live revenue data...</Text>
+      </div>
+    );
+  }
 
   return (
-    <div className="page-wrapper animate-fade-in">
+    <div className="page-wrapper animate-fade-in max-w-[1400px] mx-auto py-8">
       {/* MRR summary strip — compact */}
-      <div style={{ marginBottom: 20, padding: '12px 18px', background: 'var(--bg-elevated)', borderRadius: 10, border: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 16 }}>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 22, fontWeight: 900, color: '#22c55e', lineHeight: 1 }}>{fmt(totalMRR)}<span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 400 }}>/mo MRR</span></div>
-          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{fmt(totalMRR * 12)} ARR</div>
+      <Flex justifyContent="end" className="mb-6">
+        <div className="text-right bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-500/20 px-6 py-3 rounded-tremor-default shadow-sm inline-block">
+          <div className="text-xl font-bold text-emerald-600 leading-tight">
+            {fmt(totalMRR)}<span className="text-sm text-emerald-500/80 font-normal ml-1">/mo MRR</span>
+          </div>
+          <div className="text-xs text-emerald-500/80 mt-1 font-medium tracking-wide text-right">{fmt(totalMRR * 12)} ARR</div>
         </div>
-      </div>
+      </Flex>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 32, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
-        {([
-          { id: 'overview' as Tab,     label: '📊 Revenue Overview' },
-          { id: 'subscribers' as Tab,  label: '🏢 Subscribers' },
-          { id: 'invoices' as Tab,     label: '🧾 Invoices' },
-          { id: 'renewals' as Tab,     label: `🔁 Renewals${renewalsDueSoon > 0 ? ` (${renewalsDueSoon})` : ''}` },
-        ]).map(t => (
-          <button
-            key={t.id} onClick={() => setTab(t.id)}
-            className="btn btn-ghost btn-sm"
-            style={{ borderRadius: '8px 8px 0 0', borderBottom: tab === t.id ? '2px solid var(--brand-500)' : '2px solid transparent', fontWeight: tab === t.id ? 700 : 500, paddingBottom: 12, position: 'relative' }}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'overview'     && <OverviewTab />}
-      {tab === 'subscribers'  && <SubscribersTab />}
-      {tab === 'invoices'     && <InvoicesTab />}
-      {tab === 'renewals'     && <RenewalsTab />}
+      <TabGroup>
+        <TabList className="mb-2 w-full justify-start whitespace-nowrap border-b border-tremor-border pb-1">
+          <Tab icon={() => <span className="mr-2 text-md">📊</span>} className="font-semibold px-4">Revenue Overview</Tab>
+          <Tab icon={() => <span className="mr-2 text-md">🏢</span>} className="font-semibold px-4">Subscribers</Tab>
+          <Tab icon={() => <span className="mr-2 text-md">🧾</span>} className="font-semibold px-4">Invoices</Tab>
+          <Tab icon={() => <span className="mr-2 text-md">🔁</span>} className="font-semibold px-4">
+            Renewals {renewalsDueSoon > 0 && <Badge color="amber" size="xs" className="ml-2 rounded-full px-1.5">{renewalsDueSoon}</Badge>}
+          </Tab>
+        </TabList>
+        <TabPanels>
+          <TabPanel><OverviewTab plans={plans} subscribers={subscribers} expenses={expenses} /></TabPanel>
+          <TabPanel><SubscribersTab plans={plans} subscribers={subscribers} /></TabPanel>
+          <TabPanel><InvoicesTab invoices={invoices} /></TabPanel>
+          <TabPanel><RenewalsTab renewals={renewals} /></TabPanel>
+        </TabPanels>
+      </TabGroup>
     </div>
   );
 }

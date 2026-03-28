@@ -32,6 +32,12 @@ function getAdminApp(): any {
     return _app;
   }
 
+  const projectId =
+    process.env.NEXT_PUBLIC_PROJECT_ID ??
+    process.env.GOOGLE_CLOUD_PROJECT ??
+    process.env.FIREBASE_PROJECT_ID ??
+    'mfo-crm';
+
   const credJson = process.env.FIREBASE_ADMIN_SDK_JSON;
 
   // ── Attempt 1: FIREBASE_ADMIN_SDK_JSON is set ─────────────────────────────
@@ -81,7 +87,7 @@ function getAdminApp(): any {
             .replace(/\r/g, '');    // strip CR
         }
         try {
-          _app = admin.initializeApp({ credential: admin.credential.cert(cred) });
+          _app = admin.initializeApp({ credential: admin.credential.cert(cred), projectId });
           _hasCredentials = true;
           return _app;
         } catch (e: any) {
@@ -96,7 +102,7 @@ function getAdminApp(): any {
 
   // ── Attempt 2: Application Default Credentials ─────────────────────────────
   try {
-    _app = admin.initializeApp({ credential: admin.credential.applicationDefault() });
+    _app = admin.initializeApp({ credential: admin.credential.applicationDefault(), projectId });
     _hasCredentials = true;
     console.log('[firebaseAdmin] Initialised with Application Default Credentials.');
     return _app;
@@ -104,14 +110,9 @@ function getAdminApp(): any {
     // ADC not set up (common on Windows dev without gcloud) — fall through to projectId-only mode
   }
 
-
   // ── Attempt 3: projectId-only (no credentials) ──────────────────────────────
   // Prevents the "Unable to detect Project Id" crash. Routes already catch
   // the resulting auth errors gracefully and return helpful UI messages.
-  const projectId =
-    process.env.NEXT_PUBLIC_PROJECT_ID ??
-    process.env.GOOGLE_CLOUD_PROJECT ??
-    'mfo-crm';
   try {
     _app = admin.initializeApp({ projectId });
     console.warn(
