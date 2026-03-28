@@ -432,24 +432,43 @@ service cloud.firestore {
       allow read: if isSignedIn() && request.auth.uid == uid;
     }
 
-    // ─── Tenant CRM collections (Contacts, Orgs, Tasks, Docs, etc.) ────────
+    // ─── Tenant CRM collections (contacts, orgs, activities) ─────────────────
     // Readable/writable by any authenticated member of that tenant.
+    //
+    // tenants/{tenantId}/contacts
+    // tenants/{tenantId}/organizations
+    // tenants/{tenantId}/contact_relationships
+    // tenants/{tenantId}/activities
+    // tenants/{tenantId}/families
+    //
+    // isTenantMember is approximated by: user has the tenantId in their tenantIds array
+    // (this is what the server-side ensure-profile writes on login)
+    //
+    function isTenantMember(tenantId) {
+      return isSignedIn() && (
+        isSaasMasterAdmin()
+        || userTenantIds().hasAny([tenantId])
+      );
+    }
 
-    match /tenants/{tenantId}/contacts/{docId} { allow read, write: if belongsToTenant(tenantId); }
-    match /tenants/{tenantId}/organizations/{docId} { allow read, write: if belongsToTenant(tenantId); }
-    match /tenants/{tenantId}/contact_relationships/{docId} { allow read, write: if belongsToTenant(tenantId); }
-    match /tenants/{tenantId}/activities/{docId} { allow read, write: if belongsToTenant(tenantId); }
-    match /tenants/{tenantId}/families/{docId} { allow read, write: if belongsToTenant(tenantId); }
-    match /tenants/{tenantId}/tasks/{docId} { allow read, write: if belongsToTenant(tenantId); }
-    match /tenants/{tenantId}/documents/{docId} { allow read, write: if belongsToTenant(tenantId); }
-    match /tenants/{tenantId}/portfolio/{docId} { allow read, write: if belongsToTenant(tenantId); }
-    match /tenants/{tenantId}/governance/{docId} { allow read, write: if belongsToTenant(tenantId); }
-    match /tenants/{tenantId}/estate/{docId} { allow read, write: if belongsToTenant(tenantId); }
-    match /tenants/{tenantId}/concierge/{docId} { allow read, write: if belongsToTenant(tenantId); }
-
-    // Wildcards for any future tenant sub-collections (Baseline CRM objects)
+    match /tenants/{tenantId}/contacts/{docId} {
+      allow read, write: if isTenantMember(tenantId);
+    }
+    match /tenants/{tenantId}/organizations/{docId} {
+      allow read, write: if isTenantMember(tenantId);
+    }
+    match /tenants/{tenantId}/contact_relationships/{docId} {
+      allow read, write: if isTenantMember(tenantId);
+    }
+    match /tenants/{tenantId}/activities/{docId} {
+      allow read, write: if isTenantMember(tenantId);
+    }
+    match /tenants/{tenantId}/families/{docId} {
+      allow read, write: if isTenantMember(tenantId);
+    }
+    // Wildcards for any future tenant sub-collections
     match /tenants/{tenantId}/{collection}/{docId} {
-      allow read, write: if belongsToTenant(tenantId);
+      allow read, write: if isTenantMember(tenantId);
     }
 
     // ─── Platform Catalog: Roles & Email Templates ────────────────────────────
