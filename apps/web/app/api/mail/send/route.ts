@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
   try {
     const {
       uid, idToken, to, subject, body,
-      tenantId, familyId, familyName,
+      tenantId, threadId, crmLinks,
       replyToMessageId, attachments
     } = await req.json();
 
@@ -146,65 +146,39 @@ export async function POST(req: NextRequest) {
 
     const sent = await sendRes.json();
 
-    // 3. Log sent email to email_logs
-    const logId   = `gmail_${sent.id}`;
+    // 3. Log sent email natively directly to unified communications root
     const sentAt  = new Date().toISOString();
     const snippet = body.slice(0, 300).replace(/\s+/g, ' ').trim();
+    const activeLinks = crmLinks || [];
+    const activeIds = activeLinks.map((l: any) => l.id);
+    
+    // Add explicitly bound user ID for future ACL scoping
+    if (uid && !activeIds.includes(uid)) activeIds.push(uid);
 
-    const logData = {
-      uid,
-      provider:         'google',
-      gmailMessageId:   sent.id,
-      messageId:        sent.id,
-      subject,
-      fromEmail,
-      fromName:         fromEmail,
-      toEmails:         [to],
-      receivedAt:       sentAt,
-      direction:        'outbound',
-      snippet,
-      loggedToCrm:      !!(tenantId && familyId),
-      linkedFamilyId:   familyId   ?? null,
-      linkedFamilyName: familyName ?? null,
-      source:           'gmail_send',
-      syncedAt:         sentAt,
+    const fullRecord = {
+      type: 'email',
+      provider: 'google',
+      provider_message_id: sent.id,
+      thread_id: threadId || sent.threadId || sent.id,
+      direction: 'outbound',
+      subject: subject,
+      body: body,
+      snippet: snippet,
+      from: fromEmail,
+      to: [to],
+      timestamp: sentAt,
+      crm_entity_links: activeLinks,
+      crm_entity_ids: activeIds,
+      tenant_id: tenantId || null
     };
 
-    await fetch(fsUrl(`users/${uid}/email_logs/${logId}`), {
+    const commLogId = `gmail_${sent.id}`;
+
+    await fetch(fsUrl(`communications/${commLogId}`), {
       method:  'PATCH',
       headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ fields: toFsFields(logData) }),
+      body:    JSON.stringify({ fields: toFsFields(fullRecord) }),
     });
-
-    // 4. Create CRM activity if linked to a family
-    if (tenantId && familyId && familyName) {
-      const actId   = `email_${sent.id}`;
-      const actData = {
-        tenantId,
-        linkedFamilyId:   familyId,
-        linkedFamilyName: familyName,
-        activityType: 'email',
-        type:         'email',
-        direction:    'outbound',
-        subject,
-        fromEmail,
-        fromName:     fromEmail,
-        toEmails:     [to],
-        snippet,
-        provider:     'google',
-        gmailMessageId: sent.id,
-        occurredAt:   sentAt,
-        source:       'gmail_send',
-        createdAt:    sentAt,
-        sentiment:    'neutral',
-      };
-
-      await fetch(fsUrl(`tenants/${tenantId}/activities/${actId}`), {
-        method:  'PATCH',
-        headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ fields: toFsFields(actData) }),
-      });
-    }
 
     return NextResponse.json({ messageId: sent.id, sentAt, ok: true });
   } catch (err: any) {

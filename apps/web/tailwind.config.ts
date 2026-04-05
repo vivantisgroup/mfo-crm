@@ -22,100 +22,101 @@ const config = {
     },
     extend: {
       colors: {
-        // Shadcn UI base colors mapping to CSS variables
-        border: 'hsl(var(--border))',
-        input: 'hsl(var(--input))',
-        ring: 'hsl(var(--ring))',
-        background: 'hsl(var(--background))',
-        foreground: 'hsl(var(--foreground))',
+        // Shadcn UI generic mappings
+        border: 'var(--border-subtle)',
+        input: 'var(--border-subtle)',
+        ring: 'var(--brand-primary)',
+        background: 'var(--bg-background)',
+        foreground: 'var(--text-primary)',
         primary: {
-          DEFAULT: 'hsl(var(--primary))',
-          foreground: 'hsl(var(--primary-foreground))',
+          DEFAULT: 'var(--brand-primary)',
+          foreground: 'var(--text-inverted)',
         },
         secondary: {
-          DEFAULT: 'hsl(var(--secondary))',
-          foreground: 'hsl(var(--secondary-foreground))',
+          DEFAULT: 'var(--bg-elevated)',
+          foreground: 'var(--text-primary)',
         },
         destructive: {
-          DEFAULT: 'hsl(var(--destructive))',
-          foreground: 'hsl(var(--destructive-foreground))',
+          DEFAULT: 'var(--color-red)',
+          foreground: 'var(--text-inverted)',
         },
         muted: {
-          DEFAULT: 'hsl(var(--muted))',
-          foreground: 'hsl(var(--muted-foreground))',
+          DEFAULT: 'var(--bg-muted)',
+          foreground: 'var(--text-muted)',
         },
         accent: {
-          DEFAULT: 'hsl(var(--accent))',
-          foreground: 'hsl(var(--accent-foreground))',
+          DEFAULT: 'var(--bg-elevated)',
+          foreground: 'var(--text-primary)',
         },
         popover: {
-          DEFAULT: 'hsl(var(--popover))',
-          foreground: 'hsl(var(--popover-foreground))',
+          DEFAULT: 'var(--bg-surface)',
+          foreground: 'var(--text-primary)',
         },
         card: {
-          DEFAULT: 'hsl(var(--card))',
-          foreground: 'hsl(var(--card-foreground))',
+          DEFAULT: 'var(--bg-surface)',
+          foreground: 'var(--text-primary)',
         },
 
-        // Tremor UI semantic color space
+        // Tremor UI mapped natively to our theme variables
         tremor: {
           brand: {
-            faint: colors.blue[50],
-            muted: colors.blue[200],
-            subtle: colors.blue[400],
-            DEFAULT: colors.blue[500],
-            emphasis: colors.blue[700],
-            inverted: colors.white,
+            faint: 'var(--brand-faint)',
+            muted: 'var(--brand-muted)',
+            subtle: 'var(--brand-subtle)',
+            DEFAULT: 'var(--brand-primary)',
+            emphasis: 'var(--brand-emphasis)',
+            inverted: 'var(--text-inverted)',
           },
           background: {
-            muted: colors.slate[50],
-            subtle: colors.slate[100],
-            DEFAULT: colors.white,
-            emphasis: colors.slate[700],
+            muted: 'var(--bg-muted)',
+            subtle: 'var(--bg-elevated)',
+            DEFAULT: 'var(--bg-surface)',
+            emphasis: 'var(--text-primary)',
           },
           border: {
-            DEFAULT: colors.slate[200],
+            DEFAULT: 'var(--border-subtle)',
           },
           ring: {
-            DEFAULT: colors.slate[200],
+            DEFAULT: 'var(--border-subtle)',
           },
           content: {
-            subtle: colors.slate[400],
-            DEFAULT: colors.slate[500],
-            emphasis: colors.slate[700],
-            strong: colors.slate[900],
-            inverted: colors.white,
+            subtle: 'var(--text-muted)',
+            DEFAULT: 'var(--text-secondary)',
+            emphasis: 'var(--text-primary)',
+            strong: 'var(--text-primary)',
+            inverted: 'var(--text-inverted)',
           },
         },
         
-        // Tremor UI dark mode colors
+        // Tremor UI dark mode mapped to exactly the same CSS variables!
+        // Our DOM [data-theme] architecture handles the actual color values natively.
         "dark-tremor": {
           brand: {
-            faint: "#0B1229",
-            muted: colors.blue[950],
-            subtle: colors.blue[800],
-            DEFAULT: colors.blue[500],
-            emphasis: colors.blue[400],
-            inverted: colors.blue[950],
+            faint: 'var(--brand-faint)',
+            muted: 'var(--brand-muted)',
+            subtle: 'var(--brand-subtle)',
+            DEFAULT: 'var(--brand-primary)',
+            emphasis: 'var(--brand-emphasis)',
+            inverted: 'var(--text-inverted)',
           },
           background: {
-            muted: "#131A2B",
-            subtle: colors.slate[800],
-            DEFAULT: colors.slate[900],
-            emphasis: colors.slate[300],
+            muted: 'var(--bg-muted)',
+            subtle: 'var(--bg-elevated)',
+            DEFAULT: 'var(--bg-surface)',
+            emphasis: 'var(--text-primary)',
           },
           border: {
-            DEFAULT: colors.slate[800],
+            DEFAULT: 'var(--border-subtle)',
           },
           ring: {
-            DEFAULT: colors.slate[800],
+            DEFAULT: 'var(--border-subtle)',
           },
           content: {
-            subtle: colors.slate[600],
-            DEFAULT: colors.slate[400],
-            emphasis: colors.slate[200],
-            strong: colors.slate[50],
-            inverted: colors.slate[950],
+            subtle: 'var(--text-muted)',
+            DEFAULT: 'var(--text-secondary)',
+            emphasis: 'var(--text-primary)',
+            strong: 'var(--text-primary)',
+            inverted: 'var(--text-inverted)',
           },
         },
       },
@@ -196,7 +197,7 @@ const config = {
         /^(fill-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(?:50|100|200|300|400|500|600|700|800|900|950))$/,
     },
   ],
-  plugins: [require('tailwindcss-animate')],
+  plugins: [require('tailwindcss-animate'), require('@tailwindcss/typography')],
 } satisfies Config;
 
 export default config;

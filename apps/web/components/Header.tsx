@@ -1,5 +1,7 @@
 'use client';
 
+import { Search } from 'lucide-react';
+
 import React, { useState, useRef, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useTranslation } from '@/lib/i18n/context';
@@ -13,6 +15,7 @@ import type { FontFamily } from '@/lib/ThemeContext';
 import { useUserSettings } from '@/lib/UserSettingsContext';
 import { usePageTitle } from '@/lib/PageTitleContext';
 import { MailIntegrationSection } from '@/components/MailIntegrationSection';
+import { MessagingIntegrationSection } from '@/components/MessagingIntegrationSection';
 import { saveUserProfile, uploadAvatar } from '@/lib/userProfileService';
 import { logAction as logAudit } from '@/lib/auditLog';
 import {
@@ -70,8 +73,8 @@ function buildAutoCrumbs(pathname: string): { label: string; href: string }[] {
 // ─── Mini Theme Picker (in quick dropdown) ────────────────────────────────────
 
 function MiniThemePicker() {
-  const { theme, setThemeById, resetCustom, customVars, fontOverride } = useTheme();
-  const hasCustom = Object.keys(customVars).length > 0 || fontOverride !== null;
+  const { theme, setThemeById, resetCustom, fontOverride } = useTheme();
+  const hasCustom = fontOverride !== null;
   const darkThemes  = PRESET_THEMES.filter(t => t.mode === 'dark');
   const lightThemes = PRESET_THEMES.filter(t => t.mode === 'light');
 
@@ -123,7 +126,7 @@ function MiniThemePicker() {
 
 // ─── Tenant Switcher ──────────────────────────────────────────────────────────
 
-function TenantSwitcher() {
+export function TenantSwitcher() {
   const { userProfile, tenant, switchTenant } = useAuth();
   const [tenants, setTenants] = useState<TenantRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -196,339 +199,14 @@ function TenantSwitcher() {
   );
 }
 
-// ─── Profile Section (in full Settings modal) ─────────────────────────────────
-
-const labelStyle: React.CSSProperties = {
-  fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)',
-  textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 6,
-};
-
-function ProfileSection({ onClose }: { onClose: () => void }) {
-  const { user, userProfile } = useAuth();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [displayName, setDisplayName] = useState(userProfile?.displayName ?? user?.name ?? '');
-  const [phone,       setPhone]       = useState((userProfile as any)?.phone ?? '');
-  const [timezone,    setTimezone]    = useState((userProfile as any)?.timezone ?? getUserTimezone());
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  const [avatarFile,    setAvatarFile]    = useState<File | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [msg,    setMsg]    = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
-
-  useEffect(() => {
-    if (userProfile) {
-      setDisplayName((userProfile as any).displayName ?? user?.name ?? '');
-      setPhone((userProfile as any).phone ?? '');
-      setTimezone((userProfile as any).timezone ?? getUserTimezone());
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [(userProfile as any)?.uid]);
-
-  function handleAvatarPick(dataUrl: string) {
-    setAvatarPreview(dataUrl);
-    fetch(dataUrl).then(r => r.blob()).then(blob => setAvatarFile(new File([blob], 'avatar.jpg', { type: blob.type })));
-  }
-
-  async function handleSave() {
-    if (!user?.uid) return;
-    setSaving(true); setMsg(null);
-    try {
-      let photoURL: string | null = userProfile?.photoURL ?? null;
-      if (avatarFile) photoURL = await uploadAvatar(user.uid, avatarFile);
-      await saveUserProfile(user.uid, { displayName, phone, timezone, ...(photoURL !== undefined ? { photoURL } : {}) });
-      setMsg({ type: 'ok', text: '✅ Profile saved.' });
-      setAvatarFile(null);
-      setTimeout(onClose, 1200);
-    } catch (e: any) {
-      setMsg({ type: 'err', text: `❌ ${e.message}` });
-    } finally { setSaving(false); }
-  }
-
-  const groups   = groupedTimezones();
-  const currentSrc = avatarPreview ?? userProfile?.photoURL ?? user?.photoURL ?? null;
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      {/* Avatar — editable only here */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-        <Avatar src={currentSrc} name={displayName || user?.name} size="xl" shape="circle" editable onUpload={handleAvatarPick} />
-        <div>
-          <div style={{ fontWeight: 700, fontSize: 14 }}>{displayName || user?.name}</div>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{user?.email}</div>
-          <button className="btn btn-ghost btn-sm" style={{ marginTop: 6, fontSize: 11 }} onClick={() => fileInputRef.current?.click()}>
-            📷 Change Photo
-          </button>
-          <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }}
-            onChange={e => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = ev => handleAvatarPick(ev.target?.result as string); r.readAsDataURL(f); e.target.value = ''; }}
-          />
-        </div>
-      </div>
-      <div>
-        <label style={labelStyle}>Display Name</label>
-        <input className="input" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Your full name" style={{ width: '100%' }} />
-      </div>
-      <div>
-        <label style={labelStyle}>Email Address</label>
-        <input className="input" value={user?.email ?? ''} disabled style={{ width: '100%', opacity: 0.6, cursor: 'not-allowed' }} />
-        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>Managed by your auth provider.</div>
-      </div>
-      <div>
-        <label style={labelStyle}>Phone Number</label>
-        <input className="input" type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+1 (555) 000-0000" style={{ width: '100%' }} />
-      </div>
-      <div>
-        <label style={labelStyle}>Time Zone</label>
-        <select className="input" value={timezone} onChange={e => setTimezone(e.target.value)} style={{ width: '100%' }}>
-          {Object.entries(groups).map(([region, zones]) => (
-            <optgroup key={region} label={region}>
-              {zones.map((tz: any) => <option key={tz.value} value={tz.value}>{tz.utcOffset} — {tz.label}</option>)}
-            </optgroup>
-          ))}
-        </select>
-        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>Detected: <strong>{getUserTimezone()}</strong></div>
-      </div>
-      {msg && (
-        <div style={{ padding: '8px 12px', borderRadius: 8, fontSize: 13, background: msg.type === 'ok' ? '#22c55e15' : '#ef444415', color: msg.type === 'ok' ? '#22c55e' : '#ef4444' }}>
-          {msg.text}
-        </div>
-      )}
-      <div style={{ display: 'flex', gap: 10 }}>
-        <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? '⏳ Saving…' : '💾 Save Changes'}</button>
-        <button className="btn btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
-      </div>
-
-      {/* Role & Access — read-only, informational */}
-      {userProfile && (
-        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 18, marginTop: 4 }}>
-          <div style={labelStyle}>Role & Access</div>
-          <div style={{ padding: '14px 16px', borderRadius: 10, background: 'var(--bg-surface)', border: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-            <div style={{ fontSize: 26 }}>🛡</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 3 }}>
-                {ROLE_LABELS[userProfile.role] ?? userProfile.role}
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 8 }}>
-                {ROLE_DESCRIPTIONS[userProfile.role] ?? 'Custom role assignment.'}
-              </div>
-              {(userProfile.tenantIds ?? []).length > 0 && (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {(userProfile.tenantIds ?? []).map(tid => (
-                    <span key={tid} style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: 'var(--bg-overlay)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
-                      {tid}
-                    </span>
-                  ))}
-                </div>
-              )}
-              <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-tertiary)' }}>
-                Role assignments are managed by your platform administrator.
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Appearance Section (font choice in Settings modal) ───────────────────────
-
-function AppearanceSection() {
-  const { theme, setThemeById, fontOverride, setFontOverride, resetCustom, customVars } = useTheme();
-  const hasCustom = Object.keys(customVars).length > 0 || fontOverride !== null;
-  const darkThemes  = PRESET_THEMES.filter(t => t.mode === 'dark');
-  const lightThemes = PRESET_THEMES.filter(t => t.mode === 'light');
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-      {/* Font */}
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <label style={labelStyle}>Interface Font</label>
-          {hasCustom && <button onClick={resetCustom} style={{ fontSize: 11, color: '#f59e0b', background: 'none', border: 'none', cursor: 'pointer' }}>↺ Reset to defaults</button>}
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          {FONTS.map(f => {
-            const active = (fontOverride ?? theme.font) === f.id;
-            return (
-              <button
-                key={f.id}
-                onClick={() => setFontOverride(active ? null : f.id as FontFamily)}
-                style={{
-                  padding: '10px 14px', borderRadius: 8, cursor: 'pointer', textAlign: 'left',
-                  background: active ? 'var(--brand-900)' : 'var(--bg-surface)',
-                  border: `1px solid ${active ? 'var(--brand-500)' : 'var(--border)'}`,
-                  color: active ? 'var(--brand-400)' : 'var(--text-secondary)',
-                  transition: 'all 0.15s',
-                }}
-              >
-                <div style={{ fontFamily: f.stack, fontSize: 13, fontWeight: active ? 700 : 500 }}>{f.label}</div>
-                <div style={{ fontSize: 10, color: active ? 'var(--brand-400)' : 'var(--text-tertiary)', marginTop: 2, opacity: 0.8 }}>{f.description}</div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Themes */}
-      <div>
-        <label style={labelStyle}>Color Theme</label>
-        <div style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 6 }}>Dark</div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {darkThemes.map(t => (
-              <div key={t.id} title={t.name} onClick={() => setThemeById(t.id)}
-                style={{ width: 26, height: 26, borderRadius: '50%', background: t.accent, cursor: 'pointer', flexShrink: 0,
-                  border: `2px solid ${theme.id === t.id ? 'white' : 'transparent'}`,
-                  boxShadow: theme.id === t.id ? `0 0 0 2px ${t.accent}` : 'none', transition: 'all 0.15s' }}
-              />
-            ))}
-          </div>
-        </div>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 6 }}>Light</div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {lightThemes.map(t => (
-              <div key={t.id} title={t.name} onClick={() => setThemeById(t.id)}
-                style={{ width: 26, height: 26, borderRadius: '50%', background: t.accent, cursor: 'pointer', flexShrink: 0,
-                  border: `2px solid ${theme.id === t.id ? 'rgba(0,0,0,0.8)' : 'transparent'}`,
-                  boxShadow: theme.id === t.id ? `0 0 0 2px ${t.accent}` : 'none', transition: 'all 0.15s' }}
-              />
-            ))}
-          </div>
-        </div>
-        <div style={{ marginTop: 10, fontSize: 12, color: 'var(--brand-400)', fontWeight: 600 }}>
-          {theme.emoji} {theme.name} · {(fontOverride ?? theme.font)}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Notifications toggle ──────────────────────────────────────────────────────
-
-function Toggle({ label, desc, defaultOn }: { label: string; desc: string; defaultOn: boolean }) {
-  const [on, setOn] = useState(defaultOn);
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 8, background: 'var(--bg-surface)', border: '1px solid var(--border)', gap: 12 }}>
-      <div>
-        <div style={{ fontSize: 13, fontWeight: 600 }}>{label}</div>
-        <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{desc}</div>
-      </div>
-      <button onClick={() => setOn(v => !v)} style={{ width: 38, height: 20, borderRadius: 10, background: on ? 'var(--brand-500)' : 'var(--bg-elevated)', border: `1px solid ${on ? 'var(--brand-500)' : 'var(--border)'}`, position: 'relative', cursor: 'pointer', flexShrink: 0, transition: 'background 0.2s' }}>
-        <div style={{ width: 14, height: 14, borderRadius: '50%', background: 'white', position: 'absolute', top: 2, left: on ? 18 : 2, transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
-      </button>
-    </div>
-  );
-}
-
-// ─── Full Settings Modal ───────────────────────────────────────────────────────
-
-type SettingsSection = 'profile' | 'appearance' | 'mail' | 'calendar' | 'notifications';
-
-function UserSettingsModal({ onClose, userName }: { onClose: () => void; userName: string }) {
-  const [section, setSection] = useState<SettingsSection>('profile');
-  const { tickerSpeed, setTickerSpeed } = useUserSettings();
-  const { language, setLanguage, t } = useTranslation();
-
-  const navItems: { id: SettingsSection; icon: string; label: string }[] = [
-    { id: 'profile',       icon: '👤', label: 'Profile' },
-    { id: 'appearance',    icon: '🎨', label: 'Appearance' },
-    { id: 'mail',          icon: '📧', label: 'Mail Integration' },
-    { id: 'calendar',      icon: '📅', label: 'Calendar Sync' },
-    { id: 'notifications', icon: '🔔', label: 'Notifications' },
-  ];
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(8px)' }}
-      onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ width: 760, maxHeight: '88vh', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 20, boxShadow: '0 32px 80px rgba(0,0,0,0.5)', display: 'flex', overflow: 'hidden' }}>
-        {/* Left nav */}
-        <div style={{ width: 180, background: 'var(--bg-surface)', borderRight: '1px solid var(--border)', padding: '20px 10px', display: 'flex', flexDirection: 'column', gap: 3 }}>
-          <div style={{ fontSize: 12, fontWeight: 800, padding: '0 8px', marginBottom: 14, color: 'var(--text-primary)' }}>⚙️ Settings</div>
-          {navItems.map(item => (
-            <button key={item.id} onClick={() => setSection(item.id)} style={{
-              display: 'flex', alignItems: 'center', gap: 9, padding: '7px 8px', borderRadius: 7,
-              background: section === item.id ? 'var(--brand-900)' : 'transparent',
-              border: `1px solid ${section === item.id ? 'var(--brand-500)44' : 'transparent'}`,
-              color: section === item.id ? 'var(--brand-400)' : 'var(--text-secondary)',
-              fontSize: 13, fontWeight: section === item.id ? 700 : 400, cursor: 'pointer', width: '100%', textAlign: 'left',
-            }}>
-              <span>{item.icon}</span><span>{item.label}</span>
-            </button>
-          ))}
-
-          {/* Language + Ticker in settings sidebar */}
-          <div style={{ marginTop: 'auto', paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.07em', padding: '0 8px', marginBottom: 8 }}>Language</div>
-            <select value={language} onChange={e => setLanguage(e.target.value as any)}
-              style={{ width: '100%', padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-canvas)', color: 'var(--text-primary)', fontSize: 12 }}>
-              <option value="en-US">English (US)</option>
-              <option value="pt-BR">Português (BR)</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Content pane */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 22 }}>
-            <h2 style={{ fontSize: 17, fontWeight: 800, margin: 0 }}>
-              {navItems.find(n => n.id === section)?.icon} {navItems.find(n => n.id === section)?.label}
-            </h2>
-            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--text-tertiary)' }}>✕</button>
-          </div>
-
-          {section === 'profile'       && <ProfileSection onClose={onClose} />}
-          {section === 'appearance'    && <AppearanceSection />}
-          {section === 'mail'          && <MailIntegrationSection />}
-          {section === 'calendar'      && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
-                Calendar sync uses the same OAuth connection as Mail Integration. Events from Outlook / Google Calendar appear in the platform calendar once connected.
-              </p>
-              <div style={{ padding: '14px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-surface)', display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 28 }}>📅</span>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 3 }}>Calendar sync is automatic once connected</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Configure the sync window in <strong>Mail Integration → Sync Settings</strong>.</div>
-                </div>
-              </div>
-
-              {/* Ticker speed, fits here */}
-              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Ticker Speed</div>
-                <input type="range" min="20" max="400" step="10" value={420 - tickerSpeed} onChange={e => setTickerSpeed(420 - parseInt(e.target.value, 10))}
-                  style={{ width: '100%', accentColor: 'var(--brand-500)', cursor: 'pointer' }} />
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: 11, color: 'var(--text-tertiary)' }}>
-                  <span>Slow</span><span>Fast</span>
-                </div>
-              </div>
-            </div>
-          )}
-          {section === 'notifications' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {[
-                { label: 'SLA breach alerts',    desc: 'Notify when a task SLA is about to expire',    defaultOn: true  },
-                { label: 'Unassigned task alert',desc: 'Alert when a task stays unassigned beyond SLA', defaultOn: true  },
-                { label: 'Capital call reminders',desc: 'Remind 48h before capital call due dates',     defaultOn: true  },
-                { label: 'KYC review due',       desc: 'Alert 7 days before KYC renewal is required',  defaultOn: false },
-                { label: 'Email digest',         desc: 'Daily summary email of open tasks',             defaultOn: false },
-              ].map(n => <Toggle key={n.label} {...n} />)}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Header ───────────────────────────────────────────────────────────────────
 
 export default function Header() {
-  const { title, crumbs } = usePageTitle();
+  const { title, crumbs } = usePageTitle() as any;
   const pathname = usePathname();
   const router   = useRouter();
   const [menuOpen,     setMenuOpen]     = useState(false);
   const [notifOpen,    setNotifOpen]    = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const { t } = useTranslation();
   const { user, tenant, logout, isHydrated } = useAuth();
   const { unreadCount } = useTaskQueue();
@@ -544,47 +222,43 @@ export default function Header() {
   };
 
   useEffect(() => {
+    const handleOpenSettings = (e: any) => {
+      const section = e.detail?.section || 'profile';
+      router.push(`/settings?tab=${section}`);
+    };
+    window.addEventListener('open-settings', handleOpenSettings);
+    return () => window.removeEventListener('open-settings', handleOpenSettings);
+  }, [router]);
+
+  useEffect(() => {
     const h = (e: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false); };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, []);
 
   // Resolve breadcrumbs: prefer explicit crumbs from page, else auto-generate from URL
-  const resolvedCrumbs = crumbs.length > 0
+  const resolvedCrumbs = crumbs && crumbs.length > 0
     ? crumbs
     : buildAutoCrumbs(pathname || '').map(c => ({ label: c.label, onClick: c.href !== pathname ? () => router.push(c.href) : undefined }));
 
   return (
     <>
-      {settingsOpen && user && <UserSettingsModal onClose={() => setSettingsOpen(false)} userName={user.name} />}
-
-      <header className="header" style={{ position: 'relative', height: 52 }}>
+      {/* Main Header Container */}
+      <header className="header relative flex items-center h-14 px-6 gap-4 bg-surface border-b border-border z-40 sticky top-0">
 
         {/* ── Breadcrumb (left) ─────────────────────────────────────────── */}
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 0, minWidth: 0 }}>
-          {resolvedCrumbs.map((crumb, i) => (
+        <div className="flex-1 flex items-center min-w-0">
+          {resolvedCrumbs.map((crumb: any, i: number) => (
             <React.Fragment key={i}>
               {i > 0 && (
-                <span style={{ color: 'var(--text-tertiary)', fontSize: 12, margin: '0 4px', userSelect: 'none' }}>/</span>
+                <span className="text-tertiary text-xs mx-1 select-none">/</span>
               )}
               {crumb.onClick ? (
-                <button onClick={crumb.onClick} style={{
-                  background: 'none', border: 'none', cursor: 'pointer', padding: '2px 5px',
-                  fontSize: i === resolvedCrumbs.length - 1 ? 14 : 13,
-                  fontWeight: i === resolvedCrumbs.length - 1 ? 700 : 500,
-                  color: i === resolvedCrumbs.length - 1 ? 'var(--text-primary)' : 'var(--brand-400)',
-                  borderRadius: 5, transition: 'background 0.12s',
-                  whiteSpace: 'nowrap',
-                }}>
+                <button onClick={crumb.onClick} className={`bg-transparent border-none cursor-pointer px-1.5 py-0.5 whitespace-nowrap rounded hover:bg-elevated transition-colors ${i === resolvedCrumbs.length - 1 ? 'text-sm font-bold text-primary' : 'text-[13px] font-medium text-brand-500 hover:text-brand-600'}`}>
                   {crumb.label}
                 </button>
               ) : (
-                <span style={{
-                  fontSize: i === resolvedCrumbs.length - 1 ? 14 : 13,
-                  fontWeight: i === resolvedCrumbs.length - 1 ? 700 : 500,
-                  color: i === resolvedCrumbs.length - 1 ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                  padding: '2px 5px', whiteSpace: 'nowrap',
-                }}>
+                <span className={`px-1.5 py-0.5 whitespace-nowrap ${i === resolvedCrumbs.length - 1 ? 'text-sm font-bold text-primary' : 'text-[13px] font-medium text-tertiary'}`}>
                   {crumb.label}
                 </span>
               )}
@@ -593,14 +267,14 @@ export default function Header() {
         </div>
 
         {/* ── Search ─────────────────────────────────────────────────────── */}
-        <div className="header-search" style={{ cursor: 'text', minWidth: 340, maxWidth: 460 }}>
-          <span style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>🔍</span>
-          <input type="text" placeholder={t('header.search')} readOnly style={{ flex: 1, minWidth: 0 }} />
-          <span style={{ fontSize: 10, color: 'var(--text-tertiary)', background: 'var(--bg-canvas)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px', flexShrink: 0 }}>⌘K</span>
+        <div className="header-search cursor-text max-w-sm flex-1 hidden md:flex">
+          <Search size={16} className="text-tertiary shrink-0" />
+          <input type="text" placeholder={t('header.search')} readOnly className="flex-1 min-w-0 bg-transparent border-none outline-none text-[13px] text-primary placeholder-tertiary" />
+          <span className="text-[10px] text-tertiary bg-canvas border border-border rounded px-1.5 py-px shrink-0 font-medium">⌘K</span>
         </div>
 
         {/* ── Right actions ──────────────────────────────────────────────── */}
-        <div className="header-right" style={{ gap: 8 }}>
+        <div className="flex items-center gap-2 shrink-0">
 
           {/* Notifications */}
           <div ref={notifRef} style={{ position: 'relative' }}>
@@ -620,19 +294,22 @@ export default function Header() {
           <TenantSwitcher />
 
           {/* Avatar + quick menu */}
-          <div ref={menuRef} style={{ position: 'relative' }}>
+          <div ref={menuRef} className="relative">
             {(!isHydrated || !user) ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', opacity: 0.4 }}>
-                <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--bg-canvas)' }} />
-                <div style={{ width: 70, height: 14, borderRadius: 4, background: 'var(--bg-canvas)' }} />
+              <div className="flex items-center gap-2 px-2 py-1 rounded-md border border-border bg-elevated opacity-40">
+                <div className="w-6 h-6 rounded-full bg-canvas animate-pulse" />
+                <div className="w-16 h-3 rounded bg-canvas animate-pulse" />
               </div>
             ) : (
-              <div onClick={() => setMenuOpen(p => !p)} style={{ display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer', padding: '3px 7px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--bg-elevated)', transition: 'border-color var(--transition)' }}>
+              <button 
+                onClick={() => setMenuOpen(p => !p)} 
+                className="flex items-center gap-2 px-2 py-1 rounded-md border border-border bg-elevated hover:border-brand-500 hover:bg-surface transition-all cursor-pointer text-left"
+              >
                 <Avatar id={`user-${user.id}`} name={user.name} size="sm" />
-                <div style={{ lineHeight: 1.2 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600 }}>{user.name}</div>
+                <div className="leading-tight hidden sm:block">
+                  <div className="text-xs font-semibold text-primary">{user.name}</div>
                 </div>
-              </div>
+              </button>
             )}
 
             {/* Quick dropdown */}
@@ -647,7 +324,7 @@ export default function Header() {
 
                 {/* Settings button */}
                 <button
-                  onClick={() => { setMenuOpen(false); setSettingsOpen(true); }}
+                  onClick={() => { setMenuOpen(false); router.push('/settings'); }}
                   style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', borderRadius: 7, cursor: 'pointer', background: 'var(--bg-canvas)', border: '1px solid var(--border)', color: 'var(--text-primary)', fontSize: 12, width: '100%', textAlign: 'left', marginBottom: 10 }}
                 >
                   ⚙️ <span style={{ fontWeight: 600 }}>Settings</span>

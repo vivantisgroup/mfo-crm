@@ -3,7 +3,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { Search, X, Link2, Check, Loader2 } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
-import type { CrmLinkTarget } from '@/app/api/mail/link/route';
+type CrmLinkTarget = { id: string; name: string; type: 'family' | 'contact' | 'org' | 'ticket' | 'activity' | 'task' | 'opportunity' | string; tenantId: string; [key: string]: any };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -15,6 +15,7 @@ interface SearchResult {
   name:     string;
   subtitle: string;
   tenantId: string;
+  tags?:    string[];
 }
 
 interface Props {
@@ -23,6 +24,7 @@ interface Props {
   tenantId:    string;
   initialLinks: CrmLinkTarget[];
   onLinksChange: (links: CrmLinkTarget[]) => void;
+  onAutoTag?:  (tags: string[]) => void;
   onClose:     () => void;
 }
 
@@ -73,12 +75,14 @@ async function searchCollection(
       const lName = f.lastName?.stringValue ?? '';
       const name  = f[nameField]?.stringValue ?? f.name?.stringValue ?? (fName || lName ? `${fName} ${lName}`.trim() : '');
       const subtitle = f[subtitleField]?.stringValue ?? f.email?.stringValue ?? '';
+      const tags = f.tags?.arrayValue?.values?.map((v: any) => v.stringValue || '').filter(Boolean) ?? [];
       return {
         type,
         id:       doc.name.split('/').pop() ?? '',
         name,
         subtitle,
         tenantId,
+        tags,
       };
     })
     .filter(r => r.name.toLowerCase().includes(q) || r.subtitle.toLowerCase().includes(q) || !q)
@@ -87,7 +91,7 @@ async function searchCollection(
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function CrmLinkPanel({ emailLogId, uid, tenantId, initialLinks, onLinksChange, onClose }: Props) {
+export function CrmLinkPanel({ emailLogId, uid, tenantId, initialLinks, onLinksChange, onAutoTag, onClose }: Props) {
   const [tab,     setTab]     = useState<RecordType>('family');
   const [query,   setQuery]   = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -142,7 +146,7 @@ export function CrmLinkPanel({ emailLogId, uid, tenantId, initialLinks, onLinksC
     const already = links.find(l => l.type === record.type && l.id === record.id);
     const newLinks = already
       ? links.filter(l => !(l.type === record.type && l.id === record.id))
-      : [...links, { type: record.type, id: record.id, name: record.name, tenantId: record.tenantId }];
+      : [...links, { type: record.type, id: record.id, name: record.name, tenantId: record.tenantId, tags: record.tags }];
 
     setSaving(true);
     try {
@@ -155,6 +159,16 @@ export function CrmLinkPanel({ emailLogId, uid, tenantId, initialLinks, onLinksC
       if (!res.ok) throw new Error('Save failed');
       setLinks(newLinks);
       onLinksChange(newLinks);
+      
+      // Auto-assign tags upon linkage!
+      if (!already && onAutoTag) {
+        if (record.tags && record.tags.length > 0) {
+          onAutoTag(record.tags);
+        } else {
+          onAutoTag([record.name]); // Fallback to record name
+        }
+      }
+
       setFlash(already ? 'Unlinked' : `Linked to ${record.name}`);
       setTimeout(() => setFlash(null), 2000);
     } catch (e) {

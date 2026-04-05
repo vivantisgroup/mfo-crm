@@ -78,4 +78,12 @@ export const pt: Record<TranslationKey, string> = {
   'calendar.event.meeting': 'Reunião',
   'calendar.event.governance': 'Governança',
   'calendar.event.concierge': 'Concierge',
+
+  // Relationships
+  'rel.family_member': 'Membro da Família',
+  'rel.spouse': 'Cônjuge / Parceiro',
+  'rel.child': 'Filho(a)',
+  'rel.friend': 'Amigo',
+  'rel.attorney': 'Advogado(a)',
+  'rel.other': 'Outro',
 };

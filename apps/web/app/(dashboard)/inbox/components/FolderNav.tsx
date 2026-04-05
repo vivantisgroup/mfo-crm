@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import {
   Inbox, Send, Star, Archive, Trash2, Tag, RefreshCw, PenSquare,
   FileWarning, AlertCircle, ChevronDown, ChevronRight, FolderOpen,
+  ChevronsLeft, ArrowDown,
   type LucideIcon,
 } from 'lucide-react';
 import type { GmailLabel } from '@/app/api/mail/labels/route';
@@ -32,6 +33,7 @@ const CRM_LABELS: { key: FolderKey; label: string; icon: LucideIcon; color: stri
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
+  width?:             number;
   active:             FolderKey;
   counts:             Partial<Record<FolderKey, number>>;
   syncing:            boolean;
@@ -43,11 +45,12 @@ interface Props {
   onSync:             () => void;
   onLoadMore:         () => void;
   onCompose:          () => void;
+  onToggleCollapse?:  () => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function FolderNav({ active, counts, syncing, labels, labelsLoading, syncCount, onSyncCountChange, onSelect, onSync, onLoadMore, onCompose }: Props) {
+export function FolderNav({ width = 210, active, counts, syncing, labels, labelsLoading, syncCount, onSyncCountChange, onSelect, onSync, onLoadMore, onCompose, onToggleCollapse }: Props) {
   const [userLabelsOpen, setUserLabelsOpen] = useState(true);
 
   const systemLabels  = labels.filter(l => l.type === 'system' && SYSTEM_CONFIG[l.id]);
@@ -55,19 +58,27 @@ export function FolderNav({ active, counts, syncing, labels, labelsLoading, sync
 
   return (
     <aside style={{
-      width: 210, flexShrink: 0, display: 'flex', flexDirection: 'column',
-      gap: 2, padding: '0 8px', borderRight: '1px solid var(--border)',
-      height: '100%', overflowY: 'auto',
+      width, flexShrink: 0, display: 'flex', flexDirection: 'column',
+      gap: 2, padding: width === 0 ? 0 : '12px 14px',
+      height: '100%', overflow: 'hidden', background: 'transparent',
+      transition: 'width 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
     }}>
-      {/* Compose */}
-      <button
-        className="btn btn-primary"
-        onClick={onCompose}
-        style={{ margin: '0 0 10px 0', fontSize: 13, gap: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-      >
-        <PenSquare size={14} />
-        Compose
-      </button>
+      {/* Compose & Collapse */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center' }}>
+        <button
+          className="btn btn-primary"
+          onClick={onCompose}
+          style={{ flex: 1, fontSize: 13, gap: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <PenSquare size={14} />
+          Compose
+        </button>
+        {onToggleCollapse && (
+          <button onClick={onToggleCollapse} className="flex items-center justify-center w-8 h-8 rounded bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] shadow-sm border border-[var(--border-subtle)]" title="Collapse Folders" style={{ flexShrink: 0, padding: 0 }}>
+             <ChevronsLeft size={16} />
+          </button>
+        )}
+      </div>
 
       {/* ── System folders ─────────────────────────────────────────────────── */}
       <SectionHeader>Folders</SectionHeader>
@@ -161,8 +172,8 @@ export function FolderNav({ active, counts, syncing, labels, labelsLoading, sync
             onChange={e => onSyncCountChange(Number(e.target.value))}
             disabled={syncing}
             style={{
-              fontSize: 11, borderRadius: 6, border: '1px solid var(--border)',
-              background: 'var(--bg-canvas)', color: 'var(--text-primary)',
+              fontSize: 11, borderRadius: 6, border: '1px solid var(--border-subtle)',
+              background: 'var(--bg-elevated)', color: 'var(--text-primary)',
               padding: '3px 6px', cursor: 'pointer', outline: 'none',
             }}
           >
@@ -188,7 +199,7 @@ export function FolderNav({ active, counts, syncing, labels, labelsLoading, sync
           disabled={syncing}
           style={{ width: '100%', fontSize: 11, gap: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.75 }}
         >
-          ↓ Load more ({syncCount * 2})
+          <ArrowDown size={12} /> Load more ({syncCount * 2})
         </button>
       </div>
     </aside>
@@ -222,11 +233,12 @@ function FolderRow({
       style={{
         display: 'flex', alignItems: 'center', gap: 10,
         padding: `7px 10px 7px ${10 + indent * 14}px`,
-        borderRadius: 8, border: 'none', cursor: 'pointer', width: '100%',
-        textAlign: 'left', fontSize: 13, fontWeight: isActive ? 700 : 400,
-        color: isActive ? color : 'var(--text-secondary)',
-        background: isActive ? `${color}18` : 'transparent',
-        transition: 'background 0.1s, color 0.1s',
+        borderRadius: 8, border: isActive ? '1px solid var(--border-subtle)' : '1px solid transparent', cursor: 'pointer', width: '100%',
+        textAlign: 'left', fontSize: 13, fontWeight: isActive ? 700 : 500,
+        color: isActive ? color : 'var(--text-primary)',
+        background: isActive ? 'var(--bg-elevated)' : 'transparent',
+        boxShadow: isActive ? '0 1px 2px rgba(0,0,0,0.02)' : 'none',
+        transition: 'all 0.1s',
       }}
     >
       <span style={{ color: isActive ? color : 'var(--text-tertiary)', flexShrink: 0, display: 'flex' }}>

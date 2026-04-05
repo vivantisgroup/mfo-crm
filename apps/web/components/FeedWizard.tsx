@@ -1,6 +1,7 @@
 'use client';
 import React, { useState, useEffect, useMemo } from 'react';
 import type { ActiveTenant, UserSession } from '@/lib/AuthContext';
+import { Info, AlertTriangle, CheckCircle, Package, Eye, XCircle, Zap, Save, Check } from 'lucide-react';
 
 export interface FeedConfig {
   id: string;
@@ -201,7 +202,7 @@ export function FeedWizard({ initialFeed, onSave, onCancel, tenant, user }: {
                 fontSize: 11, fontWeight: 800, color: 'white', flexShrink: 0,
                 background: i === step ? '#6366f1' : i < step ? '#22c55e' : '#1e293b',
                 border: `2px solid ${i === step ? '#818cf8' : i < step ? '#22c55e' : '#334155'}`,
-              }}>{i < step ? '✓' : s.n}</div>
+              }}>{i < step ? <Check size={14} strokeWidth={3} /> : s.n}</div>
               <div style={{ textAlign: 'left' }}>
                 <div style={{ fontSize: 12, fontWeight: i === step ? 700 : 500, color: i === step ? 'white' : '#64748b' }}>{s.label}</div>
                 <div style={{ fontSize: 10, color: '#334155' }}>{s.desc}</div>
@@ -225,9 +226,9 @@ export function FeedWizard({ initialFeed, onSave, onCancel, tenant, user }: {
             <div>
               <label style={LS}>Scope</label>
               <select className="input" value={feed.scope || 'user'} onChange={e => setFeed(f => ({ ...f, scope: e.target.value as any }))} style={inp()}>
-                <option value="user">🧍 Just Me</option>
-                {tenant?.role === 'admin' && <option value="tenant">🏢 Tenant</option>}
-                {user?.role === 'saas_master_admin' && <option value="platform">🌐 Platform</option>}
+                <option value="user">Just Me (User)</option>
+                {tenant?.role === 'admin' && <option value="tenant">Tenant</option>}
+                {user?.role === 'saas_master_admin' && <option value="platform">Platform</option>}
               </select>
             </div>
             <div style={{ gridColumn: '1/-1' }}>
@@ -286,22 +287,25 @@ export function FeedWizard({ initialFeed, onSave, onCancel, tenant, user }: {
           <div>
             {/* Fetch bar */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-              <button onClick={doFetch} disabled={loading} className="btn btn-primary btn-sm">
-                {loading ? '⏳ Fetching…' : '⚡ Fetch & Inspect'}
+              <button onClick={doFetch} disabled={loading} className="btn btn-primary btn-sm flex items-center gap-2">
+                {loading ? 'Fetching...' : <><Zap size={14} /> Fetch & Inspect</>}
               </button>
               {ms !== null && !err && <span style={{ fontSize: 12, color: '#22c55e' }}>✓ {ms}ms</span>}
               {raw !== null && <span style={{ fontSize: 12, color: '#64748b' }}>{Array.isArray(raw) ? `Array[${raw.length}]` : 'Object'}</span>}
             </div>
 
             {/* CORS tip */}
-            <div style={{ marginBottom: 14, padding: '9px 14px', background: '#080d18', borderRadius: 8, border: '1px solid #1e293b', fontSize: 12, color: '#64748b' }}>
-              💡 CORS blocked? Prefix URL with <code style={{ color: '#22d3ee' }}>https://corsproxy.io/?</code> or use the API&apos;s SDK.
+            <div style={{ marginBottom: 14, padding: '9px 14px', background: '#080d18', borderRadius: 8, border: '1px solid #1e293b', fontSize: 12, color: '#64748b', display: 'flex', gap: 8 }}>
+              <Info size={14} className="mt-0.5 text-[#22d3ee]" />
+              <div>CORS blocked? Prefix URL with <code style={{ color: '#22d3ee' }}>https://corsproxy.io/?</code> or use the API&apos;s SDK.</div>
             </div>
 
             {/* Error */}
             {err && (
               <div style={{ marginBottom: 14, padding: '12px 14px', background: '#ef444410', borderRadius: 8, border: '1px solid #ef444430' }}>
-                <div style={{ fontWeight: 700, color: '#ef4444', fontSize: 13, marginBottom: 4 }}>❌ Error</div>
+                <div style={{ fontWeight: 700, color: '#ef4444', fontSize: 13, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <XCircle size={14} /> Error
+                </div>
                 <pre style={{ fontSize: 12, color: '#fca5a5', margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>{err}</pre>
               </div>
             )}
@@ -310,7 +314,8 @@ export function FeedWizard({ initialFeed, onSave, onCancel, tenant, user }: {
             {raw !== null && (
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  📦 Response Inspector
+                  <Package size={14} className="text-[#a78bfa]" />
+                  Response Inspector
                   <span style={{ fontSize: 11, fontWeight: 400, color: '#64748b' }}>Click arrays → use as source · Click values → insert as field</span>
                 </div>
                 <div style={{ background: '#080d18', borderRadius: 10, border: '1px solid #1e293b', padding: 12, maxHeight: 220, overflowY: 'auto', fontFamily: 'monospace', fontSize: 12 }}>
@@ -363,10 +368,12 @@ export function FeedWizard({ initialFeed, onSave, onCancel, tenant, user }: {
             {/* Live preview */}
             {previews.length > 0 && (
               <div style={{ marginTop: 18 }}>
-                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>👁 Live Preview</div>
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Eye size={14} className="text-[#a78bfa]" /> Live Preview
+                </div>
                 {previews.map((t, i) => (
                   <div key={i} style={{ padding: '9px 14px', background: '#080d18', borderRadius: 7, border: '1px solid #1e293b', fontSize: 12, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'monospace' }}>
-                    <span style={{ color: '#f59e0b' }}>ℹ️</span>
+                    <span style={{ color: '#f59e0b', display: 'flex' }}><Info size={12} /></span>
                     <span style={{ color: '#e2e8f0' }}>{t}</span>
                   </div>
                 ))}
@@ -388,16 +395,18 @@ export function FeedWizard({ initialFeed, onSave, onCancel, tenant, user }: {
             </div>
             {previews.length > 0 ? (
               <>
-                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, color: '#22c55e' }}>✅ {previews.length} items ready for the ticker</div>
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, color: '#22c55e', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <CheckCircle size={14} /> {previews.length} items ready for the ticker
+                </div>
                 {previews.map((t, i) => (
                   <div key={i} style={{ padding: '10px 14px', background: 'linear-gradient(90deg,#080d18,#0a1020)', borderRadius: 8, border: '1px solid #22c55e30', fontSize: 12, marginBottom: 6, display: 'flex', gap: 8, fontFamily: 'monospace', alignItems: 'center' }}>
-                    <span>ℹ️</span><span style={{ color: '#e2e8f0' }}>{t}</span>
+                    <span style={{ display: 'flex', color: '#f59e0b' }}><Info size={12} /></span><span style={{ color: '#e2e8f0' }}>{t}</span>
                   </div>
                 ))}
               </>
             ) : (
               <div style={{ textAlign: 'center', padding: '32px 20px', border: '2px dashed #1e293b', borderRadius: 10 }}>
-                <div style={{ fontSize: 28, marginBottom: 8 }}>⚠️</div>
+                <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'center' }}><AlertTriangle size={28} className="text-[#f59e0b] opacity-80" /></div>
                 <p style={{ color: '#475569', fontSize: 13 }}>Go back to Step 2 to fetch and preview data.</p>
                 <button className="btn btn-outline btn-sm" style={{ marginTop: 10 }} onClick={() => setStep(1)}>← Back to Map</button>
               </div>
@@ -417,7 +426,7 @@ export function FeedWizard({ initialFeed, onSave, onCancel, tenant, user }: {
           )}
           {step < 2
             ? <button className="btn btn-primary btn-sm" disabled={step === 0 ? !ok0 : !ok1} onClick={() => setStep(s => s + 1)}>Next →</button>
-            : <button className="btn btn-primary btn-sm" disabled={!ok0 || !ok1} onClick={() => onSave({ ...feed, enabled: true })}>💾 Activate Feed</button>
+            : <button className="btn btn-primary btn-sm flex items-center gap-2" disabled={!ok0 || !ok1} onClick={() => onSave({ ...feed, enabled: true })}><Save size={14} /> Activate Feed</button>
           }
         </div>
       </div>

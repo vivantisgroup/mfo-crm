@@ -1,7 +1,9 @@
 'use client';
 
+import { Search } from 'lucide-react';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+import { SecondaryDock } from '@/components/SecondaryDock';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -81,6 +83,25 @@ function JsonViewer({ data, onSave, saving }: { data: any; onSave?: (json: any) 
   );
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const fetchWithRetry = async (url: string, options?: any, retries = 1): Promise<Response> => {
+  const { getAuth } = await import('firebase/auth');
+  const token = await getAuth().currentUser?.getIdToken();
+  const headers = { ...options?.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+  const newOptions = { ...options, headers };
+  let res = await fetch(url, newOptions);
+  if (res.status === 503) {
+    try {
+      const data = await res.clone().json();
+      if (data.error?.includes('forcefully reloaded') && retries > 0) {
+         return fetchWithRetry(url, options, retries - 1);
+      }
+    } catch { /* parse failure */ }
+  }
+  return res;
+};
+
 // ─── Tab: Database Explorer ────────────────────────────────────────────────────
 
 function DatabaseExplorer() {
@@ -98,17 +119,19 @@ function DatabaseExplorer() {
   const [dbCollections, setDbCollections] = useState<{name: string, exists: boolean, hasData: boolean, isKnown: boolean}[]>([]);
 
   useEffect(() => {
-    fetch('/api/admin/catalog/collections')
+    fetchWithRetry('/api/admin/catalog/collections')
       .then(r => r.json())
       .then(d => {
-        if (d.collections) setDbCollections(d.collections);
-      });
+        if (d.error) setError(d.error);
+        else if (d.collections) setDbCollections(d.collections);
+      })
+      .catch(e => setError(e.toString()));
   }, []);
 
   const loadCollection = useCallback(async (col: string) => {
     setLoading(true); setError(''); setDocuments([]); setSelectedDoc(null);
     try {
-      const res = await fetch(`/api/admin/catalog/collections?collection=${encodeURIComponent(col)}&limit=200`);
+      const res = await fetchWithRetry(`/api/admin/catalog/collections?collection=${encodeURIComponent(col)}&limit=200`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setDocuments(data.documents ?? []);
@@ -123,7 +146,7 @@ function DatabaseExplorer() {
     setSaving(true);
     const { id, ...fields } = updatedData;
     try {
-      const res = await fetch(`/api/admin/catalog/document?collection=${selectedCollection}&id=${selectedDoc.id}`, {
+      const res = await fetchWithRetry(`/api/admin/catalog/document?collection=${selectedCollection}&id=${selectedDoc.id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields),
       });
       if (!res.ok) throw new Error((await res.json()).error);
@@ -136,7 +159,7 @@ function DatabaseExplorer() {
 
   const handleDeleteDoc = async (docId: string) => {
     try {
-      const res = await fetch(`/api/admin/catalog/document?collection=${selectedCollection}&id=${docId}`, { method: 'DELETE' });
+      const res = await fetchWithRetry(`/api/admin/catalog/document?collection=${selectedCollection}&id=${docId}`, { method: 'DELETE' });
       if (!res.ok) throw new Error((await res.json()).error);
       setSelectedDoc(null);
       setDeleteConfirm(null);
@@ -158,14 +181,15 @@ function DatabaseExplorer() {
           Collections
         </div>
         <div style={{ padding: '8px', borderBottom: '1px solid var(--border)' }}>
-            <input
+            <div className="header-search cursor-text max-w-md w-full" style={{ flex: 1 }}>
+        <Search size={16} className="text-tertiary shrink-0" />
+        <input 
               type="text"
-              placeholder="🔍 Filter collections..."
+               
               value={collectionSearch}
               onChange={e => setCollectionSearch(e.target.value)}
-              className="input"
-              style={{ width: '100%', padding: '6px 10px', fontSize: 12 }}
-            />
+              placeholder="Filter collections..." className="flex-1 min-w-0 bg-transparent border-none outline-none text-[13px] text-primary placeholder-tertiary" />
+            </div>
         </div>
         <div style={{ overflowY: 'auto', maxHeight: 560 }}>
           {dbCollections.filter(c => c.name.toLowerCase().includes(collectionSearch.toLowerCase())).map(col => (
@@ -304,7 +328,7 @@ function ConsistencyInspector() {
   const runChecks = async () => {
     setLoading(true); setError(''); setIssues([]); setReport([]); setFixedIds(new Set());
     try {
-      const res = await fetch('/api/admin/catalog/consistency', { method: 'POST' });
+      const res = await fetchWithRetry('/api/admin/catalog/consistency', { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setIssues(data.issues ?? []);
@@ -316,7 +340,7 @@ function ConsistencyInspector() {
   const applyFix = async (issue: ConsistencyIssue) => {
     setFixingId(issue.id); setError('');
     try {
-      const res = await fetch('/api/admin/catalog/consistency', {
+      const res = await fetchWithRetry('/api/admin/catalog/consistency', {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ issue }),
       });
@@ -460,10 +484,12 @@ function ConsistencyInspector() {
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function CatalogExplorerPage() {
-  const { isSaasMasterAdmin } = useAuth();
+  const { isSaasMasterAdmin, tenant, user } = useAuth();
   const [tab, setTab] = useState<'explorer' | 'consistency'>('explorer');
 
-  if (!isSaasMasterAdmin) {
+  const isAuthorized = isSaasMasterAdmin || user?.role === 'firm_admin';
+
+  if (!isAuthorized) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 400, gap: 16 }}>
         <div style={{ fontSize: 48 }}>🔒</div>
@@ -477,44 +503,19 @@ export default function CatalogExplorerPage() {
   }
 
   return (
-    <div style={{ padding: '32px 24px', maxWidth: 1200, margin: '0 auto' }}>
-      {/* Header */}
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-          <div style={{ width: 48, height: 48, borderRadius: 14, background: 'linear-gradient(135deg, #7c3aed44, #a855f744)', border: '1px solid #7c3aed33', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>🔬</div>
-          <div>
-            <h1 style={{ fontSize: 24, fontWeight: 900, margin: 0 }}>Catalog Explorer</h1>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>Direct Firestore browser · Consistency Inspector · Super Admin only</div>
-          </div>
-        </div>
-        <div style={{ padding: '10px 16px', background: '#ef444411', border: '1px solid #ef444433', borderRadius: 10, fontSize: 13, color: '#fca5a5', display: 'flex', gap: 10, alignItems: 'center' }}>
-          🚨 <strong>Critical Tool:</strong> Direct database access. Edits bypass all application business logic, validation, and audit protection. Use only for emergency fixes.
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 28, background: 'var(--bg-elevated)', borderRadius: 10, padding: 4, width: 'fit-content' }}>
-        {[
-          { id: 'explorer', label: '📂 Database Explorer' },
-          { id: 'consistency', label: '🔍 Consistency Inspector' },
-        ].map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id as any)}
-            style={{
-              padding: '8px 20px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600,
-              background: tab === t.id ? 'var(--brand-500)' : 'transparent',
-              color: tab === t.id ? 'white' : 'var(--text-secondary)',
-              transition: 'all 0.15s',
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'explorer'    && <DatabaseExplorer />}
-      {tab === 'consistency' && <ConsistencyInspector />}
+    <div className="flex flex-col absolute inset-0 overflow-hidden bg-canvas z-0">
+      <SecondaryDock 
+        tabs={[
+          { id: 'explorer', label: 'Database Explorer', icon: '📂' },
+          { id: 'consistency', label: 'Consistency Inspector', icon: '🔍' }
+        ]}
+        activeTab={tab}
+        onTabChange={(id) => setTab(id as any)}
+      />
+      <main className="flex-1 flex flex-col min-h-0 relative animate-fade-in px-4 lg:px-6 pt-6 pb-12 overflow-y-auto w-full">
+        {tab === 'explorer'    && <DatabaseExplorer />}
+        {tab === 'consistency' && <ConsistencyInspector />}
+      </main>
     </div>
   );
 }

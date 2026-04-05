@@ -8,6 +8,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getValidGoogleToken } from '@/lib/googleTokenRefresh';
 
+export const dynamic = 'force-dynamic';
+
 const GMAIL = 'https://gmail.googleapis.com/gmail/v1';
 
 function decodeBase64(str: string): string {
@@ -29,12 +31,14 @@ function extractBody(payload: any): { html: string; text: string; attachments: a
     if (!part) return;
     if (part.mimeType === 'text/html'  && (!part.filename) && part.body?.data) html  = decodeBase64(part.body.data);
     if (part.mimeType === 'text/plain' && (!part.filename) && part.body?.data) text  = decodeBase64(part.body.data);
-    if (part.filename && part.body?.attachmentId) {
+    
+    if (part.filename && part.filename.trim().length > 0) {
       attachments.push({
-        id: part.body.attachmentId,
+        id: part.body?.attachmentId || part.partId || `inline-${part.filename}`,
         name: part.filename,
-        mimeType: part.mimeType,
-        size: part.body.size,
+        mimeType: part.mimeType || 'application/octet-stream',
+        size: part.body?.size || (part.body?.data ? part.body.data.length : 0),
+        inlineData: part.body?.data || undefined,
       });
     }
     for (const child of part.parts ?? []) walk(child);

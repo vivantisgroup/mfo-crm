@@ -29,7 +29,9 @@ import { ThreadList, type ThreadSummary } from './components/ThreadList';
 import { ReadingPane } from './components/ReadingPane';
 import { Composer } from './components/Composer';
 import type { GmailLabel } from '@/app/api/mail/labels/route';
-import type { CrmLinkTarget } from '@/app/api/mail/link/route';
+import { Tag, getAllTags } from '@/lib/tagService';
+
+type CrmLinkTarget = any;
 
 const db = getFirestore(firebaseApp);
 
@@ -50,6 +52,8 @@ interface EmailLog {
   gmailMessageId?:   string;
   labelIds?:         string[];
   crmLinks?:         CrmLinkTarget[];
+  tags?:             any[];
+  hasAttachments?:   boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -69,7 +73,10 @@ function emailLogToThread(e: EmailLog): ThreadSummary {
     isStarred:       labelIds.includes('STARRED'),
     linkedFamilyId:  e.linkedFamilyId,
     linkedFamilyName:e.linkedFamilyName,
+    crmLinks:        e.crmLinks || [],
+    tags:            e.tags || [],
     messageCount:    1,
+    hasAttachments:  e.hasAttachments || false,
   };
 }
 
@@ -162,13 +169,39 @@ export default function InboxPage() {
   const [tenantId,       setTenantId]       = useState('');
   const [syncCount,      setSyncCount]      = useState(50);   // messages to fetch per sync
   const [searchQuery,    setSearchQuery]    = useState('');   // client-side search filter
+  const [globalTags,     setGlobalTags]     = useState<Tag[]>([]);
 
-  // Resolve active tenant ID
+  // ── Boxed UI Extensibility State ────────────────────────────────
+  const [navWidth, setNavWidth] = useState(210);
+  const [listWidth, setListWidth] = useState(360);
+  const [navCollapsed, setNavCollapsed] = useState(false);
+  const [listCollapsed, setListCollapsed] = useState(false);
+  const [isResizingNav, setIsResizingNav] = useState(false);
+  const [isResizingList, setIsResizingList] = useState(false);
+
+  // Drag physics
+  const startResizeNav = (e: React.MouseEvent) => {
+    e.preventDefault(); setIsResizingNav(true);
+    const startX = e.clientX; const startW = navWidth;
+    const onMove = (me: MouseEvent) => setNavWidth(Math.max(160, Math.min(320, startW + (me.clientX - startX))));
+    const onUp = () => { setIsResizingNav(false); document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
+  };
+  const startResizeList = (e: React.MouseEvent) => {
+    e.preventDefault(); setIsResizingList(true);
+    const startX = e.clientX; const startW = listWidth;
+    const onMove = (me: MouseEvent) => setListWidth(Math.max(280, Math.min(600, startW + (me.clientX - startX))));
+    const onUp = () => { setIsResizingList(false); document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
+  };
+
+  // Fetch Tags and Tenant ID
   useEffect(() => {
     try {
       const t = JSON.parse(localStorage.getItem('mfo_active_tenant') ?? '{}');
       if (t?.id) setTenantId(t.id);
     } catch { /* ignore */ }
+    getAllTags().then(setGlobalTags).catch(console.error);
   }, []);
 
   // ── Realtime email_logs listener (replaces getDocs — updates instantly) ────
@@ -294,19 +327,19 @@ export default function InboxPage() {
   }
 
   // ── CRM link handler ───────────────────────────────────────────────────────
-  function handleLinksChange(emailLogId: string, newLinks: import('@/app/api/mail/link/route').CrmLinkTarget[]) {
+  function handleLinksChange(emailLogId: string, newLinks: any[]) {
     setEmails(prev => prev.map(e => e.id === emailLogId ? { ...e, crmLinks: newLinks } : e));
   }
 
   // ── Derived ────────────────────────────────────────────────────────────────
   const byFolder  = filterThreads(emails, folder);
   const filtered  = searchQuery.trim()
-    ? byFolder.filter(e => {
+    ? emails.filter(e => {
         const q = searchQuery.toLowerCase();
-        return e.subject?.toLowerCase().includes(q)
-          || e.fromName?.toLowerCase().includes(q)
-          || e.fromEmail?.toLowerCase().includes(q)
-          || e.snippet?.toLowerCase().includes(q);
+        return (e.subject || '').toLowerCase().includes(q)
+          || (e.fromName || '').toLowerCase().includes(q)
+          || (e.fromEmail || '').toLowerCase().includes(q)
+          || (e.snippet || '').toLowerCase().includes(q);
       })
     : byFolder;
   const threads   = filtered.map(emailLogToThread);
@@ -340,10 +373,11 @@ export default function InboxPage() {
   } as Record<string, string>)[folder] ?? defaultEmpty;
 
   return (
-    <div style={{ display: 'flex', height: 'calc(100vh - var(--header-height))', overflow: 'hidden' }}>
+    <div className="absolute inset-0 flex overflow-hidden bg-[var(--bg-surface)] text-[var(--text-primary)]">
 
       {/* ── Pane 1: Folder nav ────────────────────────────────────────────── */}
       <FolderNav
+        width={navCollapsed ? 0 : navWidth}
         active={folder}
         counts={counts}
         syncing={syncing}
@@ -355,7 +389,22 @@ export default function InboxPage() {
         onSync={() => handleSync()}
         onLoadMore={() => handleSync(syncCount * 2)}
         onCompose={() => setComposer({})}
+        onToggleCollapse={() => setNavCollapsed(true)}
       />
+
+      {/* ── RESIZER 1 ── */}
+      {!navCollapsed && (
+        <div className="w-[12px] group relative flex items-center justify-center cursor-col-resize shrink-0 z-50 hover:bg-[var(--bg-muted)]" onMouseDown={startResizeNav}>
+          <div className={`absolute inset-y-0 w-[2px] transition-all ${isResizingNav ? 'bg-[var(--brand-primary)]' : 'bg-[var(--border-strong)] group-hover:bg-[var(--brand-primary)]'}`}></div>
+        </div>
+      )}
+      {navCollapsed && (
+        <div className="w-[12px] group relative flex items-center justify-center cursor-pointer shrink-0 z-50 hover:bg-[var(--bg-muted)]" onClick={() => setNavCollapsed(false)} title="Expand Folders">
+          <div className="absolute inset-y-0 w-[2px] bg-[var(--border-strong)] flex items-center justify-center">
+             <div className="w-4 h-8 bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-full flex items-center justify-center text-[var(--text-secondary)] font-bold opacity-0 group-hover:opacity-100 transition-opacity">»</div>
+          </div>
+        </div>
+      )}
 
       {/* ── Center + Right wrapper ────────────────────────────────────────── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
@@ -384,30 +433,36 @@ export default function InboxPage() {
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
 
           {/* Thread list */}
-          <div style={{ width: 360, flexShrink: 0, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ width: listCollapsed ? 0 : listWidth, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', transition: 'width 0.2s cubic-bezier(0.4, 0, 0.2, 1)' }}>
             {/* Search bar + folder header */}
-            <div style={{ padding: '12px 12px 8px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)' }}>{activeLabelName}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-                  {searchQuery ? `${filtered.length} of ${byFolder.length}` : filtered.length} thread{filtered.length !== 1 ? 's' : ''}
+            <div style={{ padding: '12px 14px 10px', flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{activeLabelName}</div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)' }}>
+                    {searchQuery ? `${filtered.length} of ${byFolder.length}` : filtered.length}
+                  </div>
                 </div>
+                {/* Pill Control to collapse list */}
+                <button onClick={() => setListCollapsed(true)} className="flex items-center justify-center w-6 h-6 rounded-full bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] shadow-sm border border-[var(--border-subtle)]" title="Collapse List">
+                  <span style={{ fontSize: 14 }}>«</span>
+                </button>
               </div>
               {/* Search input */}
               <div style={{ position: 'relative' }}>
                 <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', pointerEvents: 'none', display: 'flex' }}>
-                  🔍
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
                 </span>
                 <input
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="Search emails…"
+                  placeholder="Terminal Search…"
                   style={{
                     width: '100%', boxSizing: 'border-box',
-                    padding: '7px 28px 7px 32px',
-                    borderRadius: 8, border: '1px solid var(--border)',
-                    background: 'var(--bg-canvas)', color: 'inherit',
-                    fontSize: 13, outline: 'none',
+                    padding: '8px 28px 8px 32px',
+                    borderRadius: 6, border: '1px solid var(--border-subtle)',
+                    background: 'var(--bg-elevated)', color: 'var(--text-primary)',
+                    fontSize: 12, fontWeight: 500, outline: 'none',
                   }}
                 />
                 {searchQuery && (
@@ -420,19 +475,37 @@ export default function InboxPage() {
                 )}
               </div>
             </div>
-            <ThreadList
-              threads={threads}
-              loading={loading}
-              selected={selected?.id}
-              onSelect={t => setSelected(t)}
-              onAction={handleAction}
-              emptyMessage={searchQuery ? `No emails matching “${searchQuery}”` : emptyMessage}
-            />
+            
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              <ThreadList
+                threads={threads}
+                loading={loading}
+                selected={selected?.id}
+                globalTags={globalTags}
+                onSelect={t => setSelected(t)}
+                onAction={handleAction}
+                emptyMessage={searchQuery ? `No emails matching “${searchQuery}”` : emptyMessage}
+              />
+            </div>
           </div>
+
+          {/* ── RESIZER 2 ── */}
+          {!listCollapsed && (
+            <div className="w-[12px] group relative flex items-center justify-center cursor-col-resize shrink-0 z-50 hover:bg-[var(--bg-muted)]" onMouseDown={startResizeList}>
+              <div className={`absolute inset-y-0 w-[2px] transition-all ${isResizingList ? 'bg-[var(--brand-primary)]' : 'bg-[var(--border-strong)] group-hover:bg-[var(--brand-primary)]'}`}></div>
+            </div>
+          )}
+          {listCollapsed && (
+            <div className="w-[12px] group relative flex items-center justify-center cursor-pointer shrink-0 z-50 hover:bg-[var(--bg-muted)]" onClick={() => setListCollapsed(false)} title="Expand List">
+              <div className="absolute inset-y-0 w-[2px] bg-[var(--border-strong)] flex items-center justify-center">
+                 <div className="w-4 h-8 bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-full flex items-center justify-center text-[var(--text-secondary)] font-bold opacity-0 group-hover:opacity-100 transition-opacity">»</div>
+              </div>
+            </div>
+          )}
 
           {/* Reading pane */}
           <ReadingPane
-            thread={selected}
+            thread={threads.find(t => t.id === selected?.id) ?? selected}
             uid={user?.uid ?? ''}
             tenantId={tenantId}
             emailLogId={selected?.id}

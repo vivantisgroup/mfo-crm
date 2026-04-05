@@ -1,5 +1,6 @@
 'use client';
 
+import { Search } from 'lucide-react';
 import React, { useState, useMemo, useEffect } from 'react';
 import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -182,35 +183,15 @@ export default function AuditPage() {
   }, [logsList, search, tenantFilter, sevFilter, statusFilter, categoryFilter]);
 
   return (
-    <div className="animate-fade-in" style={{ maxWidth: 1400, margin: '0 auto' }}>
-      {/* Header */}
-      <header style={{ marginBottom: 36 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div>
-            <h1 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4 }}>
-              Audit <span style={{ color: 'var(--brand-500)', fontWeight: 400 }}>& Compliance</span>
-            </h1>
-            <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
-              Full platform-wide event log — who, when, what, where. Real-time & exportable.
-            </p>
-          </div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn btn-outline btn-sm">📥 Export CSV</button>
-            <button className="btn btn-outline btn-sm">📄 Export PDF</button>
-            <button className="btn btn-primary btn-sm" onClick={fetchLogs} disabled={fetching}>{fetching ? '...' : '🔄 Refresh'}</button>
-          </div>
-        </div>
-      </header>
-
+    <div className="page-wrapper animate-fade-in w-full h-full flex flex-col flex-1 px-4 lg:px-6 pt-6 pb-12 overflow-y-auto">
       <AuditStats logs={filtered} />
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center', padding: '16px 20px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)' }}>
-        <input
-          type="text" placeholder="🔍 Search events (user, action, resource…)"
-          value={search} onChange={e => setSearch(e.target.value)}
-          className="input" style={{ flex: '1 1 220px', padding: '8px 12px', fontSize: 13 }}
-        />
+        <div className="header-search cursor-text max-w-md w-full" style={{ flex: '1 1 220px', padding: '8px 12px', fontSize: 13 }}>
+          <Search size={16} className="text-tertiary shrink-0" />
+          <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search events (user, action, resource…)" className="flex-1 min-w-0 bg-transparent border-none outline-none text-[13px] text-primary placeholder-tertiary" />
+        </div>
         <select value={tenantFilter} onChange={e => setTenantFilter(e.target.value)} className="input" style={{ padding: '8px 12px', fontSize: 13 }}>
           {tenants.map(t => <option key={t}>{t}</option>)}
         </select>

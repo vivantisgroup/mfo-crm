@@ -1,38 +1,59 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 
+export const runtime = 'nodejs';
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { accountId, to, subject, htmlBody } = body;
+    const { accountId, to, subject, htmlBody, attachments } = body;
 
     const db = getAdminFirestore();
 
-    // NOTE: Real implementation queries Oauth tokens
-    /*
-    const accountSnap = await db.collection('email_accounts').doc(accountId).get();
-    if (!accountSnap.exists) return NextResponse.json({ error: 'Account not found' }, { status: 404 });
-    const account = accountSnap.data();
+    // ─── Nodemailer SMTP Dispatch (HTML & Attachments Fix) ──────────────────
+    let smtpSent = false;
+    let fallbackText = '';
 
-    // 1. Build MIME standard RAW email with base64url encoding.
-    // 2. Call POST https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send
-    //    with `Authorization: Bearer ${account.accessToken}`
-    // 3. Receive the generated messageId from the provider.
-    */
+    if (htmlBody) {
+       fallbackText = htmlBody.replace(/<[^>]+>/g, '');
+    }
 
-    // Write a local record into Firestore matching the DB schema.
+    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+      // @ts-ignore — nodemailer ships its own types; strict mode false-positive
+      const nodemailer = await import('nodemailer');
+      const transporter = nodemailer.default.createTransport({
+        host:   process.env.SMTP_HOST,
+        port:   Number(process.env.SMTP_PORT ?? 587),
+        secure: process.env.SMTP_SECURE === 'true',
+        auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+      });
+      
+      await transporter.sendMail({
+        from: process.env.SMTP_FROM ?? `"MFO Nexus Server" <${process.env.SMTP_USER}>`,
+        to,
+        subject,
+        html: htmlBody,         // Ensure rich HTML structures render
+        text: fallbackText,     // Provide raw text fallback
+        attachments: Array.isArray(attachments) ? attachments : [], // Pass active buffers/streams
+      });
+      smtpSent = true;
+    } else {
+      console.warn('[Email Send API] SMTP variables not defined in environment. Message dropped to local log cache.');
+    }
+
+    // Native Database Persistence for UI
     const sentMsg = {
-      tenantId: 'demo-tenant',      // Retrieve contextually
+      tenantId: 'master', 
       accountId: accountId || 'local',
       folder: 'sent',
       subject: subject,
-      snippet: htmlBody?.substring(0, 100).replace(/<[^>]+>/g, '') || '', // Text preview
-      sender: { email: 'user@example.com', name: 'Current User' }, // Use account.email
+      snippet: fallbackText.substring(0, 100),
+      sender: { email: process.env.SMTP_USER || 'system@mfonexus.com', name: 'MFO Nexus User' },
       recipients: [{ email: to, name: to, type: 'to' }],
-      bodyHtml: htmlBody, // TODO: Sanitize HTML if persisting
-      bodyText: htmlBody?.replace(/<[^>]+>/g, '') || '',
+      bodyHtml: htmlBody || '',
+      bodyText: fallbackText,
       isRead: true,
-      hasAttachments: false,
+      hasAttachments: Array.isArray(attachments) && attachments.length > 0,
       receivedAt: new Date().toISOString(),
       createdAt: new Date().toISOString()
     };
@@ -42,11 +63,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ 
       success: true, 
       messageId: docRef.id,
-      note: 'Message routed and cached natively.' 
+      smtpSent,
+      note: smtpSent ? 'Message dispatched externally via Nodemailer and archived.' : 'SMTP bypassed. Local cache trace only.'
     });
 
   } catch (error: any) {
-    console.error('[Email Send] API error:', error);
-    return NextResponse.json({ error: error.message || 'Send failed' }, { status: 500 });
+    console.error('[Email Send API] Error:', error);
+    return NextResponse.json({ error: error.message || 'Send failed systemwide.' }, { status: 500 });
   }
 }

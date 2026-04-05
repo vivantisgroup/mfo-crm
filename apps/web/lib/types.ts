@@ -20,6 +20,7 @@ export interface Tenant {
   brandColor?: string;
   status: 'active' | 'suspended' | 'onboarding';
   createdAt: string;
+  customRelationshipTypes?: string[];
 }
 
 export interface TenantMember {
@@ -317,7 +318,7 @@ export interface Activity {
   tags: string[];
   sentiment?: 'neutral' | 'positive' | 'concern' | 'urgent';
   /** For linking communication to a specific ticket, lead, etc. */
-  linkedRecordType?: 'ticket' | 'crm' | 'opportunity';
+  linkedRecordType?: 'ticket' | 'task' | 'lead' | 'service_request' | 'opportunity' | 'crm';
   linkedRecordId?: string;
 }
 
@@ -325,6 +326,8 @@ export interface Task {
   id: string;
   familyId: string;
   familyName: string;
+  linkedContactId?: string;
+  linkedOrgId?: string;
   title: string;
   description?: string;
   status: TaskStatus;
@@ -354,6 +357,7 @@ export interface TaskQueue {
   color: string;               // CSS color for queue chip
   memberIds: string[];         // user IDs who belong to this queue
   assignSlaMinutes: number;    // SLA: max time before task must be picked up
+  tenantType?: string;         // 'global' or IndustryVerticalId to restrict who manages the queue
 }
 
 // ─── Task Types ────────────────────────────────────────────────────────────
@@ -372,11 +376,14 @@ export interface TaskType {
 
 export interface TimeEntry {
   id: string;
-  taskId: string;
+  taskId?: string; // Legacy fallback
+  linkedEntityId?: string;
+  linkedEntityType?: string; // 'task' | 'contact' | 'org' | 'lead'
+  linkedEntityName?: string;
   userId: string;
   userName: string;
   familyId?: string;
-  activityType: ActivityType;
+  activityType: ActivityType | string;
   startedAt: string;           // ISO
   endedAt?: string;            // ISO — undefined if clock still running
   durationMinutes?: number;    // computed on stop; rounded to tenant interval (default 15)

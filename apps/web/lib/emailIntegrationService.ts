@@ -190,9 +190,12 @@ export async function disconnectMailProvider(
   provider: MailProvider,
   actorName: string,
 ): Promise<void> {
-  // Call server-side revoke endpoint first (fire and forget — failure doesn't block UI)
+  // Call server-side revoke endpoint first (fire and forget — with strict 4s timeout)
   try {
-    await fetch(`/api/oauth/${provider}/revoke`, { method: 'POST' });
+    await Promise.race([
+      fetch(`/api/oauth/${provider}/revoke`, { method: 'POST' }),
+      new Promise(r => setTimeout(r, 4000))
+    ]);
   } catch { /* best-effort */ }
 
   await deleteDoc(integrationRef(uid, provider));
@@ -247,47 +250,49 @@ export async function triggerManualSync(
  * Log a single email to the CRM activity feed manually (from email log view).
  */
 export async function logEmailToCrm(
-  uid:    string,
-  entry:  EmailLogEntry,
-  familyId: string,
-  familyName: string,
-): Promise<string> {
-  const activityRef = await addDoc(collection(db, 'activities'), {
-    tenantId: '',        // filled server-side
-    familyId,
-    familyName,
-    type: 'email',
-    direction: entry.direction,
-    subject: entry.subject,
-    fromEmail: entry.fromEmail,
-    fromName: entry.fromName,
-    toEmails: entry.toEmails,
-    snippet: entry.snippet ?? '',
-    provider: entry.provider,
-    messageId: entry.messageId,
-    loggedBy: uid,
-    createdAt: new Date().toISOString(),
-    source: 'mail_integration',
-  });
+    uid:    string,
+    entry:  EmailLogEntry,
+    records: Array<{ id: string, name: string }>
+  ): Promise<string[]> {
+    const activityIds: string[] = [];
+    
+    // 1. Post an activity for each selected CRM record
+    for (const record of records) {
+      const activityRef = await addDoc(collection(db, 'activities'), {
+        tenantId: '',        // filled server-side
+        familyId: record.id,
+        familyName: record.name,
+        type: 'email',
+        direction: entry.direction,
+        subject: entry.subject,
+        fromEmail: entry.fromEmail,
+        fromName: entry.fromName,
+        toEmails: entry.toEmails,
+        snippet: entry.snippet ?? '',
+        provider: entry.provider,
+        messageId: entry.messageId,
+        loggedBy: uid,
+        createdAt: new Date().toISOString(),
+      });
+      activityIds.push(activityRef.id);
+    }
 
-  // Mark the log entry as logged
-  await updateDoc(doc(db, 'users', uid, 'email_logs', entry.id), {
-    loggedToCrm: true,
-    loggedAt: new Date().toISOString(),
-    linkedFamilyId: familyId,
-    linkedFamilyName: familyName,
-    crmActivityId: activityRef.id,
-  });
+    // 2. Update the source email log document with the linked records
+    if (entry.id) {
+       try {
+         const logRef = doc(db, 'users', uid, 'email_logs', entry.id);
+         await updateDoc(logRef, {
+            linkedRecordIds: records.map(r => r.id),
+            linkedRecordNames: records.map(r => r.name),
+            tagIds: records.map(r => r.id) // Fallback migration mapping
+         });
+       } catch (err) {
+         console.error('Failed to update email log entry with linked records:', err);
+       }
+    }
 
-  logAction({
-    tenantId: uid, userId: uid, userName: '',
-    action: 'EMAIL_LOGGED_TO_CRM',
-    resourceId: activityRef.id, resourceType: 'activity',
-    resourceName: `Email logged: "${entry.subject}"`, status: 'success',
-  });
-
-  return activityRef.id;
-}
+    return activityIds;
+  }
 
 // ─── Connection test ──────────────────────────────────────────────────────────
 

@@ -1,29 +1,22 @@
 'use client';
 
+import { Search } from 'lucide-react';
 import React, { useState, useMemo, useEffect } from 'react';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { CommunicationPanel } from '@/components/CommunicationPanel';
+import { usePageTitle } from '@/lib/PageTitleContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type TicketStatus = 'open' | 'in_progress' | 'waiting_client' | 'resolved' | 'closed';
-type TicketPriority = 'low' | 'normal' | 'high' | 'critical';
-type TicketCategory = 'billing' | 'technical' | 'integration' | 'compliance' | 'feature_request' | 'onboarding' | 'security';
-type TicketTeam = 'support' | 'engineering' | 'operations' | 'compliance';
-type TicketQueue = 'unassigned' | 'my_tickets' | 'pending_client' | 'escalated' | 'all';
+import { TicketStatus, TicketPriority, TicketCategory, TicketTeam, Ticket, createTicket, updateTicket, addActivity } from '@/lib/supportService';
+import { getEmployees, Employee } from '@/lib/hrService';
+import { getAllContacts, type PlatformContact } from '@/lib/crmService';
+import { uploadMultipleAttachments } from '@/lib/attachmentService';
+import { Paperclip, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { getAllSubscriptions, TenantSubscription } from '@/lib/subscriptionService';
 
-interface Ticket {
-  id: string; title: string; description: string;
-  tenantName: string; submittedBy: string; email: string;
-  status: TicketStatus; priority: TicketPriority;
-  category: TicketCategory; team: TicketTeam;
-  assignedTo: string | null; createdAt: string; updatedAt: string;
-  slaDeadline: string; slaBreached: boolean;
-  tags: string[];
-  responses: { author: string; message: string; timestamp: string; internal: boolean }[];
-  activities: { type: string; title: string; timestamp: string }[];
-}
+type TicketQueue = 'unassigned' | 'my_tickets' | 'pending_client' | 'escalated' | 'all';
 
 // ─── Mock Data ────────────────────────────────────────────────────────────────
 
@@ -51,98 +44,144 @@ function StatusBadge({ status }: { status: TicketStatus }) {
 
 // ─── Ticket Detail View (Main Area) ──────────────────────────────────────────
 
-function TicketDetailView({ ticket, onBack }: { ticket: Ticket; onBack: () => void }) {
+function TicketDetailView({ ticket, employees, onBack, onEdit }: { ticket: Ticket; employees: Employee[]; onBack: () => void; onEdit: () => void }) {
+  const [isDescCollapsed, setIsDescCollapsed] = useState(false);
+  
+  const handleResolve = async () => {
+    await updateTicket(ticket.id, { status: 'resolved' });
+    await addActivity(ticket.id, { type: 'system', title: 'Ticket marked as resolved' });
+  };
+
+  const handleReopen = async () => {
+    await updateTicket(ticket.id, { status: 'open' });
+    await addActivity(ticket.id, { type: 'system', title: 'Ticket reopened' });
+  };
+  
+  const handleUnassign = async () => {
+    await updateTicket(ticket.id, { assignedTo: null });
+  };
+  const { setTitle } = usePageTitle();
+  
+  useEffect(() => {
+    setTitle('Support Center', '', [
+      { label: 'Support Center', onClick: onBack },
+      { label: 'All Tickets', onClick: onBack },
+      { label: ticket.id }
+    ]);
+    return () => {
+      setTitle('Support Center', '', []);
+    };
+  }, [ticket.id, onBack, setTitle]);
+
   return (
-    <div className="animate-fade-in" style={{ maxWidth: 1200, margin: '0 auto' }}>
-      {/* Breadcrumbs */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, fontSize: 13, color: 'var(--text-tertiary)', fontWeight: 600 }}>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', color: 'var(--brand-400)', cursor: 'pointer', padding: 0, fontWeight: 600 }}>Support Center</button>
-        <span>/</span>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', color: 'var(--brand-400)', cursor: 'pointer', padding: 0, fontWeight: 600 }}>All Tickets</button>
-        <span>/</span>
-        <span style={{ color: 'var(--text-primary)' }}>{ticket.id}</span>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: 24, alignItems: 'flex-start' }}>
+    <div className="animate-fade-in" style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 24, height: 'calc(100vh - 150px)', overflow: 'hidden' }}>
         
-        {/* Main Content Area */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-          {/* Header */}
-          <div style={{ padding: '24px 28px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-xl)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-              <div style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 700 }}>{ticket.id}</div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                 <button className="btn btn-outline btn-sm">Edit Ticket</button>
-                 <button className="btn btn-primary btn-sm">Resolve</button>
-              </div>
-            </div>
-            <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 16, lineHeight: 1.3 }}>{ticket.title}</div>
-            
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-              <StatusBadge status={ticket.status} />
-              <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 10, background: `${PRIORITY_COLORS[ticket.priority]}22`, color: PRIORITY_COLORS[ticket.priority] }}>
-                {PRIORITY_ICONS[ticket.priority]} {ticket.priority.toUpperCase()}
-              </span>
-              <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 10, background: `${TEAM_COLORS[ticket.team]}22`, color: TEAM_COLORS[ticket.team], textTransform: 'capitalize' }}>
-                {ticket.team} Team
-              </span>
-              {ticket.slaBreached && (
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 10, background: '#ef444422', color: '#ef4444' }}>
-                  ⚠ SLA BREACHED
-                </span>
-              )}
-            </div>
+        {/* Support Header Full Block */}
+        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-xl)', display: 'flex', flexDirection: 'column', padding: '24px 28px', gap: 24 }}>
+           
+           {/* Row 1: Title and Attributes */}
+           <div style={{ display: 'flex', gap: 40, alignItems: 'flex-start' }}>
+             
+             {/* Left Column: Title & Controls */}
+             <div style={{ flex: '0 0 340px', display: 'flex', flexDirection: 'column' }}>
+               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                 <div style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 700 }}>{ticket.id}</div>
+                 <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-outline btn-sm" onClick={onEdit}>Edit Ticket</button>
+                    {ticket.status !== 'resolved' ? (
+                      <button className="btn btn-emerald btn-sm" style={{ background: '#10b981', color: 'white' }} onClick={handleResolve}>Resolve</button>
+                    ) : (
+                      <button className="btn btn-outline btn-sm" style={{ color: 'var(--brand-500)', borderColor: 'var(--brand-500)' }} onClick={handleReopen}>Reopen</button>
+                    )}
+                 </div>
+               </div>
+               
+               <div style={{ fontSize: 26, fontWeight: 900, marginBottom: 16, lineHeight: 1.3 }}>{ticket.title}</div>
+               
+               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                 <StatusBadge status={ticket.status} />
+                 <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 10, background: `${PRIORITY_COLORS[ticket.priority]}22`, color: PRIORITY_COLORS[ticket.priority] }}>
+                   {PRIORITY_ICONS[ticket.priority]} {ticket.priority.toUpperCase()}
+                 </span>
+                 <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 10, background: `${TEAM_COLORS[ticket.team]}22`, color: TEAM_COLORS[ticket.team], textTransform: 'capitalize' }}>
+                   {ticket.team} Team
+                 </span>
+                 {ticket.slaBreached && (
+                   <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 10, background: '#ef444422', color: '#ef4444' }}>
+                     ⚠ SLA BREACHED
+                   </span>
+                 )}
+               </div>
+             </div>
 
-            <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Original Description</div>
-              <div style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{ticket.description}</div>
-            </div>
-          </div>
+             {/* Right Column: Attributes array spread wide */}
+             <div style={{ flex: 1, display: 'flex', gap: 24, flexWrap: 'wrap', borderLeft: '1px solid var(--border)', paddingLeft: 32, alignItems: 'center', height: '100%', minHeight: 80 }}>
+                <div style={{ flex: 1, minWidth: 100 }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Tenant</div>
+                  <div style={{ fontSize: 13, color: 'var(--brand-400)', fontWeight: 700, cursor: 'pointer' }}>{ticket.tenantName}</div>
+                </div>
+                <div style={{ flex: 1.2, minWidth: 120 }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>SLA Deadline</div>
+                  <div style={{ fontSize: 13, color: ticket.slaBreached ? '#ef4444' : 'var(--text-primary)', fontWeight: 700 }}>{new Date(ticket.slaDeadline).toLocaleString([], { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                </div>
+                <div style={{ flex: 1, minWidth: 100 }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Requester</div>
+                  <div style={{ fontSize: 13, fontWeight: 500 }}>{ticket.submittedBy}</div>
+                </div>
+                <div style={{ flex: 1.5, minWidth: 150 }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Assigned To</div>
+                  <select value={ticket.assignedTo || ''} onChange={async (e) => {
+                    const val = e.target.value || null;
+                    await updateTicket(ticket.id, { assignedTo: val });
+                  }} className="input" style={{ width: '100%', padding: '4px 8px', fontSize: 12, border: 'none', background: 'var(--bg-canvas)', borderRadius: 4, fontWeight: 500 }}>
+                    <option value="">Unassigned</option>
+                    <option value="Admin">Admin</option>
+                    {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                  </select>
+                </div>
+             </div>
+           </div>
 
-          {/* Communication Panel (Timeline & Reply) */}
-          <div style={{ height: 800, border: '1px solid var(--border)', borderRadius: 'var(--radius-xl)', overflow: 'hidden', background: 'var(--bg-surface)' }}>
-            <CommunicationPanel
-              familyId={ticket.tenantName}
-              familyName={ticket.tenantName}
-              linkedRecordType="ticket"
-              linkedRecordId={ticket.id}
-            />
-          </div>
+           {/* Row 2: Full Width Isolated Description Box */}
+           <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: isDescCollapsed ? '12px 24px' : '20px 24px', background: 'var(--bg-canvas)', display: 'flex', flexDirection: 'column', flexShrink: 0, maxHeight: isDescCollapsed ? 'auto' : 160, transition: 'all 0.2s' }}>
+             <div onClick={() => setIsDescCollapsed(!isDescCollapsed)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: isDescCollapsed ? 0 : 12 }}>
+               <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0 }}>DESCRIPTION</div>
+               <div style={{ color: 'var(--text-tertiary)' }}>
+                 {isDescCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+               </div>
+             </div>
+             
+             {!isDescCollapsed && (
+               <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 8, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                 {ticket.description}
+                 
+                 {ticket.attachments && ticket.attachments.length > 0 && (
+                    <div style={{ marginTop: 24, borderTop: '1px dashed var(--border)', paddingTop: 16 }}>
+                       <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-tertiary)', borderLeft: '3px solid var(--brand-500)', paddingLeft: 8, marginBottom: 12 }}>Attached Files</div>
+                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                          {ticket.attachments.map((a, i) => (
+                             <a key={'def-att-'+i} href={a.url} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 600, color: 'var(--brand-500)', background: 'var(--bg-elevated)', border: '1px solid var(--border)', padding: '6px 12px', borderRadius: 8, textDecoration: 'none' }}>
+                                <Paperclip size={14} />
+                                {a.name}
+                             </a>
+                          ))}
+                       </div>
+                    </div>
+                 )}
+               </div>
+             )}
+           </div>
         </div>
 
-        {/* Sidebar Info */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ padding: '20px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)' }}>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 16 }}>Ticket Attributes</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div>
-                <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Tenant</div>
-                <div style={{ fontSize: 13, color: 'var(--brand-400)', fontWeight: 600, cursor: 'pointer' }}>{ticket.tenantName}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Requester</div>
-                <div style={{ fontSize: 13 }}>{ticket.submittedBy}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{ticket.email}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Assigned To</div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: ticket.assignedTo ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>{ticket.assignedTo || 'Unassigned'}</div>
-                <button className="btn btn-ghost btn-sm" style={{ padding: '2px 0', fontSize: 11, color: 'var(--brand-500)', marginTop: 4 }}>Change Assignee</button>
-              </div>
-              <div>
-                <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>SLA Deadline</div>
-                <div style={{ fontSize: 13, color: ticket.slaBreached ? '#ef4444' : 'var(--text-primary)', fontWeight: 600 }}>{new Date(ticket.slaDeadline).toLocaleString()}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Tags</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {ticket.tags.map(t => (
-                    <span key={t} style={{ fontSize: 10, background: 'var(--bg-elevated)', padding: '2px 8px', borderRadius: 4, color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>{t}</span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
+        {/* Communication Panel (Timeline & Reply) - Full Width */}
+        <div style={{ flex: 1, border: '1px solid var(--border)', minHeight: 0, borderRadius: 'var(--radius-xl)', overflow: 'hidden', background: 'var(--bg-surface)' }}>
+          <CommunicationPanel
+            familyId={ticket.tenantName}
+            familyName={ticket.tenantName}
+            linkedRecordType="ticket"
+            linkedRecordId={ticket.id}
+          />
         </div>
       </div>
     </div>
@@ -157,7 +196,22 @@ export default function SupportPage() {
   const [queueFilter, setQueueFilter] = useState<TicketQueue>('all');
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [tenantsList, setTenantsList] = useState<TenantSubscription[]>([]);
+  const [contacts, setContacts] = useState<PlatformContact[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  const [showForm, setShowForm] = useState(false);
+  const [formMode, setFormMode] = useState<'new' | 'edit'>('new');
+  const [form, setForm] = useState<Partial<Ticket>>({});
+  const [ticketFiles, setTicketFiles] = useState<File[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+
+  useEffect(() => {
+    getEmployees().then(setEmployees);
+    getAllSubscriptions().then(setTenantsList);
+    getAllContacts().then(setContacts);
+  }, []);
 
   useEffect(() => {
     const q = query(collection(db, 'platform_tickets'), orderBy('createdAt', 'desc'));
@@ -190,11 +244,23 @@ export default function SupportPage() {
     const active = tickets.filter(t => t.status !== 'closed' && t.status !== 'resolved');
     const breached = active.filter(t => t.slaBreached).length;
     const unassignedCount = active.filter(t => !t.assignedTo).length;
+    
+    const resolved = tickets.filter(t => t.status === 'resolved' || t.status === 'closed');
+    let avgResTime = 0;
+    if (resolved.length > 0) {
+      const totalHours = resolved.reduce((acc, t) => {
+        const created = new Date(t.createdAt).getTime();
+        const updated = new Date(t.updatedAt).getTime();
+        return acc + ((updated - created) / (1000 * 60 * 60));
+      }, 0);
+      avgResTime = Math.round((totalHours / resolved.length) * 10) / 10;
+    }
+
     return {
       activeTickets: active.length,
       slaBreachRate: active.length ? Math.round((breached / active.length) * 100) : 0,
       unassigned: unassignedCount,
-      avgResTime: 0
+      avgResTime
     };
   }, [tickets]);
 
@@ -206,12 +272,183 @@ export default function SupportPage() {
     { id: 'escalated', label: 'Escalated/Critical', count: tickets.filter(t => t.priority === 'critical').length },
   ];
 
+  
+  const handleSaveForm = async () => {
+     setIsUploading(true);
+     let uploadedAttachments = form.attachments || [];
+     if (ticketFiles.length > 0) {
+        try {
+           const newAttachments = await uploadMultipleAttachments(form.tenantName || 'Internal', ticketFiles);
+           uploadedAttachments = [...uploadedAttachments, ...newAttachments];
+        } catch (e) {
+           console.error("Failed to upload attachments", e);
+        }
+     }
+
+     if (formMode === 'new') {
+        await createTicket({
+           attachments: uploadedAttachments,
+           title: form.title || '',
+           description: form.description || '',
+           tenantName: form.tenantName || 'Internal',
+           submittedBy: form.submittedBy || 'Anonymous',
+           email: form.email || '',
+           status: 'open',
+           priority: form.priority || 'normal',
+           category: form.category || 'technical',
+           team: form.team || 'support',
+           assignedTo: form.assignedTo || null,
+           tags: []
+        });
+     } else {
+        if (form.id) {
+           await updateTicket(form.id, {
+             title: form.title,
+             description: form.description,
+             tenantName: form.tenantName,
+             priority: form.priority,
+             category: form.category,
+             team: form.team,
+             assignedTo: form.assignedTo,
+           });
+           await addActivity(form.id, { type: 'system', title: 'Ticket particulars updated by Admin' });
+        }
+     }
+     setIsUploading(false);
+     setTicketFiles([]);
+     setShowForm(false);
+  };
+
+  if (showForm) {
+     return (
+       <div className="animate-fade-in" style={{ maxWidth: 1400, margin: '0 auto', paddingBottom: 100 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+             <button onClick={() => setShowForm(false)} className="btn btn-ghost btn-sm">← Back</button>
+             <h2 style={{ fontSize: 24, fontWeight: 800 }}>{formMode === 'new' ? 'Provision New Ticket' : 'Edit Ticket Details'}</h2>
+          </div>
+          
+          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-xl)', padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
+             <div>
+               <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary)', marginBottom: 6, display: 'block' }}>Subject</label>
+               <input type="text" className="input" style={{ width: '100%', padding: '10px 12px' }} value={form.title || ''} onChange={e => setForm({...form, title: e.target.value})} placeholder="e.g., Cannot access billing portal" />
+             </div>
+             
+             <div style={{ display: 'flex', gap: 16 }}>
+               <div style={{ flex: 1 }}>
+                 <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary)', marginBottom: 6, display: 'block' }}>Tenant</label>
+                 <select className="input" style={{ width: '100%', padding: '10px 12px' }} value={form.tenantName || ''} onChange={e => setForm({...form, tenantName: e.target.value})}>
+                    <option value="">Select Tenant...</option>
+                    <option value="Internal">Internal (MFO HQ)</option>
+                    {tenantsList.map(t => <option key={t.tenantId} value={t.tenantName}>{t.tenantName}</option>)}
+                 </select>
+               </div>
+               <div style={{ flex: 1 }}>
+                 <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary)', marginBottom: 6, display: 'block' }}>Requester Name</label>
+                 <select className="input" style={{ width: '100%', padding: '10px 12px' }} value={form.submittedBy || ''} onChange={e => setForm({...form, submittedBy: e.target.value})} disabled={formMode === 'edit'}>
+                   <option value="">Select Requester...</option>
+                   <optgroup label="Internal Employees">
+                     {employees.map(e => <option key={e.id} value={e.name}>{e.name}</option>)}
+                   </optgroup>
+                   <optgroup label="CRM Contacts">
+                     {contacts.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                   </optgroup>
+                 </select>
+               </div>
+             </div>
+
+             <div style={{ display: 'flex', gap: 16 }}>
+               <div style={{ flex: 1 }}>
+                 <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary)', marginBottom: 6, display: 'block' }}>Category</label>
+                 <select className="input" style={{ width: '100%', padding: '10px 12px' }} value={form.category || 'technical'} onChange={e => setForm({...form, category: e.target.value as any})}>
+                    <option value="technical">Technical</option>
+                    <option value="billing">Billing</option>
+                    <option value="compliance">Compliance</option>
+                    <option value="integration">Integration</option>
+                 </select>
+               </div>
+               <div style={{ flex: 1 }}>
+                 <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary)', marginBottom: 6, display: 'block' }}>Priority</label>
+                 <select className="input" style={{ width: '100%', padding: '10px 12px' }} value={form.priority || 'normal'} onChange={e => setForm({...form, priority: e.target.value as any})}>
+                    <option value="low">Low</option>
+                    <option value="normal">Normal</option>
+                    <option value="high">High</option>
+                    <option value="critical">Critical</option>
+                 </select>
+               </div>
+             </div>
+
+             <div style={{ display: 'flex', gap: 16 }}>
+               <div style={{ flex: 1 }}>
+                 <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary)', marginBottom: 6, display: 'block' }}>Assign to Team</label>
+                 <select className="input" style={{ width: '100%', padding: '10px 12px' }} value={form.team || 'support'} onChange={e => setForm({...form, team: e.target.value as any})}>
+                    <option value="support">Support</option>
+                    <option value="engineering">Engineering</option>
+                    <option value="operations">Operations</option>
+                    <option value="compliance">Compliance</option>
+                 </select>
+               </div>
+               <div style={{ flex: 1 }}>
+                 <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary)', marginBottom: 6, display: 'block' }}>Assignee</label>
+                 <select className="input" style={{ width: '100%', padding: '10px 12px' }} value={form.assignedTo || ''} onChange={e => setForm({...form, assignedTo: e.target.value || null})}>
+                    <option value="">Unassigned</option>
+                    {employees.map(e => <option key={e.id} value={e.name}>{e.name}</option>)}
+                 </select>
+               </div>
+             </div>
+
+             <div>
+               <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary)', marginBottom: 6, display: 'block' }}>Description</label>
+               <textarea className="input" rows={6} style={{ width: '100%', padding: '10px 12px', resize: 'vertical', marginBottom: 12 }} value={form.description || ''} onChange={e => setForm({...form, description: e.target.value})} placeholder="Details of the inquiry..." />
+               
+               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary)', display: 'block' }}>Attachments</label>
+                  <label style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--bg-elevated)', padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)', width: 'fit-content', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                     <Paperclip size={14} /> Add Files
+                     <input type="file" multiple onChange={(e) => {
+                        if (e.target.files) {
+                           setTicketFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+                        }
+                     }} style={{ display: 'none' }} />
+                  </label>
+                  {ticketFiles.length > 0 && (
+                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+                        {ticketFiles.map((f, i) => (
+                           <div key={i} style={{ background: 'var(--brand-50)', color: 'var(--brand-600)', padding: '4px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                              {f.name}
+                              <button onClick={() => setTicketFiles(ticketFiles.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'currentcolor', opacity: 0.6 }}>×</button>
+                           </div>
+                        ))}
+                     </div>
+                  )}
+                  {form.attachments && form.attachments.length > 0 && (
+                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+                        {form.attachments.map((a, i) => (
+                           <div key={i} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', padding: '4px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                              📎 {a.name}
+                           </div>
+                        ))}
+                     </div>
+                  )}
+               </div>
+             </div>
+
+             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+                <button className="btn btn-primary" onClick={handleSaveForm} disabled={!form.title || !form.tenantName}>
+                   {formMode === 'new' ? 'Create Ticket' : 'Save Changes'}
+                </button>
+             </div>
+          </div>
+       </div>
+     );
+  }
+
   if (selectedTicket) {
-    return <TicketDetailView ticket={selectedTicket} onBack={() => setSelectedTicketId(null)} />;
+    return <TicketDetailView ticket={selectedTicket} employees={employees} onBack={() => setSelectedTicketId(null)} onEdit={() => { setFormMode('edit'); setForm(selectedTicket); setShowForm(true); setSelectedTicketId(null); }} />;
   }
 
   return (
-    <div className="animate-fade-in" style={{ maxWidth: 1400, margin: '0 auto' }}>
+    <div className="flex-1 overflow-y-auto px-4 lg:px-8 py-6 w-full animate-fade-in relative bg-slate-50/50">
+      <div style={{ maxWidth: 1400, margin: '0 auto', width: '100%' }}>
       <header style={{ marginBottom: 32 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
@@ -222,7 +459,7 @@ export default function SupportPage() {
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
             <button className="btn btn-outline btn-sm">Team Settings</button>
-            <button className="btn btn-primary btn-sm">+ New Ticket</button>
+            <button className="btn btn-primary btn-sm" onClick={() => { setFormMode('new'); setForm({}); setTicketFiles([]); setShowForm(true); }}>+ New Ticket</button>
           </div>
         </div>
       </header>
@@ -304,7 +541,10 @@ export default function SupportPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Search bar */}
           <div style={{ display: 'flex', gap: 10 }}>
-            <input type="text" placeholder="🔍 Search tickets by subject, ID, or tenant…" value={search} onChange={e => setSearch(e.target.value)} className="input" style={{ flex: 1, padding: '10px 14px' }} />
+            <div className="header-search cursor-text max-w-md w-full" style={{ flex: 1 }}>
+              <Search size={16} className="text-tertiary shrink-0" />
+              <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search tickets by subject, ID, or tenant…" className="flex-1 min-w-0 bg-transparent border-none outline-none text-[13px] text-primary placeholder-tertiary" />
+            </div>
           </div>
 
           {/* Ticket Table */}
@@ -364,6 +604,7 @@ export default function SupportPage() {
           </div>
         </div>
       </div>
+    </div>
     </div>
   );
 }

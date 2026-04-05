@@ -78,9 +78,11 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
   const { user }           = useAuth();
   const meta               = PROVIDER_META[provider];
   const isConnected        = record?.status === 'connected';
+  const hasRecord          = !!record;
   const [testing,    setTesting]    = useState(false);
   const [syncing,    setSyncing]    = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
   const [syncMsg,    setSyncMsg]    = useState<string | null>(null);
   const [syncDir,    setSyncDir]    = useState<MailConnectionRecord['syncDirection']>(record?.syncDirection ?? 'both');
@@ -88,6 +90,7 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
   const [syncDays,   setSyncDays]   = useState(record?.syncWindowDays ?? 30);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [showSetupGuide, setShowSetupGuide] = useState(false);
 
   // Sync local state when record changes
   useEffect(() => {
@@ -109,7 +112,7 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
         const res = await fetch('/api/oauth/google/prepare', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ idToken, uid: user.uid, returnTo: '/settings?section=mail' }),
+          body:    JSON.stringify({ idToken, uid: user.uid, returnTo: '/settings?tab=mail' }),
         });
         if (!res.ok) throw new Error(`Prepare failed: ${res.status}`);
         const { authUrl } = await res.json();
@@ -118,13 +121,20 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
         alert(`Could not start Google OAuth: ${e.message}`);
       }
     } else {
-      // Microsoft — uses standard GET redirect (no ID token needed server-side)
-      window.location.href = buildOAuthStartUrl(provider, '/settings?section=mail', user?.uid ?? undefined);
+      // Microsoft — pass the Firebase idToken so the callback can identify the user
+      try {
+        const idToken = await (await import('firebase/auth')).getAuth().currentUser?.getIdToken();
+        const returnTo = encodeURIComponent('/settings?tab=mail');
+        const idTokenParam = idToken ? `&idToken=${encodeURIComponent(idToken)}` : '';
+        window.location.href = `/api/oauth/microsoft/start?returnTo=${returnTo}${idTokenParam}`;
+      } catch (e: any) {
+        alert(`Could not start Microsoft OAuth: ${e.message}`);
+      }
     }
   }
 
   async function handleTest() {
-    if (!isConnected || !user?.uid) return;
+    if (!hasRecord || !user?.uid) return;
     setTesting(true);
     setTestResult(null);
     try {
@@ -151,7 +161,7 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
   }
 
   async function handleSync() {
-    if (!user?.uid || !isConnected) return;
+    if (!user?.uid || !hasRecord) return;
     setSyncing(true);
     setSyncMsg(null);
     try {
@@ -179,8 +189,12 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
   }
 
   async function handleDisconnect() {
-    if (!user?.uid || !isConnected) return;
-    if (!confirm(`Disconnect ${meta.name}? Your email logs will be retained but no new emails will sync.`)) return;
+    if (!user?.uid || !hasRecord) return;
+    if (!confirmDisconnect) {
+      setConfirmDisconnect(true);
+      setTimeout(() => setConfirmDisconnect(false), 5000);
+      return;
+    }
     setDisconnecting(true);
     try {
       await disconnectMailProvider(user.uid, provider, user.name ?? '');
@@ -191,7 +205,7 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
   }
 
   async function handleSaveSettings() {
-    if (!user?.uid || !isConnected) return;
+    if (!user?.uid || !hasRecord) return;
     setSavingSettings(true);
     try {
       await updateSyncSettings(user.uid, provider, {
@@ -207,10 +221,10 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
 
   return (
     <div style={{
-      border: `1px solid ${isConnected ? 'var(--brand-500)30' : 'var(--border)'}`,
+      border: `1px solid ${hasRecord ? 'var(--brand-500)30' : 'var(--border)'}`,
       borderRadius: 14,
       padding: '18px 20px',
-      background: isConnected ? 'var(--brand-900)08' : 'var(--bg-surface)',
+      background: hasRecord ? 'var(--brand-900)08' : 'var(--bg-surface)',
       display: 'flex', flexDirection: 'column', gap: 14,
     }}>
       {/* Header row */}
@@ -225,7 +239,7 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
         <StatusBadge status={record?.status ?? 'disconnected'} />
       </div>
 
-      {isConnected ? (
+      {hasRecord ? (
         <>
           {/* Connected info */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -342,7 +356,7 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
             </button>
             <button className="btn btn-ghost btn-sm" onClick={handleDisconnect}
               disabled={disconnecting} style={{ fontSize: 12, color: '#ef4444', marginLeft: 'auto' }}>
-              {disconnecting ? '⏳ Disconnecting…' : '✕ Disconnect'}
+              {disconnecting ? '⏳ Disconnecting…' : (confirmDisconnect ? '⚠️ Click again to confirm' : '✕ Disconnect')}
             </button>
           </div>
         </>
@@ -360,6 +374,34 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
             <button className="btn btn-primary btn-sm" onClick={handleConnect} style={{ fontSize: 13 }}>
               {meta.icon} Connect {meta.name}
             </button>
+          </div>
+          <div style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+            <button onClick={() => setShowSetupGuide(!showSetupGuide)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: 'var(--brand-500)', display: 'flex', alignItems: 'center' }}>
+               {showSetupGuide ? 'Hide' : 'Show'} {meta.name} App Setup Guide
+            </button>
+            {showSetupGuide && provider === 'microsoft' && (
+              <div style={{ marginTop: 12, padding: 12, background: 'var(--bg-surface)', borderRadius: 8, fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                 <p><strong>1. Entra ID App Registration</strong><br/>Create an App Registration in Azure AD and add your CRM domain as a Single-Page Application (SPA) redirect URI (e.g. <code>https://your-crm.com/api/oauth/microsoft/callback</code>).</p>
+                 <p style={{ marginTop: 8 }}><strong>2. API Permissions</strong><br/>Add the following standard Microsoft Graph delegated permissions:</p>
+                 <ul style={{ paddingLeft: 16, marginTop: 4, fontFamily: 'monospace', color: 'var(--brand-700)' }}>
+                   <li>Mail.Read</li>
+                   <li>Mail.Send</li>
+                   <li>User.Read</li>
+                   <li>offline_access</li>
+                 </ul>
+              </div>
+            )}
+            {showSetupGuide && provider === 'google' && (
+              <div style={{ marginTop: 12, padding: 12, background: 'var(--bg-surface)', borderRadius: 8, fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                 <p><strong>1. Google Cloud Console</strong><br/>Enable the Gmail API in your Google Cloud Project. Go to Credentials and create an OAuth 2.0 Client ID for a Web Application.</p>
+                 <p style={{ marginTop: 8 }}><strong>2. Redirect URI Config</strong><br/>Add <code>https://your-crm.com/api/oauth/google/callback</code> to the Authorized Redirect URIs.</p>
+                 <p style={{ marginTop: 8 }}><strong>3. Environment Variables</strong><br/>Copy the generated Client ID and secret into your <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> environment variables. Add these scopes to your OAuth consent screen:</p>
+                 <ul style={{ paddingLeft: 16, marginTop: 4, fontFamily: 'monospace', color: 'var(--brand-700)' }}>
+                   <li>https://www.googleapis.com/auth/gmail.modify</li>
+                   <li>https://www.googleapis.com/auth/calendar.events</li>
+                 </ul>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -439,7 +481,7 @@ function EmailLogPanel({ uid }: { uid: string }) {
                   if (fam) {
                     setLoggingId(log.id);
                     import('@/lib/emailIntegrationService').then(m =>
-                      m.logEmailToCrm(uid, log, `fam-${fam.toLowerCase().replace(/\s/g, '-')}`, fam)
+                      m.logEmailToCrm(uid, log, [{ id: `fam-${fam.toLowerCase().replace(/\s/g, '-')}`, name: fam }])
                         .then(() => {
                           setLogs(prev => prev.map(l => l.id === log.id ? { ...l, loggedToCrm: true } : l));
                         })

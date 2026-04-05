@@ -20,13 +20,16 @@ export async function getAiKeysByTenant(tenantId: string): Promise<Record<string
     const resolvedKeys: Record<string, string> = {};
 
     // aiKeys shape: { "OpenAI": [{id: 'openai_api_key', value: 'sk-...', saved: true}], "Groq": [...] }
-    for (const group of Object.values(aiKeys)) {
-      if (Array.isArray(group)) {
-        for (const keyDef of group) {
+    // Or legacy flat shape: { openai_api_key: 'sk-...', groq_api_key: 'gsk_...' }
+    for (const [key, value] of Object.entries(aiKeys)) {
+      if (Array.isArray(value)) {
+        for (const keyDef of value) {
           if (keyDef.id && keyDef.value && keyDef.saved) {
             resolvedKeys[keyDef.id] = keyDef.value;
           }
         }
+      } else if (typeof value === 'string') {
+        resolvedKeys[key] = value;
       }
     }
     return resolvedKeys;

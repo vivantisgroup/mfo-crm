@@ -315,11 +315,11 @@ export const ACTIVITIES: Activity[] = [
 // ─── Task Queues ───────────────────────────────────────────────────────────
 
 export const TASK_QUEUES: TaskQueue[] = [
-  { id: 'q-compliance',   name: 'Compliance',       icon: '⚖️',  color: '#ef4444', memberIds: ['usr-comp-001', 'usr-admin-001'],             assignSlaMinutes: 60  },
-  { id: 'q-client-svc',  name: 'Client Services',  icon: '🤝',  color: '#6366f1', memberIds: ['usr-rm-001', 'usr-rm-002'],                  assignSlaMinutes: 120 },
-  { id: 'q-back-office', name: 'Back Office',       icon: '🗄️', color: '#f59e0b', memberIds: ['usr-ctrl-001'],                               assignSlaMinutes: 240 },
-  { id: 'q-investment',  name: 'Investment',        icon: '📊',  color: '#22d3ee', memberIds: ['usr-cio-001', 'usr-rm-001'],                  assignSlaMinutes: 180 },
-  { id: 'q-concierge',   name: 'Concierge',         icon: '🛎️', color: '#a78bfa', memberIds: ['usr-rm-001', 'usr-rm-002', 'usr-admin-001'],  assignSlaMinutes: 90  },
+  { id: 'q-compliance',   name: 'Compliance',       icon: '⚖️',  color: '#ef4444', memberIds: ['usr-comp-001', 'usr-admin-001'],             assignSlaMinutes: 60,  tenantType: 'global' },
+  { id: 'q-client-svc',  name: 'Client Services',  icon: '🤝',  color: '#6366f1', memberIds: ['usr-rm-001', 'usr-rm-002'],                  assignSlaMinutes: 120, tenantType: 'global' },
+  { id: 'q-back-office', name: 'Back Office',       icon: '🗄️', color: '#f59e0b', memberIds: ['usr-ctrl-001'],                               assignSlaMinutes: 240, tenantType: 'global' },
+  { id: 'q-investment',  name: 'Investment',        icon: '📊',  color: '#22d3ee', memberIds: ['usr-cio-001', 'usr-rm-001'],                  assignSlaMinutes: 180, tenantType: 'global' },
+  { id: 'q-concierge',   name: 'Concierge',         icon: '🛎️', color: '#a78bfa', memberIds: ['usr-rm-001', 'usr-rm-002', 'usr-admin-001'],  assignSlaMinutes: 90,  tenantType: 'global' },
 ];
 
 // ─── Task Types ─────────────────────────────────────────────────────────────

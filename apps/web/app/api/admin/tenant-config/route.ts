@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminAuth, getAdminFirestore } from '@/lib/firebaseAdmin';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET/POST /api/admin/tenant-config
  *
@@ -91,11 +93,14 @@ export async function POST(req: NextRequest) {
       payload.mfaRequired = (mfaConfig.mfaMode === 'totp' || mfaConfig.mfaMode === 'email');
     }
 
+    console.log('--- API POST PAYLOAD ---', JSON.stringify({ tenantId, payload, isMasterAdmin }));
+
     await adminDb.collection('tenants').doc(tenantId).set(
       payload,
       { merge: true }
     );
 
+    console.log('--- API POST SUCCESS ---');
     return NextResponse.json({ success: true });
   } catch (err: any) {
     console.error('[POST /api/admin/tenant-config]', err);

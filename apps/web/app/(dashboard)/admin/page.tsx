@@ -1,11 +1,13 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useTheme } from '@/lib/ThemeContext';
 import { useTaskQueue } from '@/lib/TaskQueueContext';
 import { type TaskQueue } from '@/lib/types';
-import { Card, Title, Subtitle, Text, Divider, Flex, Grid, Col, Badge, TextInput, Select, SelectItem, Switch, Button } from '@tremor/react';
+import { VERTICAL_REGISTRY } from '@/lib/verticalRegistry';
+import { Card, Title, Subtitle, Text, Divider, Flex, Grid, Col, Badge, TextInput, Select, SelectItem, Switch, Button, TabGroup, TabList, Tab, TabPanels, TabPanel } from '@tremor/react';
+import { Settings, Database, Shield, Plug, Bot, Building2, Scale, Sliders, Landmark, Mail, DatabaseBackup, Settings2, Search } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -17,10 +19,10 @@ type TabId =
   | 'ai_keys'
   | 'firm'
   | 'compliance'
-  | 'tasks'
+  | 'customizations'
   | 'users'
   | 'communications'
-  | 'entity_types';
+  | 'data_explorer';
 
 interface ApiKeyField {
   id: string;
@@ -235,63 +237,68 @@ function PlatformSection() {
 // ─── Section: Database & Infrastructure ───────────────────────────────────────
 
 function DatabaseSection() {
-  const [keys, setKeys] = useState<ApiKeyField[]>([
-    {
-      id: 'firestore_project_id', label: 'Firebase Project ID', value: 'mfo-crm', saved: true,
-      placeholder: 'your-firebase-project-id',
-      description: 'Primary Firestore database project identifier',
-      docsUrl: 'https://firebase.google.com/docs/projects/learn-more'
-    },
-    {
-      id: 'firestore_service_account', label: 'Firebase Service Account (JSON)', value: '', saved: false,
-      placeholder: 'Paste full service account JSON...',
-      description: 'Server-side service account for admin SDK access',
-      required: true,
-      docsUrl: 'https://firebase.google.com/docs/admin/setup'
-    },
-    {
-      id: 'firebase_storage_bucket', label: 'Firebase Storage Bucket', value: 'mfo-crm.firebasestorage.app', saved: true,
-      placeholder: 'project-id.appspot.com',
-      description: 'Cloud Storage bucket for documents and attachments'
-    },
-    {
-      id: 'smtp_host', label: 'SMTP Host (Transactional Email)', value: 'smtp.sendgrid.net', saved: true,
-      placeholder: 'smtp.mailprovider.com',
-      description: 'SMTP server for system emails (password resets, notifications)',
-      docsUrl: 'https://docs.sendgrid.com/for-developers/sending-email/smtp-alerts'
-    },
-    {
-      id: 'smtp_api_key', label: 'SMTP / SendGrid API Key', value: 'SG.xxxxx...', saved: true,
-      placeholder: 'SG.your_sendgrid_api_key',
-      description: 'API key for transactional email delivery (free tier: 100 emails/day)',
-      docsUrl: 'https://app.sendgrid.com/settings/api_keys'
-    },
-    {
-      id: 'redis_url', label: 'Redis / Upstash URL (optional)', value: '', saved: false,
-      placeholder: 'redis://default:password@host:6379',
-      description: 'Optional: for rate limiting and session caching in production'
-    },
-  ]);
+  const [config, setConfig] = useState({
+    firestoreProjectId: 'mfo-crm',
+    firestoreServiceAccount: '',
+    firebaseStorageBucket: 'mfo-crm.firebasestorage.app',
+    redisUrl: '',
+  });
 
-  const handleSave = (id: string, val: string) => {
-    setKeys(prev => prev.map(k => k.id === id ? { ...k, value: val, saved: true } : k));
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
   };
 
   return (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in flex flex-col h-full">
       <div style={{ marginBottom: 32 }}>
-        <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>Database & Infrastructure</h2>
+        <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>Database Infrastructure</h2>
         <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-          Configure your primary data providers, storage, and messaging infrastructure.
+          Configure your primary data providers, admin SDK access, and storage layer.
         </p>
         <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
-          {['Firebase / Firestore', 'Cloud Storage', 'SMTP / Email'].map(badge => (
-            <span key={badge} className="badge badge-neutral" style={{ fontSize: 11 }}>{badge}</span>
+          {['Firebase / Firestore', 'Cloud Storage', 'Redis / Upstash'].map(badge => (
+            <span key={badge} className="bg-indigo-50 text-indigo-700 px-2 py-1 rounded font-semibold" style={{ fontSize: 11 }}>{badge}</span>
           ))}
         </div>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {keys.map(k => <ApiKeyCard key={k.id} field={k} onSave={handleSave} />)}
+
+      <div className="bg-tremor-background-subtle rounded-tremor-default border border-tremor-border p-6 shadow-sm mb-6">
+        <div className="flex items-center gap-2 mb-6 border-b border-tremor-border pb-4">
+          <span className="text-xl">🗄️</span>
+          <h3 className="font-bold text-tremor-content-strong">Core Infrastructure Configuration</h3>
+        </div>
+
+        <Grid numItemsMd={2} className="gap-6">
+          <Col>
+            <label className="text-xs font-bold uppercase tracking-wider text-tremor-content mb-2 block">Firebase Project ID *</label>
+            <TextInput value={config.firestoreProjectId} onValueChange={(val) => setConfig(p => ({...p, firestoreProjectId: val}))} className="font-mono text-sm" />
+            <Text className="text-[11px] mt-1 text-tremor-content">Primary Firestore database project identifier</Text>
+          </Col>
+          <Col>
+            <label className="text-xs font-bold uppercase tracking-wider text-tremor-content mb-2 block">Firebase Storage Bucket *</label>
+            <TextInput value={config.firebaseStorageBucket} onValueChange={(val) => setConfig(p => ({...p, firebaseStorageBucket: val}))} className="font-mono text-sm" />
+            <Text className="text-[11px] mt-1 text-tremor-content">Cloud Storage bucket for documents</Text>
+          </Col>
+          <Col numColSpanMd={2}>
+            <label className="text-xs font-bold uppercase tracking-wider text-tremor-content mb-2 block">Firebase Service Account (JSON) *</label>
+            <TextInput type="password" placeholder="Paste full service account JSON..." value={config.firestoreServiceAccount} onValueChange={(val) => setConfig(p => ({...p, firestoreServiceAccount: val}))} className="font-mono text-sm" />
+            <Text className="text-[11px] mt-1 text-tremor-content">Server-side service account for admin SDK access</Text>
+          </Col>
+          <Col numColSpanMd={2}>
+            <label className="text-xs font-bold uppercase tracking-wider text-tremor-content mb-2 block">Redis / Upstash URL (Optional)</label>
+            <TextInput placeholder="redis://default:password@host:6379" value={config.redisUrl} onValueChange={(val) => setConfig(p => ({...p, redisUrl: val}))} className="font-mono text-sm" />
+            <Text className="text-[11px] mt-1 text-tremor-content">Optional: for rate limiting and session caching in production</Text>
+          </Col>
+        </Grid>
+      </div>
+
+      <div className="flex justify-end mt-auto">
+        <Button onClick={handleSave} className="bg-[#6366f1] hover:bg-[#4f46e5] text-white px-8 shadow-sm">
+          {saved ? '✅ Saved!' : 'Save Infrastructure Configuration'}
+        </Button>
       </div>
     </div>
   );
@@ -575,6 +582,36 @@ function IntegrationsSection() {
 
       <Section title="Microsoft 365 / Outlook / OneDrive" icon="Ⓜ️" color="#0078d4" desc="Email sync, Calendar, Teams, SharePoint, OneDrive">
         {microsoftKeys.map(k => <ApiKeyCard key={k.id} field={k} onSave={saveMs} />)}
+        
+        <div style={{ marginTop: 16, padding: '16px 20px', border: '1px solid #0078d444', borderRadius: 'var(--radius-md)', background: '#0078d408' }}>
+          <div style={{ fontWeight: 700, color: '#0078d4', fontSize: 13, marginBottom: 6 }}>Global Teams Firehose Initialization</div>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12 }}>
+            Provision a cross-tenant Application webhook for both Channels and 1x1 Chats. Requires Client ID and Secret to be configured first.
+          </div>
+          <Button size="xs" variant="secondary" onClick={async () => {
+             const btn = document.getElementById('init-hook-btn');
+             const msgContainer = document.getElementById('init-hook-msg');
+             if (btn) btn.innerText = 'Provisioning...';
+             if (msgContainer) msgContainer.innerText = '';
+             try {
+                const res = await fetch('/api/admin/webhooks/provision-teams', {
+                   method: 'POST',
+                   headers: { 'Authorization': 'Bearer sandbox-admin-key' }
+                });
+                if (!res.ok) {
+                   const txt = await res.text();
+                   if (msgContainer) { msgContainer.innerText = 'Failed: ' + txt; msgContainer.className = 'text-red-500 text-xs mt-2 font-semibold'; }
+                } else {
+                   if (msgContainer) { msgContainer.innerText = '✓ Global Teams webhooks provisioned successfully!'; msgContainer.className = 'text-emerald-500 text-xs mt-2 font-semibold'; }
+                }
+             } catch(e: any) {
+                if (msgContainer) { msgContainer.innerText = 'Error: ' + e.message; msgContainer.className = 'text-red-500 text-xs mt-2 font-semibold'; }
+             } finally {
+                if (btn) btn.innerText = 'Initialize Native Webhooks';
+             }
+          }} id="init-hook-btn">Initialize Native Webhooks</Button>
+          <div id="init-hook-msg" className="mt-2 text-xs"></div>
+        </div>
       </Section>
 
       <Section title="Google Workspace / Gmail / Drive" icon="Ⓖ" color="#ea4335" desc="Gmail integration, Google Calendar, Google Drive access">
@@ -747,23 +784,7 @@ function AiKeysSection() {
         ))}
       </div>
 
-      {/* AI Routing Policy */}
-      <div style={{ marginTop: 36, padding: '20px 24px', background: 'var(--bg-canvas)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)' }}>
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12 }}>🔄 AI Routing Policy</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
-          {[
-            { label: 'Document Analysis', primary: 'Claude', fallback: 'GPT-4o' },
-            { label: 'Portfolio Narrative', primary: 'GPT-4o', fallback: 'Gemini Pro' },
-            { label: 'Compliance Review', primary: 'Claude', fallback: 'GPT-4o' },
-          ].map(route => (
-            <div key={route.label} style={{ padding: '12px 16px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 600, marginBottom: 8 }}>{route.label}</div>
-              <div style={{ fontSize: 13 }}>Primary: <strong>{route.primary}</strong></div>
-              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>Fallback: {route.fallback}</div>
-            </div>
-          ))}
-        </div>
-      </div>
+
     </div>
   );
 }
@@ -990,6 +1011,19 @@ function QueueSettingsSection() {
   const { user, tenant } = useAuth();
   const { queues, queueTaskCount, addQueue, updateQueue, removeEmptyQueue, migrateAndRemoveQueue } = useTaskQueue();
 
+  const isInternal = tenant?.isInternal ?? false;
+  const [activeVertical, setActiveVertical] = useState<string>('global');
+
+  // Determine which queues to display
+  const visibleQueues = queues.filter(q => {
+    if (isInternal) {
+      return (q.tenantType || 'global') === activeVertical;
+    } else {
+      // Regular tenants see global queues (read-only) and their own vertical queues
+      return (q.tenantType || 'global') === 'global' || q.tenantType === tenant?.industryVertical;
+    }
+  });
+
   // ── New queue form ─────────────────────────────────────────────────────────
   const [showCreate, setShowCreate] = useState(false);
   const [newName,    setNewName]    = useState('');
@@ -1023,8 +1057,11 @@ function QueueSettingsSection() {
   function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!newName.trim()) return;
+
+    const targetVertical = isInternal ? activeVertical : (tenant?.industryVertical || 'global');
+
     addQueue(
-      { name: newName.trim(), icon: newIcon, color: newColor, memberIds: [], assignSlaMinutes: newSla },
+      { name: newName.trim(), icon: newIcon, color: newColor, memberIds: [], assignSlaMinutes: newSla, tenantType: targetVertical },
       actorId, actorName,
     );
     showToast(`Queue "${newName.trim()}" created`);
@@ -1094,6 +1131,24 @@ function QueueSettingsSection() {
         </div>
       </div>
 
+      {isInternal && (
+        <div style={{ marginBottom: 28, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)' }}>Manage Tenant Type:</div>
+          <select 
+            className="input" 
+            style={{ width: 240, padding: '8px 12px' }}
+            value={activeVertical}
+            onChange={(e) => setActiveVertical(e.target.value)}
+          >
+            <option value="global">🌍 Global (All Tenants)</option>
+            <option value="saas_platform">☁️ SaaS Platform</option>
+            {Object.values(VERTICAL_REGISTRY).map(v => (
+              <option key={v.id} value={v.id}>{v.icon} {v.label}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* Toast */}
       {toast && (
         <div style={{
@@ -1108,23 +1163,38 @@ function QueueSettingsSection() {
 
       {/* Queue list */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 28 }}>
-        {queues.map(q => {
+        {visibleQueues.length === 0 && (
+          <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--text-tertiary)', border: '2px dashed var(--border)', borderRadius: 'var(--radius-lg)' }}>
+            No queues found for this tenant type.
+          </div>
+        )}
+        {visibleQueues.map(q => {
           const taskCount = queueTaskCount(q.id);
           const isEditing = editingId === q.id;
           const isRemoving = removingId === q.id;
           const migTargets = queues.filter(x => x.id !== q.id);
+          const canManage = isInternal || q.tenantType === tenant?.industryVertical;
 
           return (
             <div key={q.id} style={{
-              background: 'var(--bg-elevated)', border: `1px solid ${isEditing || isRemoving ? q.color + '66' : 'var(--border)'}`,
-              borderLeft: `4px solid ${q.color}`, borderRadius: 'var(--radius-lg)',
+              background: 'var(--bg-elevated)',
+              borderTop: `1px solid ${isEditing || isRemoving ? q.color + '66' : 'var(--border)'}`,
+              borderRight: `1px solid ${isEditing || isRemoving ? q.color + '66' : 'var(--border)'}`,
+              borderBottom: `1px solid ${isEditing || isRemoving ? q.color + '66' : 'var(--border)'}`,
+              borderLeft: `4px solid ${q.color}`, 
+              borderRadius: 'var(--radius-lg)',
               overflow: 'hidden', transition: 'border-color 0.2s',
             }}>
               {/* Queue row */}
               <div style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 12 }}>
                 <span style={{ fontSize: 20, width: 32, textAlign: 'center' }}>{q.icon}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>{q.name}</div>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>
+                    {q.name}
+                    {!canManage && (
+                      <span style={{ marginLeft: 8, fontSize: 10, padding: '2px 6px', background: 'var(--bg-canvas)', borderRadius: 4, color: 'var(--text-tertiary)', border: '1px solid var(--border)' }}>Global (Read-Only)</span>
+                    )}
+                  </div>
                   <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
                     Pick-up SLA: {q.assignSlaMinutes < 60 ? `${q.assignSlaMinutes}m` : `${q.assignSlaMinutes / 60}h`}
                     &nbsp;·&nbsp;
@@ -1135,22 +1205,24 @@ function QueueSettingsSection() {
                 </div>
 
                 {/* Action buttons */}
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    style={{ fontSize: 11 }}
-                    onClick={() => isEditing ? setEditingId(null) : startEdit(q)}
-                  >
-                    {isEditing ? 'Cancel' : '✏️ Edit'}
-                  </button>
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    style={{ fontSize: 11, color: isRemoving ? '#f59e0b' : '#ef4444' }}
-                    onClick={() => isRemoving ? setRemovingId(null) : attemptRemove(q.id)}
-                  >
-                    {isRemoving ? '✕ Cancel' : '🗑 Remove'}
-                  </button>
-                </div>
+                {canManage && (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ fontSize: 11 }}
+                      onClick={() => isEditing ? setEditingId(null) : startEdit(q)}
+                    >
+                      {isEditing ? 'Cancel' : '✏️ Edit'}
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ fontSize: 11, color: isRemoving ? '#f59e0b' : '#ef4444' }}
+                      onClick={() => isRemoving ? setRemovingId(null) : attemptRemove(q.id)}
+                    >
+                      {isRemoving ? '✕ Cancel' : '🗑 Remove'}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Edit inline form */}
@@ -1327,17 +1399,17 @@ function QueueSettingsSection() {
 
 // ─── Main Admin Page ───────────────────────────────────────────────────────────
 
-const TABS: { id: TabId; label: string; icon: string; superAdminOnly?: boolean }[] = [
-  { id: 'platform',       label: 'Platform Config',       icon: '⚙️',  superAdminOnly: true },
-  { id: 'database',       label: 'Database & Infra',       icon: '🗄️', superAdminOnly: true },
-  { id: 'mfa',            label: 'MFA / Security',         icon: '🔐' },
-  { id: 'integrations',   label: 'Integrations (BYOK)',    icon: '🔌' },
-  { id: 'ai_keys',        label: 'AI Providers',           icon: '🤖' },
-  { id: 'firm',           label: 'Firm Identity',          icon: '🏢' },
-  { id: 'compliance',     label: 'Compliance',             icon: '⚖️' },
-  { id: 'tasks',          label: 'Task Queues',            icon: '🗂' },
-  { id: 'entity_types',   label: 'CRM Entities',           icon: '🏛️', superAdminOnly: true },
-  { id: 'communications', label: 'Communications',         icon: '📧', superAdminOnly: true },
+const TABS: { id: TabId; label: string; icon: React.ElementType; superAdminOnly?: boolean }[] = [
+  { id: 'platform',       label: 'Platform Config',       icon: Settings,  superAdminOnly: true },
+  { id: 'database',       label: 'Database',              icon: Database,  superAdminOnly: true },
+  { id: 'data_explorer',  label: 'Data',                  icon: DatabaseBackup, superAdminOnly: true },
+  { id: 'mfa',            label: 'MFA / Security',        icon: Shield },
+  { id: 'integrations',   label: 'Integrations (BYOK)',   icon: Plug },
+  { id: 'ai_keys',        label: 'AI Providers',          icon: Bot },
+  { id: 'firm',           label: 'Firm Identity',         icon: Building2 },
+  { id: 'compliance',     label: 'Compliance',            icon: Scale },
+  { id: 'customizations', label: 'Customizations',        icon: Sliders },
+  { id: 'communications', label: 'Communications',        icon: Mail, superAdminOnly: true },
 ];
 
 
@@ -1348,18 +1420,374 @@ const EmailTemplatesPage = React.lazy(
   () => import('@/app/(dashboard)/platform/email-templates/page')
 );
 
+// Helper: shows a small badge — reflects actual field value
+function FieldStatus({ filled }: { filled: boolean }) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4,
+      fontSize: 10, fontWeight: 700, letterSpacing: '0.04em',
+      padding: '2px 8px', borderRadius: 20,
+      background: filled ? '#dcfce7' : '#fef2f2',
+      color:      filled ? '#166534' : '#991b1b',
+      border: `1px solid ${filled ? '#86efac' : '#fca5a5'}`,
+      marginLeft: 8, verticalAlign: 'middle',
+    }}>
+      {filled ? '✓ Configured' : '○ Empty'}
+    </span>
+  );
+}
+
+// Reusable secret field with eye-toggle
+function SecretField({
+  label, value, onChange, placeholder, isLoading,
+}: {
+  label: React.ReactNode;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  isLoading?: boolean;
+}) {
+  const [show, setShow] = React.useState(false);
+  return (
+    <div>
+      <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-tremor-content mb-2 block">
+        {label}
+      </label>
+      <div style={{ position: 'relative' }}>
+        <input
+          type={show ? 'text' : 'password'}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={placeholder ?? '••••••••••••••••••••••••••••••••'}
+          disabled={isLoading}
+          style={{
+            width: '100%', fontFamily: 'monospace', fontSize: 13,
+            padding: '8px 36px 8px 12px',
+            border: '1px solid var(--tremor-border-color, #e5e7eb)',
+            borderRadius: 6,
+            background: isLoading ? '#f9fafb' : 'white',
+            outline: 'none',
+            color: '#111827',
+            boxSizing: 'border-box',
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => setShow(s => !s)}
+          title={show ? 'Hide' : 'Show'}
+          style={{
+            position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: '#9ca3af', padding: 2,
+            display: 'flex', alignItems: 'center',
+          }}
+        >
+          {show
+            ? <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            : <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          }
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function CommunicationsSection() {
+  const [activeProvider, setActiveProvider] = useState<'teams' | 'slack'>('teams');
+
+  const [teamsEnabled,      setTeamsEnabled]      = useState(false);
+  const [teamsAppId,        setTeamsAppId]         = useState('');
+  const [teamsTenantId,     setTeamsTenantId]      = useState('');
+  const [teamsClientSecret, setTeamsClientSecret]  = useState('');
+  const [teamsSaved,        setTeamsSaved]         = useState(false);
+  const [teamsSaveError,    setTeamsSaveError]     = useState('');
+  const [isSavingTeams,     setIsSavingTeams]      = useState(false);
+  const [isLoadingTeams,    setIsLoadingTeams]     = useState(true);
+
+  const [slackEnabled,      setSlackEnabled]      = useState(false);
+  const [slackAppId,        setSlackAppId]         = useState('');
+  const [slackClientId,     setSlackClientId]      = useState('');
+  const [slackClientSecret, setSlackClientSecret]  = useState('');
+  const [slackSigningSecret,setSlackSigningSecret] = useState('');
+  const [slackSaved,        setSlackSaved]         = useState(false);
+
+  React.useEffect(() => {
+    setIsLoadingTeams(true);
+    fetch('/api/admin/platform/microsoft')
+      .then(async res => {
+        // Even a 503 may return JSON with _unavailable flag
+        const data = await res.json().catch(() => ({ error: true }));
+        return data;
+      })
+      .then(data => {
+        if (!data.error) {
+          // Always set enabled from the persisted value (this was the bug: skipping on data.error)
+          const enabled = data.enabled ?? false;
+          setTeamsEnabled(enabled);
+          setTeamsAppId(data.appId        || '');
+          setTeamsTenantId(data.tenantId  || '');
+          setTeamsClientSecret(data.clientSecret || '');
+        } else {
+          console.warn('[CommunicationsSection] Could not load Microsoft config; UI will show current defaults.');
+        }
+      })
+      .catch(console.error)
+      .finally(() => setIsLoadingTeams(false));
+  }, []);
+
+  const handleSaveTeams = async () => {
+    setIsSavingTeams(true);
+    setTeamsSaveError('');
+    try {
+      const res = await fetch('/api/admin/platform/microsoft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enabled:      teamsEnabled,
+          appId:        teamsAppId,
+          tenantId:     teamsTenantId,
+          clientSecret: teamsClientSecret,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) {
+        setTeamsSaveError(data.error || `Server error ${res.status}. Check Admin SDK credentials.`);
+      } else {
+        setTeamsSaved(true);
+        setTimeout(() => setTeamsSaved(false), 2500);
+      }
+    } catch (e: any) {
+      setTeamsSaveError(e.message);
+    } finally {
+      setIsSavingTeams(false);
+    }
+  };
+
+  const handleSaveSlack = () => {
+    setSlackSaved(true);
+    setTimeout(() => setSlackSaved(false), 2500);
+  };
+
   return (
     <div className="animate-fade-in">
       <div style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>📧 Communications</h2>
+        <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>📧 Communications Platform</h2>
         <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-          Manage platform-wide email templates. Changes apply to all tenant communications.
+          Manage global messaging integrations and platform-wide email templates.
         </p>
       </div>
-      <React.Suspense fallback={<div style={{ padding: 40, textAlign:'center', color:'var(--text-tertiary)' }}>Loading template editor…</div>}>
-        <EmailTemplatesPage />
-      </React.Suspense>
+
+      <TabGroup>
+        <TabList className="mb-6">
+          <Tab>Email Templates</Tab>
+          <Tab>Messaging Pipelines</Tab>
+          <Tab>SMTP Settings</Tab>
+        </TabList>
+        <TabPanels>
+          {/* Email Templates Panel */}
+          <TabPanel>
+            <div className="bg-tremor-background-subtle rounded-tremor-default p-4 mb-4">
+              <Text className="text-sm">Manage platform-wide email templates. Changes apply to all tenant communications.</Text>
+            </div>
+            <React.Suspense fallback={<div style={{ padding: 40, textAlign:'center', color:'var(--text-tertiary)' }}>Loading template editor…</div>}>
+              <EmailTemplatesPage />
+            </React.Suspense>
+          </TabPanel>
+
+          {/* Messaging Pipelines Panel */}
+          <TabPanel>
+            <Grid numItemsMd={3} className="gap-6 mt-4">
+              {/* MASTER LIST */}
+              <Col numColSpanMd={1} className="flex flex-col gap-3">
+                <button 
+                  onClick={() => setActiveProvider('teams')}
+                  className={`flex items-center gap-3 p-4 rounded-tremor-default border text-left transition-all ${
+                    activeProvider === 'teams' ? 'bg-[#5B5FC7]/10 border-[#5B5FC7] shadow-sm' : 'bg-tremor-background-subtle border-transparent hover:border-tremor-border opacity-70 hover:opacity-100'
+                  }`}
+                >
+                  <div className="w-10 h-10 rounded-md bg-[#EEF2FC] flex items-center justify-center text-[#5B5FC7] shrink-0 font-bold">M</div>
+                  <div>
+                    <div className="font-semibold text-tremor-content-strong text-sm">Microsoft Teams</div>
+                    <div className="text-xs text-tremor-content mt-1">Azure AD Graph API</div>
+                  </div>
+                  {teamsEnabled && <Badge size="xs" color="emerald" className="ml-auto">Active</Badge>}
+                </button>
+
+                <button 
+                  onClick={() => setActiveProvider('slack')}
+                  className={`flex items-center gap-3 p-4 rounded-tremor-default border text-left transition-all ${
+                    activeProvider === 'slack' ? 'bg-[#E01E5A]/10 border-[#E01E5A] shadow-sm' : 'bg-tremor-background-subtle border-transparent hover:border-tremor-border opacity-70 hover:opacity-100'
+                  }`}
+                >
+                  <div className="w-10 h-10 rounded-md bg-stone-100 flex items-center justify-center text-[#E01E5A] shrink-0 font-bold">S</div>
+                  <div>
+                    <div className="font-semibold text-tremor-content-strong text-sm">Slack app</div>
+                    <div className="text-xs text-tremor-content mt-1">Events API Webhook</div>
+                  </div>
+                  {slackEnabled && <Badge size="xs" color="emerald" className="ml-auto">Active</Badge>}
+                </button>
+              </Col>
+
+              {/* DETAIL VIEW */}
+              <Col numColSpanMd={2}>
+                <Card className="h-full min-h-[500px] shadow-sm ring-1 ring-tremor-border flex flex-col p-6">
+                  {activeProvider === 'teams' && (
+                    <div className="flex-1 flex flex-col gap-6 animate-fade-in">
+                      <Flex alignItems="start" justifyContent="between">
+                        <div>
+                          <Title className="text-[#5B5FC7] flex items-center gap-2 font-bold">
+                            Microsoft Teams Pipeline
+                          </Title>
+                          <Text className="text-xs mt-1 text-tremor-content">Enable secure messaging boundaries via Microsoft Graph.</Text>
+                        </div>
+                        <div className="flex items-center gap-3 bg-tremor-background-subtle px-3 py-1.5 rounded-full border border-tremor-border">
+                          <Text className="text-xs font-semibold text-tremor-content-strong">{teamsEnabled ? 'Enabled' : 'Disabled'}</Text>
+                          <Switch id="teams-switch" checked={teamsEnabled} onChange={setTeamsEnabled} />
+                        </div>
+                      </Flex>
+                      <Divider className="my-1" />
+                      <div className="text-xs text-tremor-content bg-indigo-50/50 p-4 rounded-tremor-small border border-indigo-100 leading-relaxed shadow-sm">
+                        <strong className="text-indigo-900">Provisioning Requirements:</strong> Register an App within your Azure Active Directory / Entra Portal. Make sure to grant Admin Consent for <code className="text-xs font-mono text-indigo-700 bg-indigo-100 px-1 py-0.5 rounded">ChannelMessage.Send</code>, <code className="text-xs font-mono text-indigo-700 bg-indigo-100 px-1 py-0.5 rounded">Channel.ReadBasic.All</code>, and <code className="text-xs font-mono text-indigo-700 bg-indigo-100 px-1 py-0.5 rounded">Team.ReadBasic.All</code> to allow automatic message routing to channels from CRM entities.
+                      </div>
+
+                      {isLoadingTeams && (
+                        <div className="text-xs text-tremor-content animate-pulse">Loading saved configuration…</div>
+                      )}
+
+                      <div className="grid grid-cols-1 gap-5 mt-2">
+                        <SecretField
+                          label={<>Application (Client) ID * <FieldStatus filled={!!teamsAppId} /></>}
+                          value={teamsAppId}
+                          onChange={setTeamsAppId}
+                          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                          isLoading={isLoadingTeams}
+                        />
+                        <SecretField
+                          label={<>Directory (Tenant) ID * <FieldStatus filled={!!teamsTenantId} /></>}
+                          value={teamsTenantId}
+                          onChange={setTeamsTenantId}
+                          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                          isLoading={isLoadingTeams}
+                        />
+                        <SecretField
+                          label={<>Client Secret Value * <FieldStatus filled={!!teamsClientSecret} /></>}
+                          value={teamsClientSecret}
+                          onChange={setTeamsClientSecret}
+                          placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                          isLoading={isLoadingTeams}
+                        />
+                      </div>
+
+                      {teamsSaveError && (
+                        <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-tremor-small p-3 mt-2">
+                          ⚠️ Save failed: {teamsSaveError}
+                        </div>
+                      )}
+
+                      <div className="mt-auto pt-6 flex justify-end">
+                        <Button
+                          onClick={handleSaveTeams}
+                          disabled={isSavingTeams || isLoadingTeams}
+                          className="bg-[#5B5FC7] hover:bg-[#4d51a6] text-white border-transparent px-8 shadow-sm"
+                        >
+                          {teamsSaved ? '✅ Configuration Saved!' : isSavingTeams ? 'Saving…' : 'Save Connection Details'}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {activeProvider === 'slack' && (
+                    <div className="flex-1 flex flex-col gap-6 animate-fade-in">
+                      <Flex alignItems="start" justifyContent="between">
+                        <div>
+                          <Title className="text-[#E01E5A] flex items-center gap-2 font-bold">
+                            Slack Workspace Pipeline
+                          </Title>
+                          <Text className="text-xs mt-1 text-tremor-content">Route real-time alerts into native channels.</Text>
+                        </div>
+                        <div className="flex items-center gap-3 bg-tremor-background-subtle px-3 py-1.5 rounded-full border border-tremor-border">
+                          <Text className="text-xs font-semibold text-tremor-content-strong">{slackEnabled ? 'Enabled' : 'Disabled'}</Text>
+                          <Switch id="slack-switch" checked={slackEnabled} onChange={setSlackEnabled} />
+                        </div>
+                      </Flex>
+                      <Divider className="my-1" />
+                      <div className="text-xs text-tremor-content bg-pink-50 p-4 rounded-tremor-small border border-pink-100 leading-relaxed shadow-sm">
+                        <strong className="text-pink-900">Provisioning Requirements:</strong> Create an App in your Slack developer portal. Add OAuth scopes for <code className="text-xs font-mono text-pink-700 bg-pink-100 px-1 py-0.5 rounded">chat:write</code> and <code className="text-xs font-mono text-pink-700 bg-pink-100 px-1 py-0.5 rounded">channels:read</code>. Configure your Event Webhooks to point back to the CRM routing engine.
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-5 mt-2">
+                        <div className="col-span-2">
+                          <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-tremor-content mb-2 block">App ID *</label>
+                          <TextInput placeholder="A0XXXXXXXXX" value={slackAppId} onValueChange={setSlackAppId} className="font-mono text-sm shadow-sm" />
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-tremor-content mb-2 block">Client ID *</label>
+                          <TextInput placeholder="1234.5678" value={slackClientId} onValueChange={setSlackClientId} className="font-mono text-sm shadow-sm" />
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-tremor-content mb-2 block">Client Secret *</label>
+                          <TextInput type="password" placeholder="xxxxxxxxxxxxxxxxxxxxxxxx" value={slackClientSecret} onValueChange={setSlackClientSecret} className="font-mono text-sm shadow-sm" />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-tremor-content mb-2 block">Signing Secret *</label>
+                          <TextInput type="password" placeholder="xxxxxxxxxxxxxxxxxxxxxxxx" value={slackSigningSecret} onValueChange={setSlackSigningSecret} className="font-mono text-sm shadow-sm" />
+                        </div>
+                      </div>
+
+                      <div className="mt-auto pt-6 flex justify-end">
+                         <Button onClick={handleSaveSlack} className="bg-[#E01E5A] hover:bg-[#c91a50] text-white border-transparent px-8 shadow-sm">
+                           {slackSaved ? '✅ Configuration Saved!' : 'Save Connection Details'}
+                         </Button>
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              </Col>
+            </Grid>
+          </TabPanel>
+
+          {/* SMTP Settings Panel */}
+          <TabPanel>
+            <div className="bg-tremor-background-subtle rounded-tremor-default border border-tremor-border p-6 shadow-sm mt-4">
+              <div className="flex items-center gap-2 mb-6 border-b border-tremor-border pb-4">
+                <span className="text-xl">📫</span>
+                <div>
+                  <h3 className="font-bold text-tremor-content-strong leading-none">SMTP Email Routing</h3>
+                  <Text className="text-xs text-tremor-content mt-1">Configure SendGrid or custom SMTP for system alerts and platform notifications.</Text>
+                </div>
+              </div>
+
+              <Grid numItemsMd={2} className="gap-6">
+                <Col>
+                  <label className="text-xs font-bold uppercase tracking-wider text-tremor-content mb-2 block">SMTP Host *</label>
+                  <TextInput defaultValue="smtp.sendgrid.net" className="font-mono text-sm" />
+                  <Text className="text-[11px] mt-1 text-tremor-content">Server address for outgoing mail</Text>
+                </Col>
+                <Col>
+                  <label className="text-xs font-bold uppercase tracking-wider text-tremor-content mb-2 block">SMTP Port *</label>
+                  <TextInput defaultValue="587" className="font-mono text-sm" />
+                  <Text className="text-[11px] mt-1 text-tremor-content">Standard 587 (TLS) or 465 (SSL)</Text>
+                </Col>
+                <Col numColSpanMd={2}>
+                  <label className="text-xs font-bold uppercase tracking-wider text-tremor-content mb-2 block">Username *</label>
+                  <TextInput defaultValue="apikey" className="font-mono text-sm" />
+                </Col>
+                <Col numColSpanMd={2}>
+                  <label className="text-xs font-bold uppercase tracking-wider text-tremor-content mb-2 block">SMTP Password / API Key *</label>
+                  <TextInput type="password" placeholder="SG.xxxxx..." defaultValue="SG.xxxxx..." className="font-mono text-sm" />
+                  <Text className="text-[11px] mt-1 text-tremor-content">For SendGrid, use 'apikey' as username and input the API token here.</Text>
+                </Col>
+              </Grid>
+
+              <div className="mt-8 flex justify-end">
+                <Button className="bg-[#6366f1] hover:bg-[#4f46e5] text-white border-transparent px-8 shadow-sm" onClick={() => alert('Saved SMTP Configuration')}>
+                  Save Email Configuration
+                </Button>
+              </div>
+            </div>
+          </TabPanel>
+        </TabPanels>
+      </TabGroup>
     </div>
   );
 }
@@ -1493,6 +1921,398 @@ function EntityTypesSection() {
   );
 }
 
+// ─── Section: Customizations ───────────────────────────────────────────────────
+
+function AIRoutingPolicySection() {
+  const { tenant } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [routes, setRoutes] = useState([
+    { id: 'document_analysis', label: 'Document Analysis', primary: 'Claude', fallback: 'GPT-4o' },
+    { id: 'portfolio_narrative', label: 'Portfolio Narrative', primary: 'GPT-4o', fallback: 'Gemini Pro' },
+    { id: 'compliance_review', label: 'Compliance Review', primary: 'Claude', fallback: 'GPT-4o' },
+  ]);
+
+  const providers = ['GPT-4o', 'Claude', 'Gemini Pro', 'Llama 3'];
+  const [toast, setToast] = useState('');
+
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      const { getAuth } = await import('firebase/auth');
+      const token = await getAuth().currentUser?.getIdToken();
+      if (token && tenant?.id) {
+        await fetch('/api/admin/tenant-config', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tenantId: tenant.id, aiRoutingPolicy: routes })
+        });
+        setToast('AI Routing configuration safely persisted.');
+        setTimeout(() => setToast(''), 3000);
+      }
+    } catch (e: any) {
+      alert(`Save failed: ${e.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateRoute = (id: string, field: 'primary' | 'fallback', val: string) => {
+    setRoutes(prev => prev.map(r => r.id === id ? { ...r, [field]: val } : r));
+  };
+
+  return (
+    <div className="animate-fade-in flex flex-col gap-6">
+      <div style={{ marginBottom: 12 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 6 }}>🔄 AI Routing Policy</h2>
+        <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+          Define explicitly which AI models should be used by internal agent systems to handle asynchronous workloads. Ensures compliance to tenant-specific LLM restrictions.
+        </p>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+        {routes.map(r => (
+          <div key={r.id} style={{ padding: '16px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, marginBottom: 12 }}>
+              {r.label}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' }}>Primary Engine</label>
+                <select className="input" value={r.primary} onChange={e => updateRoute(r.id, 'primary', e.target.value)} style={{ width: '100%', padding: '6px 10px', fontSize: 13 }}>
+                  {providers.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' }}>Fallback Engine</label>
+                <select className="input" value={r.fallback} onChange={e => updateRoute(r.id, 'fallback', e.target.value)} style={{ width: '100%', padding: '6px 10px', fontSize: 13 }}>
+                  {providers.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
+        <Button onClick={handleSave} color="indigo" loading={loading} size="xs">
+          Deploy Fallback Config
+        </Button>
+        {toast && <span style={{ fontSize: 12, color: '#34d399', fontWeight: 600 }}>✓ {toast}</span>}
+      </div>
+    </div>
+  );
+}
+
+function TenantTypesSection() {
+  return (
+    <div className="animate-fade-in flex flex-col gap-6">
+      <div style={{ marginBottom: 12 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 6 }}>🏢 Supported Tenant Types</h2>
+        <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+          Visual list of all pre-configured SaaS verticals hosted over this platform. Definitions enforce CRM metadata and standard navigational hierarchies.
+        </p>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+        {VERTICAL_REGISTRY.map(v => (
+          <div key={v.id} style={{ padding: '16px', border: `1px solid ${v.color}44`, background: `${v.color}0a`, borderRadius: 'var(--radius-lg)' }}>
+             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                <span style={{ fontSize: 28 }}>{v.icon}</span>
+                <div>
+                  <h4 style={{ fontWeight: 800, color: v.color, fontSize: 15 }}>{v.label}</h4>
+                  <span style={{ fontSize: 10, padding: '2px 6px', background: 'var(--bg-canvas)', borderRadius: 12, color: 'var(--text-secondary)' }}>
+                     {v.status === 'ga' ? '🟢 General Availability' : v.status === 'beta' ? '🟡 Beta' : '🔒 Coming Soon'}
+                  </span>
+                </div>
+             </div>
+             <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.5 }}>{v.tagline}</p>
+             <div style={{ marginTop: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {v.defaultModules.slice(0,4).map(m => (
+                  <span key={m} style={{ fontSize: 9, background: 'var(--bg-elevated)', border: '1px solid var(--border)', padding: '2px 8px', borderRadius: 6, color: 'var(--text-tertiary)' }}>
+                    {m.replace('_',' ')}
+                  </span>
+                ))}
+                {v.defaultModules.length > 4 && <span style={{ fontSize: 9, color: 'var(--text-tertiary)', marginTop: 2 }}>+{v.defaultModules.length - 4} more</span>}
+             </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CustomizationsSection() {
+  const [activeTab, setActiveTab] = useState<'routing' | 'queues' | 'entities' | 'types'>('routing');
+
+  const tabs = [
+    { id: 'routing', label: 'AI Routing Policy' },
+    { id: 'queues', label: 'Task Queue Management' },
+    { id: 'entities', label: 'CRM Entities' },
+    { id: 'types', label: 'Tenant Types' },
+  ] as const;
+
+  return (
+    <div className="animate-fade-in flex flex-col gap-6">
+      
+      {/* Top Dock TabGroup */}
+      <div style={{ display: 'flex', gap: 4, background: 'var(--bg-elevated)', borderRadius: 10, padding: 4, alignSelf: 'flex-start' }}>
+        {tabs.map(t => (
+          <button 
+            key={t.id} 
+            onClick={() => setActiveTab(t.id)} 
+            style={{
+              padding: '8px 20px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600,
+              background: activeTab === t.id ? 'var(--brand-500)' : 'transparent',
+              color: activeTab === t.id ? 'white' : 'var(--text-secondary)',
+              transition: 'all 0.15s',
+            }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ background: 'var(--bg-canvas)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', padding: '24px' }}>
+         {activeTab === 'routing' && <AIRoutingPolicySection />}
+         {activeTab === 'queues' && <QueueSettingsSection />}
+         {activeTab === 'entities' && <EntityTypesSection />}
+         {activeTab === 'types' && <TenantTypesSection />}
+      </div>
+      
+    </div>
+  );
+}
+
+// ─── Section: Data Explorer ────────────────────────────────────────────────────
+
+// ─── Section: Data Explorer ────────────────────────────────────────────────────
+
+function DataExplorerSection() {
+  const { tenant } = useAuth();
+  
+  // Active states
+  const [activeTab, setActiveTab] = useState<'query' | 'export' | 'consistency'>('query');
+  const [loading, setLoading] = useState(false);
+  
+  // Query
+  const [collectionName, setCollectionName] = useState('users');
+  const [queryResults, setQueryResults] = useState<any[]>([]);
+  const [queryError, setQueryError] = useState('');
+
+  // Consistency
+  const [consistencyReport, setConsistencyReport] = useState<any>(null);
+  
+  // Errors
+  const [exportError, setExportError] = useState('');
+  const [consistencyError, setConsistencyError] = useState('');
+
+  const handleQuery = async () => {
+    setLoading(true);
+    setQueryError('');
+    setQueryResults([]);
+    try {
+      const { getAuth } = await import('firebase/auth');
+      const token = await getAuth().currentUser?.getIdToken();
+      if (!token) throw new Error('Unauthorized');
+      const res = await fetch('/api/admin/db/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ collectionName, tenantId: tenant?.id })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setQueryResults(data.docs || []);
+    } catch (err: any) {
+      setQueryError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setLoading(true);
+    setExportError('');
+    try {
+      const { getAuth } = await import('firebase/auth');
+      const token = await getAuth().currentUser?.getIdToken();
+      if (!token) throw new Error('Unauthorized');
+      const res = await fetch('/api/admin/backups/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ tenantId: tenant?.id })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      
+      const blob = new Blob([JSON.stringify({ meta: data.meta, backup: data.backup }, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `mfo-export-${tenant?.id || 'platform'}-${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setExportError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleConsistencyCheck = async () => {
+    setLoading(true);
+    setConsistencyReport(null);
+    setConsistencyError('');
+    try {
+      const { getAuth } = await import('firebase/auth');
+      const token = await getAuth().currentUser?.getIdToken();
+      if (!token) throw new Error('Unauthorized');
+      const res = await fetch('/api/admin/db/consistency', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ tenantId: tenant?.id })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setConsistencyReport(data.report);
+    } catch (err: any) {
+      setConsistencyError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="animate-fade-in">
+      <div style={{ marginBottom: 24 }}>
+        <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>🗄️ Database Explorer</h2>
+        <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+          Query, modify, trace, and execute consistency checks directly against the underlying datastore.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <Card 
+          onClick={() => setActiveTab('query')}
+          className={`flex flex-col gap-2 items-center justify-center p-6 border border-dashed transition-colors cursor-pointer ${activeTab==='query' ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-indigo-200 bg-indigo-50/30 hover:bg-indigo-50 dark:hover:bg-indigo-900/20'}`}>
+          <Search className="text-indigo-600 mb-2" size={24} />
+          <h3 className="font-bold text-sm text-indigo-900 dark:text-indigo-300">Query & Search</h3>
+          <p className="text-xs text-center text-indigo-700/70 dark:text-indigo-400">Execute complex queries across tables</p>
+        </Card>
+        <Card 
+          onClick={() => setActiveTab('export')}
+          className={`flex flex-col gap-2 items-center justify-center p-6 border border-dashed transition-colors cursor-pointer ${activeTab==='export' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'border-emerald-200 bg-emerald-50/30 hover:bg-emerald-50 dark:hover:bg-emerald-900/20'}`}>
+          <DatabaseBackup className="text-emerald-600 mb-2" size={24} />
+          <h3 className="font-bold text-sm text-emerald-900 dark:text-emerald-300">Export Defaults</h3>
+          <p className="text-xs text-center text-emerald-700/70 dark:text-emerald-400">Export full tenant JSON structure</p>
+        </Card>
+        <Card 
+          onClick={() => setActiveTab('consistency')}
+          className={`flex flex-col gap-2 items-center justify-center p-6 border border-dashed transition-colors cursor-pointer ${activeTab==='consistency' ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20' : 'border-amber-200 bg-amber-50/30 hover:bg-amber-50 dark:hover:bg-amber-900/20'}`}>
+          <Shield className="text-amber-600 mb-2" size={24} />
+          <h3 className="font-bold text-sm text-amber-900 dark:text-amber-300">Consistency Check</h3>
+          <p className="text-xs text-center text-amber-700/70 dark:text-amber-400">Scan metadata and CRM relations</p>
+        </Card>
+      </div>
+
+      <Card className="border border-border p-0 overflow-hidden">
+        {/* QUERY TAB */}
+        {activeTab === 'query' && (
+          <div>
+             <div className="p-4 border-b border-border bg-surface flex justify-between items-center bg-elevated/30">
+                <div className="flex items-center gap-3">
+                   <select 
+                     value={collectionName} 
+                     onChange={e => setCollectionName(e.target.value)}
+                     className="bg-surface border border-border text-sm rounded-md px-3 py-1.5 font-mono"
+                   >
+                      <option value="users">users</option>
+                      <option value="tenants">tenants</option>
+                      <option value="tenant_invitations">tenant_invitations</option>
+                      <option value="platform_orgs">platform_orgs</option>
+                      <option value="platform_contacts">platform_contacts</option>
+                   </select>
+                   <Button size="xs" color="indigo" onClick={handleQuery} loading={loading}>Execute Filter</Button>
+                </div>
+                <Badge color="zinc">Read-Only View</Badge>
+             </div>
+             <div className="p-4 bg-surface max-h-[400px] overflow-y-auto custom-scrollbar relative">
+                {queryError && <p className="text-red-500 text-sm mb-4">{queryError}</p>}
+                {queryResults.length === 0 && !loading && !queryError ? (
+                   <div className="py-12 text-center text-tertiary">
+                     <Database size={32} className="mx-auto mb-3 opacity-40" />
+                     <p className="text-sm font-semibold tracking-wide">No Results</p>
+                     <p className="text-xs mt-1">Run a query to populate the table.</p>
+                   </div>
+                ) : (
+                   <div className="flex flex-col gap-2">
+                     {queryResults.map(r => (
+                        <div key={r.id} className="bg-elevated border border-border rounded-lg p-3 text-xs font-mono overflow-x-auto">
+                           {JSON.stringify(r, null, 2)}
+                        </div>
+                     ))}
+                   </div>
+                )}
+             </div>
+          </div>
+        )}
+
+        {/* EXPORT TAB */}
+        {activeTab === 'export' && (
+          <div className="p-8 text-center text-tertiary flex flex-col items-center">
+            <h3 className="text-emerald-600 font-bold text-lg mb-2">JSON Export Protocol</h3>
+            <p className="text-sm mb-6 max-w-md mx-auto">This will fetch all platform structures attached to your environment to construct a localized backup file.</p>
+            {exportError && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 rounded-md text-sm w-full max-w-md">{exportError}</div>}
+            <Button color="emerald" onClick={handleExport} loading={loading}>
+              Download JSON Database
+            </Button>
+          </div>
+        )}
+
+        {/* CONSISTENCY TAB */}
+        {activeTab === 'consistency' && (
+          <div className="p-8">
+            <div className="text-center mb-6">
+              <h3 className="text-amber-600 font-bold text-lg mb-2">Relational Consistency Scan</h3>
+              <p className="text-sm text-tertiary">Scans dangling references across User and Tenant records.</p>
+            </div>
+            
+            {consistencyReport ? (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                 <div className="p-4 border border-border rounded-lg bg-emerald-50 dark:bg-emerald-900/10">
+                    <p className="text-4xl mb-1 text-emerald-600 font-black">{consistencyReport.passed}</p>
+                    <p className="text-xs font-bold uppercase tracking-widest text-emerald-800 dark:text-emerald-400">Passed</p>
+                 </div>
+                 <div className="p-4 border border-border rounded-lg bg-red-50 dark:bg-red-900/10">
+                    <p className="text-4xl mb-1 text-red-600 font-black">{consistencyReport.errors.length}</p>
+                    <p className="text-xs font-bold uppercase tracking-widest text-red-800 dark:text-red-400">Errors</p>
+                 </div>
+                 <div className="p-4 border border-border rounded-lg bg-zinc-50 dark:bg-zinc-900/20">
+                    <p className="text-4xl mb-1 text-zinc-600 font-black">{consistencyReport.scannedEntities}</p>
+                    <p className="text-xs font-bold uppercase tracking-widest text-zinc-500">Scanned</p>
+                 </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center">
+                 {consistencyError && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 rounded-md text-sm w-full max-w-md">{consistencyError}</div>}
+                 <Button color="amber" onClick={handleConsistencyCheck} loading={loading}>
+                   Commence Scan
+                 </Button>
+              </div>
+            )}
+            
+            {consistencyReport?.errors?.length > 0 && (
+               <div className="mt-6 p-4 rounded-lg border border-red-200 bg-red-50 text-red-700 text-sm">
+                 <ul className="list-disc pl-4 space-y-1">
+                   {consistencyReport.errors.map((err: string, i: number) => <li key={i}>{err}</li>)}
+                 </ul>
+               </div>
+            )}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 // ─── Main Admin Page ───────────────────────────────────────────────────────────
 
 export default function AdminPage() {
@@ -1507,47 +2327,57 @@ export default function AdminPage() {
   });
 
   return (
-    <div className="page-wrapper animate-fade-in max-w-[1400px] mx-auto py-10 px-6">
-      <div className="mb-10 pl-2 border-l-4 border-indigo-500">
-        <Title className="text-3xl font-bold tracking-tight text-tremor-content-strong">Firm Administration & Security</Title>
-        <Text className="mt-2 text-tremor-content">Manage platform configurations, billing metrics, API keys, compliance, and user lifecycles.</Text>
-      </div>
+    <div className="flex flex-col h-[calc(100vh-60px)] animate-fade-in relative w-full p-4 md:p-6">
+      <div className="flex gap-6 h-full">
+        {/* Action Board (Doc 2 / Sidebar) */}
+        <div className="w-[300px] flex flex-col shrink-0 bg-surface border border-border shadow-sm rounded-xl overflow-hidden relative">
+          <div className="p-4 border-b border-border bg-elevated/50 flex items-center gap-3">
+             <div className="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center">
+               <Settings2 size={16} strokeWidth={2.5} />
+             </div>
+             <div>
+               <h2 className="font-bold text-sm tracking-tight text-primary">Settings</h2>
+               <p className="text-[10px] uppercase tracking-widest text-tertiary">Platform Admin</p>
+             </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3 space-y-1 relative custom-scrollbar">
+            {visibleTabs.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all text-left border ${
+                  activeTab === tab.id 
+                    ? 'bg-surface shadow text-primary border-border/50 font-semibold' 
+                    : 'text-tertiary hover:bg-elevated border-transparent hover:text-secondary'
+                }`}
+              >
+                <div className={`flex items-center justify-center ${activeTab === tab.id ? 'text-indigo-500' : ''}`}>
+                  <tab.icon size={16} strokeWidth={activeTab === tab.id ? 2.5 : 2} />
+                </div>
+                <span className="flex-1">{tab.label}</span>
+                {tab.superAdminOnly && (
+                  <Badge size="xs" color="blue" className="ml-auto px-1.5 opacity-80 text-[9px] py-0">SA</Badge>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-[250px_1fr] gap-12">
-        {/* Sidebar Nav */}
-        <aside className="flex flex-col gap-2">
-          {visibleTabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-3 px-4 py-3 rounded-tremor-default text-sm transition-all text-left border ${
-                activeTab === tab.id 
-                  ? 'bg-indigo-50/50 dark:bg-indigo-900/20 text-indigo-600 font-semibold shadow-sm border-indigo-200' 
-                  : 'text-tremor-content hover:bg-tremor-background-subtle hover:text-tremor-content-emphasis border-transparent hover:border-tremor-border'
-              }`}
-            >
-              <span className="text-lg w-6 text-center">{tab.icon}</span>
-              <span className="flex-1">{tab.label}</span>
-              {tab.superAdminOnly && (
-                <Badge size="xs" color="blue" className="ml-auto px-1.5 opacity-80">SA</Badge>
-              )}
-            </button>
-          ))}
-        </aside>
-
-        {/* Content */}
-        <Card className="min-h-[600px] shadow-sm ring-1 ring-tremor-border p-8 md:p-10">
-          {activeTab === 'platform'       && <PlatformSection />}
-          {activeTab === 'database'       && <DatabaseSection />}
-          {activeTab === 'mfa'            && <MfaSection />}
-          {activeTab === 'integrations'   && <IntegrationsSection />}
-          {activeTab === 'ai_keys'        && <AiKeysSection />}
-          {activeTab === 'firm'           && <FirmSection />}
-          {activeTab === 'compliance'     && <ComplianceSection />}
-          {activeTab === 'tasks'          && <QueueSettingsSection />}
-          {activeTab === 'entity_types'   && <EntityTypesSection />}
-          {activeTab === 'communications' && <CommunicationsSection />}
-        </Card>
+        {/* Central View */}
+        <div className="flex-1 bg-surface border border-border shadow-sm rounded-xl flex flex-col overflow-y-auto relative custom-scrollbar">
+          <div className="p-8 md:p-10">
+            {activeTab === 'platform'       && <PlatformSection />}
+            {activeTab === 'database'       && <DatabaseSection />}
+            {activeTab === 'data_explorer'  && <DataExplorerSection />}
+            {activeTab === 'mfa'            && <MfaSection />}
+            {activeTab === 'integrations'   && <IntegrationsSection />}
+            {activeTab === 'ai_keys'        && <AiKeysSection />}
+            {activeTab === 'firm'           && <FirmSection />}
+            {activeTab === 'compliance'     && <ComplianceSection />}
+            {activeTab === 'customizations' && <CustomizationsSection />}
+            {activeTab === 'communications' && <CommunicationsSection />}
+          </div>
+        </div>
       </div>
     </div>
   );

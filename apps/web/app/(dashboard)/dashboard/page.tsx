@@ -12,8 +12,9 @@ import type { Opportunity, CrmActivity, SalesTeam } from '@/lib/crmService';
 import {
   Card, Metric, Text, Title, Subtitle, Flex, Grid, Col,
   AreaChart, BarList, DonutChart, BadgeDelta, ProgressBar, Badge,
-  Tracker, Divider, Button, Icon
+  Tracker, Divider, Button
 } from '@tremor/react';
+import ReactECharts from 'echarts-for-react';
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
 
@@ -30,14 +31,21 @@ function getGreeting() {
 
 function GreetingBar({ name, role, action }: { name: string; role: string; action?: { href: string; label: string } }) {
   return (
-    <div className="mb-6 p-6 rounded-tremor-default bg-gradient-to-br from-blue-600 to-indigo-900 flex justify-between items-center shadow-lg">
-      <div>
-        <h1 className="text-2xl font-bold text-white tracking-tight">{getGreeting()}, {name} 👋</h1>
-        <p className="text-sm text-blue-100 mt-1 font-medium bg-white/10 inline-block px-3 py-1 rounded-full">{role}</p>
+    <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+      <div className="flex items-center gap-4">
+        <div className="w-14 h-14 rounded-full bg-brand-50 border border-brand-200 flex items-center justify-center shadow-sm shrink-0">
+          <span className="text-2xl font-black text-brand-600">{name.charAt(0).toUpperCase()}</span>
+        </div>
+        <div>
+          <Title className="text-3xl font-black text-primary tracking-tight">{getGreeting()}, {name}</Title>
+          <Text className="text-secondary font-medium">{role}</Text>
+        </div>
       </div>
       {action && (
-        <Link href={action.href} className="px-5 py-2.5 bg-white/20 hover:bg-white/30 transition-colors text-white rounded-tremor-default font-semibold text-sm border border-white/30 backdrop-blur-sm shadow-sm">
-          {action.label}
+        <Link href={action.href}>
+          <Button variant="primary" size="xs">
+            {action.label}
+          </Button>
         </Link>
       )}
     </div>
@@ -70,12 +78,57 @@ function PlatformAdminDashboard({ user, platformCfg, tenants, users }: {
     { date: 'Mar 26', "New Tenants": active + trials, "Churned": suspended },
   ];
 
+  // User activity metrics
+  const now = Date.now();
+  const mins15 = 15 * 60 * 1000;
+  const days1 = 24 * 60 * 60 * 1000;
+  const days7 = 7 * days1;
+  const days30 = 30 * days1;
+
+  let onlineNow = 0;
+  let activeToday = 0;
+  let activeWeek = 0;
+  let dormant = 0;
+  let churnRisk = 0;
+
+  users.forEach(u => {
+    // Treat users with no activity as churn risk
+    const activeAt = u.lastActivityAt ? new Date(u.lastActivityAt).getTime() : 0;
+    const diff = now - activeAt;
+    
+    if (diff < mins15) onlineNow++;
+    else if (diff < days1) activeToday++;
+    else if (diff < days7) activeWeek++;
+    else if (diff < days30) dormant++;
+    else churnRisk++;
+  });
+
+  const utilizationChartOptions = {
+    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+    legend: { left: 'center', bottom: '0', itemStyle: { opacity: 1 } },
+    series: [
+      {
+        name: 'User Utilization',
+        type: 'pie',
+        radius: ['30%', '75%'],
+        roseType: 'radius',
+        itemStyle: { borderRadius: 5, borderColor: '#fff', borderWidth: 2 },
+        data: [
+          { value: onlineNow, name: 'Online Now', itemStyle: { color: '#10b981' } },
+          { value: activeToday, name: 'Active < 24h', itemStyle: { color: '#3b82f6' } },
+          { value: activeWeek, name: 'Active < 7d', itemStyle: { color: '#8b5cf6' } },
+          { value: dormant, name: 'Dormant < 30d', itemStyle: { color: '#f59e0b' } },
+          { value: churnRisk, name: 'Churn Risk (>30d)', itemStyle: { color: '#ef4444' } },
+        ].filter(d => d.value > 0).sort((a,b) => b.value - a.value)
+      }
+    ]
+  };
+
   return (
-    <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
+    <div className="page-wrapper animate-fade-in mx-auto w-full px-4 lg:px-8">
       <GreetingBar
         name={user?.name?.split(' ')[0] ?? 'Admin'}
         role="Platform Administration"
-        action={{ href: '/platform/tenants', label: '+ New Tenant' }}
       />
       
       <Grid numItemsSm={2} numItemsLg={4} className="gap-6 mb-6">
@@ -101,14 +154,14 @@ function PlatformAdminDashboard({ user, platformCfg, tenants, users }: {
         </Card>
       </Grid>
 
-      <Grid numItemsSm={1} numItemsLg={2} className="gap-6">
+      <Grid numItemsSm={1} numItemsLg={2} className="gap-6 mb-8">
         <Card>
           <Flex alignItems="start">
             <div>
               <Title>Tenant Breakdown</Title>
               <Subtitle>Distribution by subscription status</Subtitle>
             </div>
-            <Link href="/platform/tenants" className="text-sm font-medium text-blue-500 hover:underline">Manage &rarr;</Link>
+            <Link href="/platform/tenants" className="text-sm font-medium text-brand-500 hover:text-brand-600 hover:underline">Manage &rarr;</Link>
           </Flex>
           <div className="mt-6 flex items-center justify-center h-52">
             <DonutChart
@@ -144,24 +197,62 @@ function PlatformAdminDashboard({ user, platformCfg, tenants, users }: {
         </Card>
       </Grid>
 
-      <Card className="mt-6">
-        <Title>Quick Engine Access</Title>
-        <Subtitle>Jump to a centralized module</Subtitle>
-        <div className="mt-4 flex flex-wrap gap-3">
-          {[
-            { href: '/platform/crm',       label: '📊 Global CRM' },
-            { href: '/platform/users',     label: '👤 User Directory' },
-            { href: '/platform/roles',     label: '🔐 Role Policies' },
-            { href: '/platform/analytics', label: '📈 Analytics' },
-            { href: '/platform/support',   label: '🎧 Support Center' },
-            { href: '/admin',              label: '⚙️ Settings (BYOK)' },
-          ].map(l => (
-            <Link key={l.href} href={l.href} className="px-4 py-2 bg-tremor-background-muted hover:bg-tremor-background-subtle border border-tremor-border rounded-tremor-small text-sm font-medium text-tremor-content-strong transition-colors">
-              {l.label}
-            </Link>
-          ))}
-        </div>
-      </Card>
+      <Grid numItemsSm={1} numItemsLg={2} className="gap-6 mb-8">
+        <Card>
+          <Flex alignItems="start">
+            <div>
+              <Title>User Utilization</Title>
+              <Subtitle>Global user engagement & churn risk</Subtitle>
+            </div>
+            <Link href="/platform/users" className="text-sm font-medium text-brand-500 hover:text-brand-600 hover:underline">View Users &rarr;</Link>
+          </Flex>
+          <div className="mt-6 flex flex-col h-[300px]">
+            {users.length > 0 ? (
+              <ReactECharts option={utilizationChartOptions} style={{ height: '100%', width: '100%' }} />
+            ) : (
+              <Flex className="h-full" justifyContent="center">
+                <Text>No user data available</Text>
+              </Flex>
+            )}
+          </div>
+        </Card>
+
+        <Card>
+          <Title>Engagement Metrics</Title>
+          <Subtitle>Real-time platform activity</Subtitle>
+          <div className="mt-6 space-y-6">
+            <div>
+              <Flex>
+                <Text>Online Now</Text>
+                <Text className="font-bold text-emerald-600">{onlineNow}</Text>
+              </Flex>
+              <ProgressBar value={users.length ? (onlineNow / users.length)*100 : 0} color="emerald" className="mt-2" />
+            </div>
+            <div>
+              <Flex>
+                <Text>Active Today</Text>
+                <Text className="font-bold text-blue-600">{activeToday}</Text>
+              </Flex>
+              <ProgressBar value={users.length ? (activeToday / users.length)*100 : 0} color="blue" className="mt-2" />
+            </div>
+            <div>
+              <Flex>
+                <Text>Dormant Users ({'<'} 30 days)</Text>
+                <Text className="font-bold text-amber-600">{dormant}</Text>
+              </Flex>
+              <ProgressBar value={users.length ? (dormant / users.length)*100 : 0} color="amber" className="mt-2" />
+            </div>
+            <div>
+              <Flex>
+                <Text>High Churn Risk ({'>'} 30 days inactive)</Text>
+                <Text className="font-bold text-rose-600">{churnRisk}</Text>
+              </Flex>
+              <ProgressBar value={users.length ? (churnRisk / users.length)*100 : 0} color="rose" className="mt-2" />
+            </div>
+          </div>
+        </Card>
+      </Grid>
+
     </div>
   );
 }
@@ -198,7 +289,7 @@ function SalesLeaderDashboard({ user, opps, activities, teams }: {
   }).sort((a, b) => b.value - a.value);
 
   return (
-    <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
+    <div className="page-wrapper animate-fade-in mx-auto w-full px-4 lg:px-8">
       <GreetingBar
         name={user?.name?.split(' ')[0] ?? 'Manager'}
         role="Sales Leadership"
@@ -312,7 +403,7 @@ function SalesRepDashboard({ user, opps, activities }: {
   const myActivities = activities.filter(a => a.performedByUid === uid || a.performedByName === name);
 
   return (
-    <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
+    <div className="page-wrapper animate-fade-in mx-auto w-full px-4 lg:px-8">
       <GreetingBar
         name={user?.name?.split(' ')[0] ?? 'Account Executive'}
         role="Sales Representative"
@@ -370,7 +461,7 @@ function SalesRepDashboard({ user, opps, activities }: {
         <Card>
           <Flex alignItems="center" className="mb-4">
             <Title>Recent Activities</Title>
-            <Link href="/platform/crm" className="text-sm font-medium text-blue-500 hover:underline">Log New &rarr;</Link>
+            <Link href="/platform/crm" className="text-sm font-medium text-brand-500 hover:underline">Log New &rarr;</Link>
           </Flex>
           {myActivities.length === 0 ? (
             <div className="text-tremor-content text-sm text-center py-10">
@@ -411,7 +502,7 @@ function CustomerSuccessDashboard({ user, opps, activities }: {
   }).sort((a,b) => (b.valueUsd??0) - (a.valueUsd??0));
 
   return (
-    <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
+    <div className="page-wrapper animate-fade-in mx-auto w-full px-4 lg:px-8">
       <GreetingBar
         name={user?.name?.split(' ')[0] ?? 'CSM'}
         role="Customer Success / AM"
@@ -457,7 +548,7 @@ function CustomerSuccessDashboard({ user, opps, activities }: {
                     <Text className="font-semibold text-tremor-content-strong text-sm">{o.orgName}</Text>
                     <Text className="text-xs text-tremor-content">Closes {o.closeDate?.slice(0,10)}</Text>
                   </div>
-                  <Text className="font-bold text-rose-500">{fmtUsd(o.valueUsd ?? 0)}</Text>
+                  <Text className="font-bold text-destructive">{fmtUsd(o.valueUsd ?? 0)}</Text>
                 </div>
               ))}
             </div>
@@ -490,7 +581,7 @@ function TenantUserDashboard({ user, roleLabel }: {
 }) {
   usePageTitle('Dashboard');
   return (
-    <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
+    <div className="page-wrapper animate-fade-in mx-auto w-full px-4 lg:px-8">
       <GreetingBar name={user?.name?.split(' ')[0] ?? 'there'} role={roleLabel} action={{ href: '/clients', label: 'Launch Workspace 🚀' }} />
       
       <Grid numItemsSm={1} numItemsLg={3} className="gap-6 mb-8">
@@ -597,7 +688,7 @@ export default function DashboardPage() {
 
   if (!isLive) {
     return (
-      <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
+      <div className="page-wrapper animate-fade-in mx-auto w-full px-4 lg:px-8">
         <GreetingBar name="Demo" role="Platform Demo Mode" />
         <Card className="flex flex-col items-center justify-center py-24 text-center">
           <div className="text-6xl mb-6">🏛️</div>
@@ -612,7 +703,7 @@ export default function DashboardPage() {
     return (
       <div className="page flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
-          <div className="w-8 h-8 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4" />
+          <div className="w-8 h-8 border-4 border-brand-500/20 border-t-brand-500 rounded-full animate-spin mx-auto mb-4" />
           <Text>Loading advanced analytics…</Text>
         </div>
       </div>

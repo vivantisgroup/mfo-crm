@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Star, Archive, Trash2, RotateCcw } from 'lucide-react';
+import { Star, Archive, Trash2, RotateCcw, Paperclip } from 'lucide-react';
+import { COLOR_MAP } from '@/components/TagManager';
 
 export interface ThreadSummary {
   id:              string;  // threadId (= first message id for Gmail)
@@ -16,13 +17,17 @@ export interface ThreadSummary {
   isStarred:       boolean;
   linkedFamilyId?:  string;
   linkedFamilyName?: string;
+  crmLinks?:       any[];
+  tags?:           any[];
   messageCount?:   number;
+  hasAttachments?: boolean;
 }
 
 interface Props {
   threads:        ThreadSummary[];
   loading:        boolean;
   selected?:      string;
+  globalTags?:    any[];
   onSelect:       (t: ThreadSummary) => void;
   onAction:       (ids: string[], action: string) => void;
   emptyMessage:   string;
@@ -56,7 +61,7 @@ function Avatar({ name, email }: { name: string; email: string }) {
   );
 }
 
-export function ThreadList({ threads, loading, selected, onSelect, onAction, emptyMessage }: Props) {
+export function ThreadList({ threads, loading, selected, globalTags, onSelect, onAction, emptyMessage }: Props) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   if (loading) {
@@ -97,16 +102,16 @@ export function ThreadList({ threads, loading, selected, onSelect, onAction, emp
               display:       'flex',
               alignItems:    'center',
               gap:           12,
-              padding:       '12px 16px',
+              padding:       '10px 16px',
               cursor:        'pointer',
-              borderBottom:  '1px solid var(--border)',
+              borderBottom:  '1px solid var(--border-subtle)',
               background:    isSelected
-                ? 'var(--brand-900)22'
+                ? 'var(--brand-faint)'
                 : isHovered
-                ? 'var(--bg-elevated)'
+                ? 'var(--bg-muted)'
                 : 'transparent',
-              borderLeft:    isSelected ? '3px solid var(--brand-500)' : '3px solid transparent',
-              transition:    'background 0.1s',
+              borderLeft:    isSelected ? '3px solid var(--brand-primary)' : '3px solid transparent',
+              transition:    'all 0.1s',
               position:      'relative',
             }}
           >
@@ -132,25 +137,50 @@ export function ThreadList({ threads, loading, selected, onSelect, onAction, emp
                   {timeLabel(t.receivedAt)}
                 </div>
               </div>
-              <div style={{
-                fontSize: 12, fontWeight: t.isUnread ? 600 : 400,
-                color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 2,
-              }}>
-                {t.subject || '(no subject)'}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                <div style={{
+                  fontSize: 12, fontWeight: t.isUnread ? 600 : 400,
+                  color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                }}>
+                  {t.subject || '(no subject)'}
+                </div>
+                {t.hasAttachments && (
+                  <div title="Has attachments"><Paperclip size={14} strokeWidth={2.5} color="#64748b" style={{ flexShrink: 0 }} /></div>
+                )}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <div style={{ fontSize: 11, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
                   {t.snippet}
                 </div>
-                {t.linkedFamilyName && (
-                  <span style={{
-                    fontSize: 10, padding: '1px 6px', borderRadius: 8, flexShrink: 0,
-                    background: 'var(--brand-500)22', color: 'var(--brand-400)', fontWeight: 700,
-                  }}>
-                    {t.linkedFamilyName}
-                  </span>
-                )}
               </div>
+              
+              {/* Tagging Bay (newline beneath snippet) */}
+              {(() => {
+                 const tags = t.tags || [];
+                 if (tags.length === 0) return null;
+
+                 return (
+                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                     {tags.map((tagName: string, idx: number) => {
+                        const found = globalTags?.find((gt: any) => gt.name.toLowerCase() === tagName.toLowerCase());
+                        const colorName = found ? found.color : 'slate';
+                        const colorHex = COLOR_MAP[colorName] || COLOR_MAP['slate'];
+                        
+                        return (
+                          <span key={`tag-${idx}`} style={{
+                            fontSize: 10, padding: '2px 8px', borderRadius: 12,
+                            background: `color-mix(in srgb, ${colorHex} 15%, transparent)`, 
+                            color: `color-mix(in srgb, ${colorHex} 80%, var(--text-primary))`, 
+                            border: `1px solid color-mix(in srgb, ${colorHex} 30%, transparent)`,
+                            fontWeight: 800, whiteSpace: 'nowrap'
+                          }}>
+                            {tagName}
+                          </span>
+                        );
+                     })}
+                   </div>
+                 );
+              })()}
             </div>
 
             {/* Thread count badge */}
@@ -203,7 +233,7 @@ function QuickAction({ icon, title, onClick, color }: { icon: React.ReactNode; t
       title={title}
       onClick={onClick}
       style={{
-        width: 26, height: 26, borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer',
+        width: 26, height: 26, borderRadius: 6, border: '1px solid var(--border-subtle)', cursor: 'pointer',
         background: 'var(--bg-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center',
         color: color ?? 'var(--text-secondary)', transition: 'background 0.1s',
       }}
@@ -215,7 +245,7 @@ function QuickAction({ icon, title, onClick, color }: { icon: React.ReactNode; t
 
 function SkeletonRow() {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)' }}>
       <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--bg-elevated)', flexShrink: 0 }} />
       <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--bg-elevated)', flexShrink: 0 }} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>

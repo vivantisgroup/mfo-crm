@@ -11,7 +11,6 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getAiKeysBySession } from '@/lib/tenantAiConfig';
 
 export const runtime     = 'nodejs';
 export const maxDuration = 30;
@@ -78,12 +77,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     let text = '';
     
     let aiKeys: Record<string, string> = {};
-    const { getAiKeysByTenant, getAiKeysBySession } = await import('@/lib/tenantAiConfig');
-    if (tenantId && tenantId !== 'undefined') {
-      aiKeys = await getAiKeysByTenant(tenantId);
-    } else if (sessionId) {
-      aiKeys = await getAiKeysBySession(sessionId);
+    const { getAiKeysByTenant } = await import('@/lib/tenantAiConfig');
+    
+    if (!tenantId || tenantId === 'undefined') {
+      console.warn('[copilot/transcribe] Missing tenantId. Cannot resolve BYOK Voice AI keys.');
+      return NextResponse.json({ text: '', noApiKey: true });
     }
+
+    aiKeys = await getAiKeysByTenant(tenantId);
     
     const groqKey = aiKeys['groq_api_key'] || process.env.GROQ_API_KEY || '';
     const openaiKey = aiKeys['openai_api_key'] || process.env.OPENAI_API_KEY || '';

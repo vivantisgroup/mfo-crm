@@ -1,35 +1,43 @@
 'use client';
 
 import React from 'react';
+import RevenueChart from './components/RevenueChart';
+import PipelineFunnel from './components/PipelineFunnel';
+import AccountDistribution from './components/AccountDistribution';
+import Link from 'next/link';
+import { PenTool } from 'lucide-react';
 
 export default function ReportsPage() {
   return (
-    <div className="page-wrapper animate-fade-in mx-auto max-w-7xl">
+    <div className="absolute inset-0 flex flex-col overflow-hidden bg-[var(--bg-background)]">
+      {/* Header Dock */}
+      <div className="px-6 py-4 lg:py-5 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)] shrink-0 flex items-center justify-between">
+        <div>
+          <h1 className="text-xl lg:text-2xl font-black text-[var(--text-primary)] tracking-tight leading-none mb-1">Business Intelligence</h1>
+          <p className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-widest">Platform Analytics & Metrics</p>
+        </div>
+        <div>
+           <Link href="/reports/builder" className="flex items-center gap-2 px-3 py-1.5 bg-[var(--brand-primary)] hover:brightness-90 text-white text-[11px] font-bold rounded shadow-sm border border-transparent uppercase tracking-wider transition-colors">
+              <PenTool size={14} />
+              Build Chart
+           </Link>
+        </div>
+      </div>
       
-
-      <div className="grid-3 mt-6">
-        <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6">
-          <div className="card-header"><h2 className="card-title">Performance Packs</h2></div>
-          <div className="card-body text-center text-secondary">
-            <div style={{ fontSize: 40, marginBottom: 12 }}>📈</div>
-            <div>Quarterly Performance Packs</div>
-            <button className="btn btn-secondary btn-sm mt-4">View Templates</button>
-          </div>
+      {/* Fixed Dashboard Body */}
+      <div className="flex-1 p-3 lg:p-4 flex flex-col min-h-0 gap-3 lg:gap-4 max-w-[1600px] w-full mx-auto">
+        {/* Top Row: 55% */}
+        <div className="shrink-0 w-full" style={{ height: '55%' }}>
+          <RevenueChart />
         </div>
-        <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6">
-          <div className="card-header"><h2 className="card-title">Tax & Accounting</h2></div>
-          <div className="card-body text-center text-secondary">
-            <div style={{ fontSize: 40, marginBottom: 12 }}>🧾</div>
-            <div>Realized gains, K-1 generation</div>
-            <button className="btn btn-secondary btn-sm mt-4">View Templates</button>
+        
+        {/* Bottom Row: 45% (flex-1) */}
+        <div className="flex-1 flex flex-col lg:flex-row gap-3 lg:gap-4 min-h-0">
+          <div className="flex-1 w-full min-w-0 min-h-0 h-full">
+            <PipelineFunnel />
           </div>
-        </div>
-        <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6">
-          <div className="card-header"><h2 className="card-title">Custom Builder</h2></div>
-          <div className="card-body text-center text-secondary">
-            <div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>
-            <div>Drag-and-drop report builder</div>
-            <button className="btn btn-secondary btn-sm mt-4">Open Builder</button>
+          <div className="flex-1 w-full min-w-0 min-h-0 h-full">
+            <AccountDistribution />
           </div>
         </div>
       </div>

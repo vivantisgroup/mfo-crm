@@ -23,15 +23,70 @@ const db = getFirestore(firebaseApp);
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type DealStage   = 'lead' | 'qualification' | 'demo' | 'proposal' | 'negotiation' | 'closed_won' | 'closed_lost';
+export type OrgType = 'client' | 'prospect' | 'supplier' | 'partner';
+// Note: DealStage is kept as general string to support dynamic stages, with specific values used historically as fallbacks.
+export type DealStage   = string | 'lead' | 'qualification' | 'demo' | 'proposal' | 'negotiation' | 'closed_won' | 'closed_lost';
 export type OrgSize     = 'boutique' | 'small' | 'mid' | 'large' | 'enterprise';
 export type SalesRegion = 'latam' | 'emea' | 'apac' | 'north_america' | 'global';
 export type ActivityType      = 'call' | 'email' | 'meeting' | 'demo' | 'note' | 'linkedin' | 'other';
 export type ActivityDirection = 'inbound' | 'outbound' | 'internal';
 
+export interface OrgAddress {
+  street: string;
+  number: string;
+  complement?: string;
+  city: string;
+  state: string;
+  zip: string;
+  country: string;
+}
+
+export interface ContactAddress {
+  id: string;
+  street: string;
+  number: string;
+  complement?: string;
+  city: string;
+  state: string;
+  zip: string;
+  country: string;
+  isPrimary: boolean;
+}
+
+export interface ContactPhone {
+  id: string;
+  type: 'Tel' | 'Cel' | 'WhatsApp';
+  value: string;
+  isPrimary: boolean;
+}
+
+export interface ContactEmail {
+  id: string;
+  value: string;
+  isPrimary: boolean;
+}
+
+export interface ContactRelationship {
+  id: string;
+  name: string;
+  type: string;
+  crmContactId?: string;
+  isNoCrm: boolean;
+}
+
+export interface ContactIdentification {
+  id: string;
+  idType: string;
+  value: string;
+  issueDate?: string;
+  expirationDate?: string;
+  country?: string;
+}
+
 export interface PlatformOrg {
   id:           string;
   name:         string;
+  orgType?:     OrgType;
   website?:     string;
   country:      string;
   region:       SalesRegion;
@@ -42,7 +97,13 @@ export interface PlatformOrg {
   assignedToUid?:string;
   tags:         string[];
   notes:        string;
+  logoUrl?:     string;
   tenantIds:    string[];
+  phone?:       string;
+  whatsapp?:    string;
+  invoiceAddress?: string;
+  shippingAddress?: string;
+  primaryAddress?: OrgAddress;
   industry?:    string;
   createdAt:    string;
   createdBy:    string;
@@ -58,10 +119,24 @@ export interface PlatformContact {
   role:         string;
   isPrimary:    boolean;
   notes:        string;
+  tags?:        string[];
+  whatsapp?:    string;
+  birthday?:    string;
+  preferredName?: string;
+  preferredContactMethod?: 'email' | 'phone' | 'whatsapp';
+  primaryTag?:  string;
   linkedInUrl?: string;
+  logoUrl?:     string;
   createdAt:    string;
   createdBy:    string;
   updatedAt:    string;
+  // Complex Objects
+  addresses?:        ContactAddress[];
+  phones?:           ContactPhone[];
+  emails?:           ContactEmail[];
+  relationships?:    ContactRelationship[];
+  identifications?:  ContactIdentification[];
+  linkedUserUid?:    string;
 }
 
 export interface Opportunity {
@@ -115,8 +190,9 @@ export interface CrmActivity {
 }
 
 export interface SalesTeam {
-  id:          string;
-  name:        string;
+  id:           string;
+  name:         string;
+  orgType?:     OrgType;
   region:      SalesRegion;
   managerId:   string;
   managerName: string;
@@ -126,6 +202,36 @@ export interface SalesTeam {
   quota:       number;          // ARR quota in USD
   createdAt:   string;
   updatedAt:   string;
+  commissionPlanText?: string;
+}
+
+export type AccountPlanPeriod = 'quarterly' | 'monthly' | 'semi_annual' | 'annual';
+
+export interface AccountPlanRevision {
+  timestamp: string;
+  field: string;
+  oldVal: any;
+  newVal: any;
+  userUid: string;
+  userName: string;
+}
+
+export interface AccountPlan {
+  id: string;
+  orgId: string;
+  version: number;
+  isCurrent: boolean;
+  period: AccountPlanPeriod;
+  title?: string;
+  executiveSummary: string;
+  goals: string;
+  reviewerUid?: string;
+  reviewerName?: string;
+  reviewDate?: string;
+  revisions?: AccountPlanRevision[];
+  createdAt: string;
+  createdBy: string;
+  updatedAt: string;
 }
 
 // ─── Platform Users (for assignee dropdowns) ─────────────────────────────────
@@ -185,8 +291,12 @@ export async function createOrg(
   performer: { uid: string },
 ): Promise<PlatformOrg> {
   const now = new Date().toISOString();
+  const payload: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(data)) {
+    if (v !== undefined) payload[k] = v;
+  }
   const ref = await addDoc(collection(db, 'platform_orgs'), {
-    ...data, region: data.region ?? 'global', tenantIds: data.tenantIds ?? [],
+    ...payload, orgType: data.orgType ?? 'client', region: data.region ?? 'global', tenantIds: data.tenantIds ?? [],
     createdAt: now, createdBy: performer.uid, updatedAt: now,
   });
   await updateDoc(ref, { id: ref.id });
@@ -194,7 +304,11 @@ export async function createOrg(
 }
 
 export async function updateOrg(id: string, patch: Partial<PlatformOrg>): Promise<void> {
-  await updateDoc(doc(db, 'platform_orgs', id), { ...patch, updatedAt: new Date().toISOString() });
+  const payload: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(patch)) {
+    if (v !== undefined) payload[k] = v;
+  }
+  await updateDoc(doc(db, 'platform_orgs', id), { ...payload, updatedAt: new Date().toISOString() });
 }
 
 export async function linkTenantToOrg(orgId: string, tenantId: string): Promise<void> {
@@ -218,6 +332,82 @@ export async function unlinkTenantFromOrg(orgId: string, tenantId: string): Prom
 
 export async function deleteOrg(id: string): Promise<void> {
   await deleteDoc(doc(db, 'platform_orgs', id));
+}
+
+// ─── Account Plans CRUD ───────────────────────────────────────────────────────
+
+export async function getAccountPlansForOrg(orgId: string): Promise<AccountPlan[]> {
+  const snap = await getDocs(query(collection(db, 'platform_org_account_plans'), where('orgId', '==', orgId)));
+  return snap.docs
+    .map(d => ({ ...d.data(), id: d.id } as AccountPlan))
+    .sort((a, b) => b.version - a.version);
+}
+
+export async function createAccountPlan(
+  orgId: string,
+  payload: Pick<AccountPlan, 'period' | 'executiveSummary' | 'goals'> & { title?: string },
+  performer: { uid: string }
+): Promise<AccountPlan> {
+  const plans = await getAccountPlansForOrg(orgId);
+  const now = new Date().toISOString();
+  
+  // Archive active plans
+  const activePlans = plans.filter(p => p.isCurrent);
+  for (const p of activePlans) {
+    await updateDoc(doc(db, 'platform_org_account_plans', p.id), { isCurrent: false, updatedAt: now });
+  }
+
+  const nextVersion = plans.length > 0 ? Math.max(...plans.map(p => p.version)) + 1 : 1;
+  const newPlanData = {
+    ...payload,
+    orgId,
+    version: nextVersion,
+    isCurrent: true,
+    revisions: [],
+    createdAt: now,
+    createdBy: performer.uid,
+    updatedAt: now,
+  };
+  const ref = await addDoc(collection(db, 'platform_org_account_plans'), newPlanData);
+  await updateDoc(ref, { id: ref.id });
+  return { ...newPlanData, id: ref.id } as AccountPlan;
+}
+
+export async function updateAccountPlan(id: string, patch: Partial<AccountPlan>, performer?: { uid: string; displayName?: string; email?: string }): Promise<void> {
+  const ref = doc(db, 'platform_org_account_plans', id);
+  if (!performer) {
+    // Basic patch without tracking
+    await updateDoc(ref, { ...patch, updatedAt: new Date().toISOString() });
+    return;
+  }
+
+  // Need to track delta
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const current = snap.data() as AccountPlan;
+  const revisions = current.revisions || [];
+  
+  const skipFields = ['updatedAt', 'reviewerUid', 'reviewerName', 'reviewDate'];
+  for (const [key, newVal] of Object.entries(patch)) {
+    if (skipFields.includes(key)) continue;
+    const oldVal = (current as any)[key];
+    if (oldVal !== newVal) {
+       revisions.push({
+         timestamp: new Date().toISOString(),
+         field: key,
+         oldVal: oldVal ?? null,
+         newVal: newVal ?? null,
+         userUid: performer.uid,
+         userName: performer.displayName || performer.email || 'User',
+       });
+    }
+  }
+
+  await updateDoc(ref, { 
+    ...patch, 
+    revisions,
+    updatedAt: new Date().toISOString() 
+  });
 }
 
 // ─── Contact CRUD ─────────────────────────────────────────────────────────────
@@ -244,6 +434,14 @@ export async function createContact(
 ): Promise<PlatformContact> {
   const now = new Date().toISOString();
   const payload: Record<string, unknown> = {};
+  
+  if (data.email) {
+    const userSnap = await getDocs(query(collection(db, 'users'), where('email', '==', data.email.toLowerCase())));
+    if (!userSnap.empty) {
+       data.linkedUserUid = userSnap.docs[0].data().uid;
+    }
+  }
+
   for (const [k, v] of Object.entries(data)) {
     if (v !== undefined) payload[k] = v;
   }
@@ -255,8 +453,20 @@ export async function createContact(
 }
 
 export async function updateContact(id: string, patch: Partial<PlatformContact>): Promise<void> {
+  const payload: Record<string, unknown> = {};
+  
+  if (patch.email) {
+    const userSnap = await getDocs(query(collection(db, 'users'), where('email', '==', patch.email.toLowerCase())));
+    if (!userSnap.empty) {
+       payload.linkedUserUid = userSnap.docs[0].data().uid;
+    }
+  }
+
+  for (const [k, v] of Object.entries(patch)) {
+    if (v !== undefined) payload[k] = v;
+  }
   await updateDoc(doc(db, 'platform_contacts', id), {
-    ...patch, updatedAt: new Date().toISOString(),
+    ...payload, updatedAt: new Date().toISOString(),
   });
 }
 
@@ -369,16 +579,16 @@ const daysAgo = (n: number) => new Date(Date.now() - n * 86400000).toISOString()
 const daysAhead = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
 
 const SAMPLE_ORGS: Omit<PlatformOrg, 'id' | 'createdAt' | 'updatedAt'>[] = [
-  { name: 'Andrade Family Office',     country: 'Brazil',    region: 'latam',         size: 'mid',        estAumUsd: 280_000_000, stage: 'proposal',      assignedTo: 'Alexandra Torres', tags: ['enterprise','brazil','hot'],     notes: 'Very interested in Enterprise.',    tenantIds: [], createdBy: 'system' },
-  { name: 'PL Wealth Solutions',       country: 'Singapore', region: 'apac',          size: 'small',      estAumUsd:  95_000_000, stage: 'qualification', assignedTo: 'Carlos Mendes',    tags: ['growth','asia','warm'],          notes: 'Evaluating 3 platforms.',           tenantIds: [], createdBy: 'system' },
-  { name: 'Dupont Patrimoine',         country: 'France',    region: 'emea',          size: 'large',      estAumUsd: 420_000_000, stage: 'closed_won',   assignedTo: 'Carlos Mendes',    tags: ['enterprise','europe','referral'],notes: 'Closed! Enterprise annual.',        tenantIds: [], createdBy: 'system' },
-  { name: 'GL Investimentos',          country: 'Brazil',    region: 'latam',         size: 'mid',        estAumUsd: 110_000_000, stage: 'negotiation',   assignedTo: 'Alexandra Torres', tags: ['growth','brazil','hot'],         notes: 'Negotiating on seat count.',        tenantIds: [], createdBy: 'system' },
-  { name: 'Whitmore Wealthcare',       country: 'UK',        region: 'emea',          size: 'mid',        estAumUsd: 175_000_000, stage: 'demo',          assignedTo: 'Carlos Mendes',    tags: ['growth','europe','warm'],        notes: 'Asked about GDPR & OneDrive.',      tenantIds: [], createdBy: 'system' },
-  { name: 'Lagos Capital Group',       country: 'Nigeria',   region: 'emea',          size: 'boutique',   estAumUsd:  22_000_000, stage: 'lead',          assignedTo: 'Alexandra Torres', tags: ['starter','africa'],              notes: 'Inbound lead.',                     tenantIds: [], createdBy: 'system' },
-  { name: 'Costa Gestão Patrimonial', country: 'Brazil',    region: 'latam',         size: 'boutique',   estAumUsd:  18_000_000, stage: 'qualification', assignedTo: 'Alexandra Torres', tags: ['starter','brazil'],              notes: 'Small boutique, 2 advisors.',       tenantIds: [], createdBy: 'system' },
+  { name: 'Andrade Family Office',     country: 'Brazil',    region: 'latam',         size: 'mid',        estAumUsd: 280_000_000, stage: 'proposal',      assignedTo: 'Alexandra Torres', tags: ['enterprise','brazil','hot'],     notes: 'Very interested in Enterprise.',    tenantIds: [], createdBy: 'system', orgType: 'client' },
+  { name: 'PL Wealth Solutions',       country: 'Singapore', region: 'apac',          size: 'small',      estAumUsd:  95_000_000, stage: 'qualification', assignedTo: 'Carlos Mendes',    tags: ['growth','asia','warm'],          notes: 'Evaluating 3 platforms.',           tenantIds: [], createdBy: 'system', orgType: 'client' },
+  { name: 'Dupont Patrimoine',         country: 'France',    region: 'emea',          size: 'large',      estAumUsd: 420_000_000, stage: 'closed_won',   assignedTo: 'Carlos Mendes',    tags: ['enterprise','europe','referral'],notes: 'Closed! Enterprise annual.',        tenantIds: [], createdBy: 'system', orgType: 'client' },
+  { name: 'GL Investimentos',          country: 'Brazil',    region: 'latam',         size: 'mid',        estAumUsd: 110_000_000, stage: 'negotiation',   assignedTo: 'Alexandra Torres', tags: ['growth','brazil','hot'],         notes: 'Negotiating on seat count.',        tenantIds: [], createdBy: 'system', orgType: 'client' },
+  { name: 'Whitmore Wealthcare',       country: 'UK',        region: 'emea',          size: 'mid',        estAumUsd: 175_000_000, stage: 'demo',          assignedTo: 'Carlos Mendes',    tags: ['growth','europe','warm'],        notes: 'Asked about GDPR & OneDrive.',      tenantIds: [], createdBy: 'system', orgType: 'client' },
+  { name: 'Lagos Capital Group',       country: 'Nigeria',   region: 'emea',          size: 'boutique',   estAumUsd:  22_000_000, stage: 'lead',          assignedTo: 'Alexandra Torres', tags: ['starter','africa'],              notes: 'Inbound lead.',                     tenantIds: [], createdBy: 'system', orgType: 'client' },
+  { name: 'Costa Gestão Patrimonial', country: 'Brazil',    region: 'latam',         size: 'boutique',   estAumUsd:  18_000_000, stage: 'qualification', assignedTo: 'Alexandra Torres', tags: ['starter','brazil'],              notes: 'Small boutique, 2 advisors.',       tenantIds: [], createdBy: 'system', orgType: 'client' },
   { name: 'Meridian Capital Partners', country: 'USA',       region: 'north_america', size: 'large',      estAumUsd: 650_000_000, stage: 'proposal',      assignedTo: 'James Rivera',     tags: ['enterprise','usa','hot'],        notes: 'Strong interest in API integration.',tenantIds:[], createdBy: 'system' },
-  { name: 'Asia Pacific Trustees',     country: 'Hong Kong', region: 'apac',          size: 'enterprise', estAumUsd:1_200_000_000,stage: 'demo',          assignedTo: 'Sarah Chen',       tags: ['enterprise','apac','strategic'],notes: 'Largest deal in pipeline.',         tenantIds: [], createdBy: 'system' },
-  { name: 'Nordic Wealth Group',       country: 'Sweden',    region: 'emea',          size: 'mid',        estAumUsd: 340_000_000, stage: 'negotiation',   assignedTo: 'Carlos Mendes',    tags: ['enterprise','europe','warm'],   notes: 'Price-sensitive, wants 3yr deal.',  tenantIds: [], createdBy: 'system' },
+  { name: 'Asia Pacific Trustees',     country: 'Hong Kong', region: 'apac',          size: 'enterprise', estAumUsd:1_200_000_000,stage: 'demo',          assignedTo: 'Sarah Chen',       tags: ['enterprise','apac','strategic'],notes: 'Largest deal in pipeline.',         tenantIds: [], createdBy: 'system', orgType: 'client' },
+  { name: 'Nordic Wealth Group',       country: 'Sweden',    region: 'emea',          size: 'mid',        estAumUsd: 340_000_000, stage: 'negotiation',   assignedTo: 'Carlos Mendes',    tags: ['enterprise','europe','warm'],   notes: 'Price-sensitive, wants 3yr deal.',  tenantIds: [], createdBy: 'system', orgType: 'client' },
 ];
 
 const SAMPLE_CONTACTS: (Omit<PlatformContact, 'id' | 'createdAt' | 'updatedAt' | 'orgId'>)[] = [
@@ -465,6 +675,39 @@ export const REGION_COLORS: Record<SalesRegion, string> = {
   north_america: '#22d3ee', global: '#a78bfa',
 };
 
+// ─── Dynamic Pipeline Settings ────────────────────────────────────────────────
+
+export interface PipelineStageConfig {
+  id: string;          // Maps to DealStage
+  label: string;       // Custom label
+  color: string;       // Custom color
+  probability: number; // 0-100
+}
+
+export const DEFAULT_PIPELINE_STAGES: PipelineStageConfig[] = [
+  { id: 'lead', label: 'Lead / Prospect', color: '#64748b', probability: 10 },
+  { id: 'qualification', label: '1 - Qualification', color: '#6366f1', probability: 25 },
+  { id: 'demo', label: '2 - Strategy & Demo', color: '#8b5cf6', probability: 50 },
+  { id: 'proposal', label: '3 - Proposal Sent', color: '#f59e0b', probability: 75 },
+  { id: 'negotiation', label: '4 - Negotiation', color: '#22d3ee', probability: 90 },
+  { id: 'closed_won', label: 'Closed (Won)', color: '#22c55e', probability: 100 },
+  { id: 'closed_lost', label: 'Closed (Lost)', color: '#ef4444', probability: 0 },
+];
+
+export async function getTenantPipelineStages(tenantId: string): Promise<PipelineStageConfig[]> {
+  const snap = await getDoc(doc(db, 'tenants', tenantId, 'settings', 'crm_pipeline'));
+  if (!snap.exists()) return DEFAULT_PIPELINE_STAGES;
+  const config = snap.data();
+  return config.stages && config.stages.length > 0 ? config.stages : DEFAULT_PIPELINE_STAGES;
+}
+
+export async function updateTenantPipelineStages(tenantId: string, stages: PipelineStageConfig[]): Promise<void> {
+  const ref = doc(db, 'tenants', tenantId, 'settings', 'crm_pipeline');
+  await setDoc(ref, { stages, updatedAt: new Date().toISOString() }, { merge: true });
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
 export const STAGE_COLORS: Record<DealStage, string> = {
   lead: '#64748b', qualification: '#6366f1', demo: '#8b5cf6',
   proposal: '#f59e0b', negotiation: '#22d3ee', closed_won: '#22c55e', closed_lost: '#ef4444',
@@ -488,3 +731,10 @@ export const PRODUCT_OPTIONS = [
   'Starter Plan', 'Growth Plan', 'Enterprise Plan',
   'White Label', 'API Access', 'Premium Support', 'Data Export AddOn',
 ];
+
+export const ORG_TYPE_LABELS: Record<OrgType, string> = {
+  client: 'Client',
+  prospect: 'Prospect',
+  supplier: 'Vendor',
+  partner: 'Partner',
+};

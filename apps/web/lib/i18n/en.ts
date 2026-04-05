@@ -76,6 +76,14 @@ export const en = {
   'calendar.event.meeting': 'Meeting',
   'calendar.event.governance': 'Governance',
   'calendar.event.concierge': 'Concierge',
+
+  // Relationships
+  'rel.family_member': 'Family Member',
+  'rel.spouse': 'Spouse / Partner',
+  'rel.child': 'Child',
+  'rel.friend': 'Friend',
+  'rel.attorney': 'Attorney',
+  'rel.other': 'Other',
 };
 
 export type TranslationKey = keyof typeof en;

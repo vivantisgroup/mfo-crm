@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { TASKS, SERVICE_REQUESTS } from '@/lib/mockData';
 import { useUserSettings } from '@/lib/UserSettingsContext';
 import { useTranslation } from '@/lib/i18n/context';
+import { Eye, EyeOff, Settings, CheckSquare, Briefcase, TrendingUp, ShieldCheck, Plug, Radio, SlidersHorizontal, Megaphone, Info, AlertTriangle, OctagonAlert, RefreshCw, BellRing } from 'lucide-react';
 import { Modal } from '@/components/Modal';
 import { useAuth } from '@/lib/AuthContext';
 import { FeedWizard, type FeedConfig } from '@/components/FeedWizard';
@@ -40,13 +41,25 @@ interface CategoryConfig {
 // --- Constants ---------------------------------------------------------------
 
 const DEFAULT_CATEGORIES: CategoryConfig[] = [
-  { key: 'task',       label: 'Tasks',        icon: '📋', enabled: true  },
-  { key: 'concierge',  label: 'Concierge',    icon: '🏨', enabled: true  },
-  { key: 'market',     label: 'Market',       icon: '📈', enabled: true  },
-  { key: 'compliance', label: 'Compliance',   icon: '⚖️', enabled: true  },
-  { key: 'custom',     label: 'Custom Feeds', icon: '🔌', enabled: false },
-  { key: 'broadcast',  label: 'Broadcast',    icon: '📡', enabled: false },
+  { key: 'task',       label: 'Tasks',        icon: 'task', enabled: true  },
+  { key: 'concierge',  label: 'Concierge',    icon: 'concierge', enabled: true  },
+  { key: 'market',     label: 'Market',       icon: 'market', enabled: true  },
+  { key: 'compliance', label: 'Compliance',   icon: 'compliance', enabled: true  },
+  { key: 'custom',     label: 'Custom Feeds', icon: 'custom', enabled: false },
+  { key: 'broadcast',  label: 'Broadcast',    icon: 'broadcast', enabled: false },
 ];
+
+function CategoryIcon({ type, size = 14 }: { type: string, size?: number }) {
+  switch (type) {
+    case 'task': return <CheckSquare size={size} />;
+    case 'concierge': return <Briefcase size={size} />;
+    case 'market': return <TrendingUp size={size} />;
+    case 'compliance': return <ShieldCheck size={size} />;
+    case 'custom': return <Plug size={size} />;
+    case 'broadcast': return <Radio size={size} />;
+    default: return <Info size={size} />;
+  }
+}
 
 const STORAGE_CATS   = 'ticker_categories_v2';
 const STORAGE_FEEDS  = 'ticker_feeds_v3';
@@ -112,35 +125,36 @@ function TickerItem({ alert, onDismiss, onClick }: {
 
   return (
     <span
+      className="hover-lift"
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 8,
         padding: '0 20px', height: '100%', cursor: onClick ? 'pointer' : 'default',
-        borderRight: '1px solid rgba(255,255,255,0.07)', whiteSpace: 'nowrap',
+        borderRight: '1px solid var(--border)', whiteSpace: 'nowrap',
         transition: 'background 0.15s',
       }}
       onClick={onClick}
-      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)'; }}
+      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-elevated)'; }}
       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
     >
       <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, display: 'inline-block', ...dot }} />
       {alert.source && (
-        <span style={{ fontSize: 9, color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', flexShrink: 0 }}>
+        <span style={{ fontSize: 9, color, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.15em', flexShrink: 0 }}>
           [{alert.source}]
         </span>
       )}
-      <span style={{ fontSize: 12, color: '#e2e8f0' }}>{alert.text}</span>
+      <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>{alert.text}</span>
       {alert.url && (
         <a href={alert.url} target="_blank" rel="noreferrer"
           onClick={e => e.stopPropagation()}
-          style={{ fontSize: 10, color, textDecoration: 'underline', flexShrink: 0 }}>
+          style={{ fontSize: 10, color, textDecoration: 'underline', flexShrink: 0, fontWeight: 800 }}>
           View
         </a>
       )}
       <button
         onClick={e => { e.stopPropagation(); onDismiss(alert.id); }}
         style={{
-          background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)',
-          cursor: 'pointer', fontSize: 13, padding: '0 2px', lineHeight: 1, flexShrink: 0,
+          background: 'none', border: 'none', color: 'var(--text-tertiary)',
+          cursor: 'pointer', fontSize: 13, padding: '0 4px', lineHeight: 1, flexShrink: 0,
         }}
         title="Dismiss"
         aria-label="Dismiss alert"
@@ -201,10 +215,10 @@ function SmartAlertsManager({
     setBcMsg('');
   };
 
-  const TAB_LABELS: Record<ManagerTab, string> = {
-    channels:  '📺 Channels & Filters',
-    feeds:     '🔌 REST API Feeds',
-    broadcast: '📣 Publish Alert',
+  const TAB_LABELS: Record<ManagerTab, React.ReactNode> = {
+    channels:  <div className="flex items-center gap-2"><SlidersHorizontal size={14} /> Channels & Filters</div>,
+    feeds:     <div className="flex items-center gap-2"><Plug size={14} /> REST API Feeds</div>,
+    broadcast: <div className="flex items-center gap-2"><Megaphone size={14} /> Publish Alert</div>,
   };
 
   return (
@@ -213,7 +227,7 @@ function SmartAlertsManager({
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 24px 0' }}>
         <h2 style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-          🔔 Smart Alerts Manager
+          <BellRing size={16} /> Smart Alerts Manager
         </h2>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ fontSize: 12 }}>
@@ -254,8 +268,8 @@ function SmartAlertsManager({
                   border: '1px solid var(--border)', borderRadius: 10,
                 }}>
                   <div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
-                      {cat.icon} {cat.label}
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <CategoryIcon type={cat.key} size={14} /> {cat.label}
                     </div>
                     <div style={{ fontSize: 11, color: cat.enabled ? 'var(--color-green)' : 'var(--text-tertiary)', marginTop: 2 }}>
                       {cat.enabled ? '• Active' : '• Hidden'}
@@ -286,8 +300,8 @@ function SmartAlertsManager({
                 Dismissed Today: {dismissedIds.size}
               </div>
               {dismissedIds.size > 0 && (
-                <button className="btn btn-ghost btn-sm" onClick={onRestoreDismissed} style={{ fontSize: 12, marginTop: 8 }}>
-                  🔄 Restore alerts
+                <button className="btn btn-ghost btn-sm flex items-center gap-2 mt-2" onClick={onRestoreDismissed} style={{ fontSize: 12 }}>
+                  <RefreshCw size={12} /> Restore alerts
                 </button>
               )}
             </div>
@@ -305,7 +319,7 @@ function SmartAlertsManager({
             </div>
             {feeds.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-tertiary)', fontSize: 13 }}>
-                <div style={{ fontSize: 36, marginBottom: 12 }}>🔌</div>
+                <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center' }}><Plug size={36} className="text-[var(--text-tertiary)] opacity-30" /></div>
                 No feeds yet. Click <strong>+ Add Feed</strong> to get started.
               </div>
             ) : (
@@ -356,9 +370,9 @@ function SmartAlertsManager({
               Publish a firm-wide alert that appears in all users&apos; tickers instantly.
             </p>
             <select value={bcSev} onChange={e => setBcSev(e.target.value as any)} className="input" style={{ maxWidth: 200, fontSize: 13 }}>
-              <option value="info">ℹ️ Info</option>
-              <option value="warning">⚠️ Warning</option>
-              <option value="critical">🛑 Critical</option>
+              <option value="info">Info</option>
+              <option value="warning">Warning</option>
+              <option value="critical">Critical</option>
             </select>
             <textarea
               className="input" rows={3} value={bcMsg}
@@ -366,8 +380,8 @@ function SmartAlertsManager({
               placeholder="Type your broadcast message..."
               style={{ resize: 'vertical', fontSize: 13, fontFamily: 'inherit' }}
             />
-            <button className="btn btn-primary" onClick={handlePublish} disabled={!bcMsg.trim()} style={{ alignSelf: 'flex-start' }}>
-              📣 Publish Alert
+            <button className="btn btn-primary flex items-center gap-2" onClick={handlePublish} disabled={!bcMsg.trim()} style={{ alignSelf: 'flex-start' }}>
+              <Megaphone size={14} /> Publish Alert
             </button>
             {broadcastAlerts.length > 0 && (
               <div>
@@ -381,7 +395,11 @@ function SmartAlertsManager({
                     <span style={{
                       fontWeight: 700,
                       color: b.severity === 'critical' ? '#ef4444' : b.severity === 'warning' ? '#f59e0b' : '#22d3ee',
+                      display: 'inline-flex', alignItems: 'center', gap: 4, marginRight: 6
                     }}>
+                      {b.severity === 'critical' && <OctagonAlert size={12} />}
+                      {b.severity === 'warning' && <AlertTriangle size={12} />}
+                      {b.severity === 'info' && <Info size={12} />}
                       [{b.severity.toUpperCase()}]
                     </span>{' '}
                     {b.text}
@@ -434,6 +452,7 @@ export function Ticker() {
   const [managerOpen, setManagerOpen] = useState(false);
   const [paused, setPaused]           = useState(false);
   const [speed, setSpeed]             = useState(1);
+  const [visible, setVisible]         = useState(true);
 
   // Persist
   useEffect(() => { try { localStorage.setItem(STORAGE_CATS,  JSON.stringify(categories));  } catch {} }, [categories]);
@@ -566,8 +585,8 @@ export function Ticker() {
 
   if (allAlerts.length === 0) {
     return (
-      <div style={{
-        gridColumn: '1 / -1', gridRow: 3,
+      <div className="ticker" style={{
+        gridColumn: '2', gridRow: 3,
         height: TICKER_H, background: 'var(--bg-surface)',
         borderTop: '1px solid var(--border)', display: 'flex',
         alignItems: 'center', padding: '0 16px',
@@ -594,11 +613,10 @@ export function Ticker() {
 
   return (
     <>
-      <div
+      <div 
+        className="ticker w-full"
         style={{
-          gridColumn: '1 / -1', gridRow: 3,
-          height: TICKER_H, background: '#0a0f1e',
-          borderTop: '1px solid rgba(255,255,255,0.06)',
+          height: TICKER_H, background: 'var(--bg-surface)',
           display: 'flex', alignItems: 'stretch',
           overflow: 'hidden', position: 'relative', zIndex: 40,
         }}
@@ -606,64 +624,80 @@ export function Ticker() {
         onMouseLeave={() => setPaused(false)}
       >
         {/* LIVE badge */}
-        <div style={{
-          flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6,
-          padding: '0 14px', borderRight: '1px solid rgba(255,255,255,0.07)',
-          background: 'rgba(99,102,241,0.15)',
-        }}>
+        <div 
+          className="bg-[var(--bg-elevated)] border-r border-[var(--border-subtle)]"
+          style={{
+            flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6,
+            padding: '0 14px',
+          }}
+        >
           <span style={{
             width: 6, height: 6, borderRadius: '50%',
-            background: '#ef4444', boxShadow: '0 0 5px #ef444488',
+            background: 'var(--brand-primary)', boxShadow: '0 0 5px var(--brand-primary)',
             display: 'inline-block', animation: 'pulse 1.4s ease-in-out infinite',
           }} />
-          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', color: 'var(--brand-400)' }}>LIVE</span>
+          <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: '0.18em', color: 'var(--brand-primary)' }}>LIVE HUB</span>
+          
+          <button 
+             onClick={() => setVisible(!visible)}
+             className="ml-2 py-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+             title={visible ? 'Hide alerts' : 'Show alerts'}
+          >
+             {visible ? <Eye size={12} /> : <EyeOff size={12} />}
+          </button>
         </div>
 
         {/* Scrolling strip */}
-        <div ref={containerRef} style={{ flex: 1, overflow: 'hidden', display: 'flex', alignItems: 'center' }}>
-          <div ref={contentRef} style={{ display: 'inline-flex', alignItems: 'center', height: '100%', willChange: 'transform' }}>
-            {[...allAlerts, ...allAlerts].map((a, i) => (
-              <TickerItem
-                key={`${a.id}-${i}`}
-                alert={a}
-                onDismiss={dismiss}
-                onClick={a.url ? () => window.open(a.url, '_blank') : a.action}
-              />
-            ))}
+        {visible && (
+          <div ref={containerRef} style={{ flex: 1, overflow: 'hidden', display: 'flex', alignItems: 'center' }}>
+            <div ref={contentRef} style={{ display: 'inline-flex', alignItems: 'center', height: '100%', willChange: 'transform' }}>
+              {[...allAlerts, ...allAlerts].map((a, i) => (
+                <TickerItem
+                  key={`${a.id}-${i}`}
+                  alert={a}
+                  onDismiss={dismiss}
+                  onClick={a.url ? () => window.open(a.url, '_blank') : a.action}
+                />
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Controls */}
-        <div style={{
-          flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4,
-          padding: '0 10px', borderLeft: '1px solid rgba(255,255,255,0.07)',
-        }}>
-          <button
-            onClick={() => setPaused(p => !p)}
-            title={paused ? 'Resume' : 'Pause'}
-            style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 13, padding: '0 4px' }}
-          >
-            {paused ? '▶' : '⏸'}
-          </button>
-          <select
-            value={speed} onChange={e => setSpeed(Number(e.target.value))}
-            style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.4)', fontSize: 10, cursor: 'pointer' }}
-          >
-            <option value={0.5}>0.5x</option>
-            <option value={1}>1x</option>
-            <option value={2}>2x</option>
-          </select>
-          <button
-            onClick={() => setManagerOpen(true)}
+        {visible && (
+          <div 
+            className="bg-[var(--bg-elevated)] border-l border-[var(--border-subtle)]"
             style={{
-              background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)',
-              color: 'var(--brand-400)', cursor: 'pointer', fontSize: 10, fontWeight: 700,
-              padding: '3px 10px', borderRadius: 4, letterSpacing: '0.05em',
+              flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4,
+              padding: '0 10px',
             }}
           >
-            ⚙️ Manage
-          </button>
-        </div>
+            <button
+              onClick={() => setPaused(p => !p)}
+              title={paused ? 'Resume' : 'Pause'}
+              style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 13, padding: '0 4px' }}
+              className="hover:text-[var(--text-primary)] transition-colors"
+            >
+              {paused ? '▶' : '⏸'}
+            </button>
+            <select
+              value={speed} onChange={e => setSpeed(Number(e.target.value))}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-tertiary)', fontSize: 10, cursor: 'pointer', outline:'none' }}
+              className="hover:text-[var(--text-primary)] transition-colors"
+            >
+              <option value={0.5}>0.5x</option>
+              <option value={1}>1x</option>
+              <option value={2}>2x</option>
+            </select>
+            <button
+              onClick={() => setManagerOpen(true)}
+              className="ml-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+              title="Settings & Channels"
+            >
+              <Settings size={14} />
+            </button>
+          </div>
+        )}
       </div>
 
       {managerOpen && (

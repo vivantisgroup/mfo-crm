@@ -13,7 +13,7 @@ import {
   LineChart, Bot, ShieldCheck, Settings2, Database,
   Server, Search, HardDrive, ChevronLeft, ChevronRight, ChevronDown,
   Mail, Users, Calendar, CheckSquare, FolderOpen, FileText,
-  MessageSquare, TrendingUp, Briefcase, Settings, UserCog,
+  MessageSquare, TrendingUp, Briefcase, Settings, UserCog, Landmark, Tag, BookOpen,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -47,7 +47,7 @@ const HREF_ICON_MAP: Record<string, LucideIcon> = {
   '/deals':              Target,
   '/listings':           Search,
   '/invoicing':          Receipt,
-  '/billing':            Receipt,
+  '/finance':            Landmark,
   '/engagements':        Briefcase,
   '/deadlines':          CheckSquare,
   '/admin/users':        UserCog,
@@ -56,12 +56,12 @@ const HREF_ICON_MAP: Record<string, LucideIcon> = {
 
 // ─── Platform-Admin nav — Lucide icons ─────────────────────────────────────────
 
-const PLATFORM_NAV: { section: string; items: { href: string; icon: LucideIcon; label: string; badge?: string }[] }[] = [
+const PLATFORM_NAV: { section: string; items: { href: string; icon: LucideIcon; label: string; badge?: string; subItems?: { href: string; label: string }[] }[] }[] = [
   {
     section: 'Platform',
     items: [
       { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-      { href: '/inbox',     icon: Inbox,            label: 'Inbox' },
+      { href: '/communications', icon: MessageSquare, label: 'Communications' },
       { href: '/reports',   icon: BarChart2,         label: 'Reports' },
     ],
   },
@@ -70,11 +70,10 @@ const PLATFORM_NAV: { section: string; items: { href: string; icon: LucideIcon; 
     items: [
       { href: '/platform/tenants',  icon: Building2,  label: 'Tenants' },
       { href: '/platform/crm',      icon: Target,      label: 'CRM' },
-      { href: '/platform/support',  icon: Ticket,      label: 'Support', badge: '12' },
-      { href: '/platform/expenses', icon: Receipt,     label: 'Expenses' },
-      { href: '/platform/billing',  icon: DollarSign,  label: 'Revenue' },
-      { href: '/platform/renewals', icon: RotateCcw,   label: 'Renewals' },
-      { href: '/platform/plans',    icon: CreditCard,  label: 'Plans' },
+      { href: '/platform/support',  icon: Ticket,      label: 'Support' },
+      { href: '/platform/finance',  icon: Landmark,    label: 'Finance' },
+      { href: '/platform/hr',       icon: Users,       label: 'HR' },
+      { href: '/platform/tags',     icon: Tag,         label: 'Tags' },
     ],
   },
   {
@@ -95,9 +94,16 @@ const PLATFORM_NAV: { section: string; items: { href: string; icon: LucideIcon; 
     section: 'Engineering',
     items: [
       { href: '/admin',                     icon: Settings2, label: 'Settings' },
-      { href: '/platform/db-settings',      icon: Database,  label: 'DB Settings' },
+      { 
+        href: '/platform/metadata',       
+        icon: Database,  
+        label: 'Metadata',
+        subItems: [
+          { href: '/platform/db-settings',      label: 'DB Settings' },
+          { href: '/platform/catalog-explorer', label: 'Catalog' },
+        ]
+      },
       { href: '/platform/infrastructure',   icon: Server,    label: 'Infra' },
-      { href: '/platform/catalog-explorer', icon: Search,    label: 'Catalog' },
       { href: '/platform/backups',          icon: HardDrive, label: 'Backups' },
     ],
   },
@@ -132,27 +138,25 @@ export default function Sidebar({ collapsed, toggle }: SidebarProps) {
 
   return (
     <aside
-      className={`sidebar${collapsed ? ' collapsed' : ''}`}
-      style={{ width: collapsed ? 'var(--sidebar-collapsed)' : 'var(--sidebar-width)' }}
+      className={`sidebar flex flex-col h-full bg-surface border-r border-border transition-all duration-300 z-40 ${collapsed ? 'w-[var(--sidebar-collapsed)]' : 'w-[var(--sidebar-width)]'}`}
     >
       {/* Logo */}
-      <div className="sidebar-logo">
+      <div className="flex items-center gap-3 px-4 h-14 border-b border-border shrink-0 overflow-hidden">
         {companyLogoSmall
-          ? <img src={companyLogoSmall} alt="logo" style={{ width: 30, height: 30, borderRadius: 8, objectFit: 'contain', flexShrink: 0 }} />
+          ? <img src={companyLogoSmall} alt="logo" className="w-8 h-8 rounded-lg object-contain shrink-0" />
           : <div
-              className="sidebar-logo-mark"
-              style={{ background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', boxShadow: '0 2px 8px rgba(37,99,235,0.25)' }}
+              className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-[13px] text-white shrink-0 bg-gradient-to-br from-brand-500 to-brand-600 shadow-sm"
             >
               {(tenant?.name ?? 'M')[0]}
             </div>
         }
 
         {!collapsed && (
-          <div className="sidebar-logo-text">
-            <div style={{ fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--text-primary)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div className="flex flex-col min-w-0">
+            <div className="font-extrabold tracking-tight text-primary text-[13px] truncate">
               {tenant?.name ?? 'MFO Nexus'}
             </div>
-            <div className="sidebar-logo-sub" style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>
+            <div className="text-[9px] tracking-widest uppercase text-tertiary truncate">
               {tenant?.isInternal ? 'Platform' : ((tenant as any)?.industryVertical ?? 'Platform')}
             </div>
           </div>
@@ -174,20 +178,19 @@ export default function Sidebar({ collapsed, toggle }: SidebarProps) {
               
               if (hasSub) {
                 return (
-                  <div key={item.href} style={{ display: 'flex', flexDirection: 'column' }}>
+                  <div key={item.href} className="flex flex-col">
                     <button
                       onClick={() => setExpanded(p => ({ ...p, [item.href]: !isExpanded }))}
-                      className={`nav-item${active ? ' active' : ''}`}
+                      className={`nav-item flex items-center gap-2.5 px-3 py-2 rounded-md font-medium text-[13px] cursor-pointer text-left w-full transition-all duration-200 group hover:bg-elevated hover:text-primary ${active ? 'bg-surface text-primary font-semibold shadow-sm border border-border' : 'text-secondary border border-transparent'}`}
                       title={collapsed ? item.label : undefined}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%' }}
                     >
-                      <span className="nav-item-icon">
-                        <IconComponent size={16} strokeWidth={active ? 2.2 : 1.8} />
+                      <span className="shrink-0 flex items-center justify-center w-5 h-5">
+                        <IconComponent size={16} strokeWidth={active ? 2.2 : 1.8} className={active ? "text-brand-500" : "group-hover:text-primary"} />
                       </span>
                       {!collapsed && (
                         <>
-                          <span className="nav-item-label">{item.label}</span>
-                          <span style={{ marginLeft: 'auto', display: 'flex', color: 'var(--text-tertiary)' }}>
+                          <span className="flex-1 truncate">{item.label}</span>
+                          <span className="ml-auto flex text-tertiary">
                             {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                           </span>
                         </>
@@ -223,20 +226,22 @@ export default function Sidebar({ collapsed, toggle }: SidebarProps) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`nav-item${active ? ' active' : ''}`}
+                  className={`nav-item flex items-center gap-2.5 px-3 py-2 rounded-md font-medium text-[13px] transition-all duration-200 group hover:bg-elevated hover:text-primary ${active ? 'bg-surface text-primary font-semibold shadow-sm border border-border' : 'text-secondary border border-transparent'}`}
                   title={collapsed ? item.label : undefined}
                 >
-                  <span className="nav-item-icon">
-                    <IconComponent size={16} strokeWidth={active ? 2.2 : 1.8} />
+                  <span className="shrink-0 flex items-center justify-center w-5 h-5">
+                    <IconComponent size={16} strokeWidth={active ? 2.2 : 1.8} className={active ? "text-brand-500" : "group-hover:text-primary"} />
                   </span>
-                  {!collapsed && <span className="nav-item-label">{item.label}</span>}
-                  {!collapsed && item.badge && <span className="nav-badge">{item.badge}</span>}
+                  {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
+                  {!collapsed && item.badge && <span className="px-1.5 py-px rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold shrink-0">{item.badge}</span>}
                 </Link>
               );
             })}
           </React.Fragment>
         ))}
       </nav>
+
+
 
       {/* Footer */}
       <div className="sidebar-footer">
@@ -255,3 +260,26 @@ export default function Sidebar({ collapsed, toggle }: SidebarProps) {
     </aside>
   );
 }
+
+export function SidebarDock({ collapsed }: { collapsed: boolean }) {
+  return (
+    <div className="sidebar-footer-dock">
+      <button 
+        title="AI Insights"
+        className="hover-lift"
+        style={{ width: '100%', height: '100%', background: 'var(--brand-900)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--brand-600)', fontSize: '14px' }}
+      >
+        ✨ {!collapsed && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700 }}>Insights</span>}
+      </button>
+      <div style={{ width: 1, height: '16px', background: 'var(--border)' }} />
+      <button 
+        title="Automated Flows"
+        className="hover-lift"
+        style={{ width: '100%', height: '100%', background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--brand-500)', fontSize: '14px' }}
+      >
+        ⚡ {!collapsed && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 600 }}>Flows</span>}
+      </button>
+    </div>
+  );
+}
+

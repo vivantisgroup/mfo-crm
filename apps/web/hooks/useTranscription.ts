@@ -4,13 +4,10 @@
  * Client-side hook for real-time audio transcription.
  *
  * Architecture:
- *   1. Captures mic audio with MediaRecorder API
- *   2. Every N seconds, sends audio blob as FormData to /api/copilot/transcribe
- *   3. Server route calls Groq Whisper (fast, accurate) and returns text
- *   4. Received text is emitted as a TranscriptChunk via onChunk callback
- *
- * This approach avoids loading 100MB+ browser ML models and gives
- * consistent, high-quality transcription in under 500ms per chunk.
+ *   1. Utilizes native browser Web Speech API (window.SpeechRecognition)
+ *   2. Captures audio continuously for free using Google/Microsoft's OS engine
+ *   3. Emits TranscriptChunks directly into the CRM Copilot feed.
+ *   4. Zero cost, zero API keys, true privacy mode.
  */
 
 'use client';
@@ -23,10 +20,10 @@ export type TranscriptionStatus = 'idle' | 'ready' | 'recording' | 'paused' | 'e
 
 interface UseTranscriptionOptions {
   sessionId: string;
+  tenantId: string;
   language?: string;
   onChunk:   (chunk: TranscriptChunk) => void;
-  /** How often (ms) to flush audio and transcribe. Default: 4000 */
-  chunkIntervalMs?: number;
+  chunkIntervalMs?: number; // Kept for backwards compatibility but unused
 }
 
 interface UseTranscriptionReturn {
@@ -41,34 +38,27 @@ interface UseTranscriptionReturn {
 
 export function useTranscription({
   sessionId,
-  language = 'en',
+  tenantId,
+  language = 'en-US',
   onChunk,
-  chunkIntervalMs = 4000,
 }: UseTranscriptionOptions): UseTranscriptionReturn {
   const [status,    setStatus]    = useState<TranscriptionStatus>('idle');
   const [error,     setError]     = useState<string | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
 
-  const mediaStreamRef    = useRef<MediaStream | null>(null);
-  const mediaRecorderRef  = useRef<MediaRecorder | null>(null);
-  const startTimeRef      = useRef<number>(0);
-  const intervalRef       = useRef<ReturnType<typeof setInterval> | null>(null);
-  const chunkTimerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
-  const audioChunksRef    = useRef<Blob[]>([]);
-  const chunkStartMsRef   = useRef<number>(0);
-  const processingRef     = useRef(false);
-  const activeRef         = useRef(false);  // track if we should keep cycling
-  const onChunkRef        = useRef(onChunk);
+  const recognitionRef = useRef<any>(null);
+  const startTimeRef   = useRef<number>(0);
+  const intervalRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const onChunkRef     = useRef(onChunk);
   onChunkRef.current = onChunk;
 
-  // ── Elapsed timer ──────────────────────────────────────────────────────────
-
   const startTimer = useCallback(() => {
-    startTimeRef.current = Date.now();
+    startTimeRef.current = Date.now() - elapsedMs; // Account for pauses
+    if (intervalRef.current) clearInterval(intervalRef.current);
     intervalRef.current = setInterval(() => {
       setElapsedMs(Date.now() - startTimeRef.current);
     }, 500);
-  }, []);
+  }, [elapsedMs]);
 
   const stopTimer = useCallback(() => {
     if (intervalRef.current) {
@@ -77,216 +67,139 @@ export function useTranscription({
     }
   }, []);
 
-  // ── Core: send audio blob to server for transcription ─────────────────────
+  const initRecognition = useCallback(() => {
+    if (typeof window === 'undefined') return null;
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setError('Web Speech API is not supported in this browser. Please use Chrome or Edge.');
+      return null;
+    }
 
-  const transcribeBlob = useCallback(async (blob: Blob, startMs: number) => {
-    if (processingRef.current || blob.size < 2000) return; // skip tiny/empty blobs
-    processingRef.current = true;
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = false; // Only final results to match chunking logic cleanly
+    recognition.lang = language;
 
-      try {
-        const formData = new FormData();
-        formData.append('audio', blob, 'audio.webm');
-        formData.append('language', language);
-        formData.append('sessionId', sessionId);
-        
-        try {
-          const t = JSON.parse(localStorage.getItem('mfo_active_tenant') ?? '{}');
-          if (t?.id) formData.append('tenantId', t.id);
-        } catch { /* ignore */ }
-
-        const res  = await fetch('/api/copilot/transcribe', {
-          method: 'POST',
-          body:   formData,
-        });
-
-      if (!res.ok) {
-        console.warn('[useTranscription] API error:', res.status);
-        return;
+    recognition.onresult = (event: any) => {
+      let finalTranscript = '';
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        }
       }
 
-      const { text, noApiKey } = await res.json() as { text?: string; noApiKey?: boolean };
-
-      if (noApiKey) {
-        // Show a one-time warning in the transcript feed
-        const warnChunk: TranscriptChunk = {
-          sessionId,
-          chunkId:   uuidv4(),
-          speaker:   'system' as 'seller',
-          text:      '⚠️ No transcription API key configured. Please configure your Groq API Key in Tenant Settings > AI Keys to enable live transcription.',
-          confidence: 0,
-          startMs,
-          endMs:     Date.now() - startTimeRef.current,
-          createdAt: new Date().toISOString(),
-        };
-        onChunkRef.current(warnChunk);
-        return;
-      }
-
-      if (!text || text.trim().length === 0) return; // silence / no speech
+      const txt = finalTranscript.trim();
+      if (!txt) return;
 
       const chunk: TranscriptChunk = {
         sessionId,
         chunkId:   uuidv4(),
         speaker:   'seller',
-        text:      text.trim(),
-        confidence: 0.92,
-        startMs,
+        text:      txt,
+        confidence: event.results[event.results.length - 1]?.[0]?.confidence ?? 0.95,
+        startMs:   Date.now() - startTimeRef.current - 3000, // Approx start time
         endMs:     Date.now() - startTimeRef.current,
         createdAt: new Date().toISOString(),
       };
-
+      
+      console.log("[Native Speech] Chunk Captured:", txt);
       onChunkRef.current(chunk);
-    } catch (e) {
-      console.warn('[useTranscription] transcribeBlob failed:', e);
-    } finally {
-      processingRef.current = false;
-    }
-  }, [sessionId, language]);
+    };
 
-  // ── Flush: stop current recorder, process blob, restart ───────────────────
+    recognition.onerror = (event: any) => {
+      console.error('[Native Speech] Error:', event.error);
+      if (event.error === 'not-allowed') {
+        setError('Microphone access denied.');
+        setStatus('error');
+        stopTimer();
+      }
+    };
 
-  const flushChunk = useCallback(() => {
-    const recorder = mediaRecorderRef.current;
-    const stream   = mediaStreamRef.current;
-    if (!recorder || !stream || !activeRef.current) return;
-
-    const startMs = chunkStartMsRef.current;
-    chunkStartMsRef.current = Date.now() - startTimeRef.current;
-
-    if (recorder.state === 'recording') {
-      // onstop will fire → captures audioChunksRef → calls transcribeBlob
-      recorder.stop();
-      // Restart after short pause for onstop to fire
-      setTimeout(() => {
-        if (!activeRef.current || !mediaStreamRef.current) return;
-        try {
-          const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-            ? 'audio/webm;codecs=opus'
-            : 'audio/webm';
-          const newRec = new MediaRecorder(stream, { mimeType });
-          mediaRecorderRef.current = newRec;
-          newRec.ondataavailable = (e) => {
-            if (e.data.size > 0) audioChunksRef.current.push(e.data);
-          };
-          newRec.onstop = async () => {
-            if (audioChunksRef.current.length > 0) {
-              const blob = new Blob(audioChunksRef.current, { type: newRec.mimeType });
-              audioChunksRef.current = [];
-              await transcribeBlob(blob, chunkStartMsRef.current);
-            }
-          };
-          newRec.start();
-        } catch (e) {
-          console.warn('[useTranscription] restart failed:', e);
+    recognition.onend = () => {
+      // In continuous mode, if silence forces an end, we can auto-restart if we are supposed to be recording
+      setStatus((prev) => {
+        if (prev === 'recording') {
+          try { recognition.start(); } catch {} 
+          return 'recording';
         }
-      }, 100);
-    }
+        return prev;
+      });
+    };
 
-    // Also fire transcription for whatever we have so far
-    if (audioChunksRef.current.length > 0) {
-      const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType });
-      audioChunksRef.current = [];
-      transcribeBlob(blob, startMs);
-    }
-  }, [transcribeBlob]);
-
-  // ── Start recording ───────────────────────────────────────────────────────
+    return recognition;
+  }, [language, sessionId, stopTimer]);
 
   const startRecording = useCallback(async () => {
+    setError(null);
+    setStatus('ready');
+
     try {
-      setStatus('ready');
-      setError(null);
-
+      // Prompt for Mic permission via standard getUserMedia just to be 100% sure it's allowed before triggering dictation
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      mediaStreamRef.current   = stream;
-      activeRef.current        = true;
-      chunkStartMsRef.current  = 0;
-      audioChunksRef.current   = [];
+      stream.getTracks().forEach(t => t.stop());
+    } catch (e: any) {
+      setError('Microphone access denied.');
+      setStatus('error');
+      throw e;
+    }
 
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : 'audio/webm';
-
-      const recorder = new MediaRecorder(stream, { mimeType });
-      mediaRecorderRef.current = recorder;
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
-      };
-
-      recorder.onstop = async () => {
-        // Only process if we're not cleaning up
-        if (audioChunksRef.current.length > 0) {
-          const blob = new Blob(audioChunksRef.current, { type: mimeType });
-          audioChunksRef.current = [];
-          await transcribeBlob(blob, chunkStartMsRef.current);
-        }
-      };
-
-      recorder.start();
+    const rec = initRecognition();
+    if (!rec) throw new Error('Speech recognition not supported');
+    
+    recognitionRef.current = rec;
+    
+    try {
+      rec.start();
+      setElapsedMs(0);
       startTimer();
       setStatus('recording');
-
-      // Schedule periodic flush every chunkIntervalMs
-      chunkTimerRef.current = setInterval(flushChunk, chunkIntervalMs);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Microphone access denied.';
-      setError(msg);
-      setStatus('error');
-      throw e; // re-throw so caller (handleStart) can catch and show mic error
+    } catch (e) {
+      console.warn('Recognition start failed:', e);
     }
-  }, [startTimer, flushChunk, transcribeBlob, chunkIntervalMs]);
-
-  // ── Stop recording ────────────────────────────────────────────────────────
+  }, [initRecognition, startTimer]);
 
   const stopRecording = useCallback(() => {
-    activeRef.current = false;
-
-    if (chunkTimerRef.current) {
-      clearInterval(chunkTimerRef.current);
-      chunkTimerRef.current = null;
+    if (recognitionRef.current) {
+      recognitionRef.current.onend = null; // Prevent auto-restart
+      recognitionRef.current.stop();
     }
-
-    const recorder = mediaRecorderRef.current;
-    if (recorder && recorder.state !== 'inactive') {
-      recorder.stop(); // final onstop → transcribes last chunk
-    }
-
-    mediaStreamRef.current?.getTracks().forEach(t => t.stop());
-    mediaStreamRef.current   = null;
-    mediaRecorderRef.current = null;
-
     stopTimer();
     setStatus('idle');
     setElapsedMs(0);
   }, [stopTimer]);
 
-  // ── Pause & resume ────────────────────────────────────────────────────────
-
   const pauseRecording = useCallback(() => {
-    mediaRecorderRef.current?.pause();
-    if (chunkTimerRef.current) {
-      clearInterval(chunkTimerRef.current);
-      chunkTimerRef.current = null;
+    if (recognitionRef.current) {
+      recognitionRef.current.onend = null;
+      recognitionRef.current.stop();
     }
     stopTimer();
     setStatus('paused');
   }, [stopTimer]);
 
   const resumeRecording = useCallback(() => {
-    mediaRecorderRef.current?.resume();
+    if (recognitionRef.current) {
+      recognitionRef.current.onend = () => {
+        setStatus((prev) => {
+          if (prev === 'recording') {
+            try { recognitionRef.current.start(); } catch {} 
+            return 'recording';
+          }
+          return prev;
+        });
+      };
+      try { recognitionRef.current.start(); } catch {}
+    }
     startTimer();
-    chunkTimerRef.current = setInterval(flushChunk, chunkIntervalMs);
     setStatus('recording');
-  }, [startTimer, flushChunk, chunkIntervalMs]);
-
-  // ── Cleanup on unmount ────────────────────────────────────────────────────
+  }, [startTimer]);
 
   useEffect(() => {
     return () => {
-      activeRef.current = false;
-      if (chunkTimerRef.current) clearInterval(chunkTimerRef.current);
-      mediaStreamRef.current?.getTracks().forEach(t => t.stop());
+      if (recognitionRef.current) {
+        recognitionRef.current.onend = null;
+        try { recognitionRef.current.stop(); } catch {}
+      }
       stopTimer();
     };
   }, [stopTimer]);

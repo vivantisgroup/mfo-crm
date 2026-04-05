@@ -16,6 +16,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getValidGoogleToken } from '@/lib/googleTokenRefresh';
+import { communicationService, CommunicationRecord } from '@/lib/communicationService';
+import { getAdminFirestore } from '@/lib/firebaseAdmin';
 
 const PROJECT_ID = process.env.NEXT_PUBLIC_PROJECT_ID ?? 'mfo-crm';
 
@@ -108,6 +110,8 @@ interface ContactMatch {
   familyId:   string;
   familyName: string;
   contactId?: string;
+  contactName?: string;
+  type?:      'family' | 'org';
 }
 
 async function buildContactEmailMap(idToken: string, tenantId: string): Promise<Map<string, ContactMatch>> {
@@ -120,19 +124,47 @@ async function buildContactEmailMap(idToken: string, tenantId: string): Promise<
     const f = fam.fields ?? {};
     const famId   = fam.name?.split('/').pop() ?? '';
     const famName = extractStr(f, 'name') || extractStr(f, 'familyName');
-    // Family primary email
     const primaryEmail = extractStr(f, 'email') || extractStr(f, 'primaryEmail');
-    if (primaryEmail) map.set(primaryEmail.toLowerCase(), { familyId: famId, familyName: famName });
+    if (primaryEmail) map.set(primaryEmail.toLowerCase(), { familyId: famId, familyName: famName, type: 'family' });
 
-    // Load contacts for this family
     const contacts = await fsList(idToken, `tenants/${tenantId}/families/${famId}/contacts`);
     for (const ct of contacts) {
       const c   = ct.fields ?? {};
       const ctId    = ct.name?.split('/').pop() ?? '';
       const ctEmail = extractStr(c, 'email') || extractStr(c, 'primaryEmail');
       if (ctEmail) {
-        map.set(ctEmail.toLowerCase(), { familyId: famId, familyName: famName, contactId: ctId });
+        map.set(ctEmail.toLowerCase(), { familyId: famId, familyName: famName, contactId: ctId, type: 'family' });
       }
+    }
+  }
+
+  // Pre-load org names for robust mapping even if the org has no email
+  const orgNamesMap = new Map<string, string>();
+  
+  // Load platform organizations
+  const orgs = await fsList(idToken, `platform_orgs`);
+  for (const org of orgs) {
+    const o = org.fields ?? {};
+    const orgId   = org.name?.split('/').pop() ?? '';
+    const orgName = extractStr(o, 'name');
+    orgNamesMap.set(orgId, orgName || 'Unknown Org');
+    
+    const primaryEmail = extractStr(o, 'email') || extractStr(o, 'primaryEmail');
+    if (primaryEmail) map.set(primaryEmail.toLowerCase(), { familyId: orgId, familyName: orgName, type: 'org' });
+  }
+
+  // Load platform contacts and link to orgs
+  const pContacts = await fsList(idToken, `platform_contacts`);
+  for (const ct of pContacts) {
+    const c   = ct.fields ?? {};
+    const ctId    = ct.name?.split('/').pop() ?? '';
+    const ctName  = extractStr(c, 'name');
+    const orgId   = extractStr(c, 'orgId');
+    const ctEmail = extractStr(c, 'email') || extractStr(c, 'primaryEmail');
+    
+    if (ctEmail) {
+      const orgName = orgNamesMap.get(orgId) || 'Unknown Org';
+      map.set(ctEmail.toLowerCase(), { familyId: orgId, familyName: orgName, contactId: ctId, contactName: ctName, type: 'org' });
     }
   }
 
@@ -141,25 +173,33 @@ async function buildContactEmailMap(idToken: string, tenantId: string): Promise<
 
 // ─── Get existing email IDs to deduplicate ────────────────────────────────────
 
-async function getExistingMessageIds(idToken: string, uid: string): Promise<Set<string>> {
-  const logs = await fsList(idToken, `users/${uid}/email_logs`, 500);
-  const ids  = new Set<string>();
-  for (const log of logs) {
-    const msgId = log.fields?.gmailMessageId?.stringValue;
+async function getExistingMessageIds(tenantId: string): Promise<Set<string>> {
+  const db = getAdminFirestore();
+  const snap = await db.collection('communications')
+    .where('tenant_id', '==', tenantId)
+    .where('provider', '==', 'google')
+    .limit(500)
+    .get();
+    
+  const ids = new Set<string>();
+  snap.forEach((doc: any) => {
+    const msgId = doc.data().provider_message_id;
     if (msgId) ids.add(msgId);
-  }
+  });
   return ids;
 }
 
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
+  console.log('[API ROUTE HIT] /api/mail/sync');
   try {
     const body       = await req.json();
     const uid        = body.uid        as string;
     const idToken    = body.idToken    as string;
     const tenantId   = body.tenantId   as string | undefined;
     const maxResults = body.maxResults as number ?? 50;
+    const forceRepair= body.forceRepair=== true;
 
     if (!uid || !idToken) {
       return NextResponse.json({ error: 'uid and idToken required' }, { status: 400 });
@@ -172,7 +212,9 @@ export async function POST(req: NextRequest) {
     const contactMap = tenantId ? await buildContactEmailMap(idToken, tenantId) : new Map();
 
     // 3. Get existing message IDs to avoid duplicates
-    const existingIds = await getExistingMessageIds(idToken, uid);
+    const existingIds = tenantId 
+      ? await getExistingMessageIds(tenantId) 
+      : new Set<string>();
 
     // 4. Fetch message list from Gmail — inbox and sent as SEPARATE queries
     //    (Gmail's labelIds param is an AND filter, so INBOX+SENT matches nothing useful)
@@ -207,7 +249,7 @@ export async function POST(req: NextRequest) {
 
     // 5. Fetch each message detail and write to Firestore
     for (const msg of messages) {
-      if (existingIds.has(msg.id)) continue;
+      if (!forceRepair && existingIds.has(msg.id)) continue;
 
       try {
         const detailRes = await fetch(
@@ -244,60 +286,43 @@ export async function POST(req: NextRequest) {
           if (match) break;
         }
 
-        // Write email log entry
-        const logId  = `gmail_${msg.id}`;
-        const logData = {
-          uid,
-          provider:         'google',
-          gmailMessageId:   msg.id,
-          messageId,
-          subject,
-          fromEmail,
-          fromName,
-          toEmails,
-          receivedAt,
-          direction,
-          snippet,
-          labelIds,                      // ← persist labelIds so UI filters work
-          loggedToCrm:      !!match,
-          linkedFamilyId:   match?.familyId   ?? null,
-          linkedFamilyName: match?.familyName ?? null,
-          linkedContactId:  match?.contactId  ?? null,
-          source:           'gmail_sync',
-          syncedAt:         new Date().toISOString(),
-        };
+        // Determine if it has attachments
+        let hasAttachments = false;
+        function walk(part: any) {
+          if (!part || hasAttachments) return;
+          if (part.filename && part.filename.trim() !== '') {
+             hasAttachments = true;
+             return;
+          }
+          for (const child of part.parts ?? []) walk(child);
+        }
+        walk(detail.payload);
 
-        await fsWrite(idToken, `users/${uid}/email_logs/${logId}`, logData);
+        // Dispatch the email directly into the canonical Communication Layer
+        const record: CommunicationRecord = {
+          id: `gmail_${msg.id}`,
+          tenant_id: tenantId || 'default',
+          provider: 'google',
+          type: 'email',
+          direction,
+          subject,
+          body: detail.snippet ?? '', // Default to snippet if body extraction is complex
+          snippet,
+          from: fromEmail,
+          to: toEmails,
+          timestamp: receivedAt,
+          thread_id: detail.threadId || msg.id,
+          provider_message_id: msg.id,
+          crm_entity_links: match ? [
+            { type: match.type || 'family', id: match.familyId, name: match.familyName },
+            ...(match.contactId ? [{ type: 'contact', id: match.contactId, name: match.contactName || match.familyName }] : [])
+          ] : []
+        };
+        
+        await communicationService.ingestMessage(record);
         newEmails++;
 
-        // If matched to a family + tenantId, create CRM activity
-        if (match && tenantId) {
-          const actId   = `email_${msg.id}`;
-          const actData = {
-            tenantId,
-            familyId:         match.familyId,
-            familyName:       match.familyName,
-            linkedContactId:  match.contactId ?? null,
-            activityType:     'email',
-            type:             'email',
-            direction,
-            subject,
-            fromEmail,
-            fromName,
-            toEmails,
-            snippet,
-            provider:         'google',
-            gmailMessageId:   msg.id,
-            occurredAt:       receivedAt,
-            source:           'gmail_sync',
-            createdAt:        new Date().toISOString(),
-            sentiment:        'neutral',
-          };
-          await fsWrite(idToken, `tenants/${tenantId}/activities/${actId}`, actData);
-          newActivities++;
-        }
-
-        existingIds.add(msg.id);
+        if (!existingIds.has(msg.id)) existingIds.add(msg.id);
       } catch (e: any) {
         errors.push(`msg ${msg.id}: ${e.message}`);
       }

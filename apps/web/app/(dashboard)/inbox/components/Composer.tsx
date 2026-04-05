@@ -11,11 +11,12 @@ interface Props {
   initialCc?:      string;
   replyToId?:      string;
   threadId?:       string;
+  crmLinks?:       any[];
   onClose:         () => void;
   onSent:          () => void;
 }
 
-export function Composer({ initialTo, initialSubject, initialCc, replyToId, threadId, onClose, onSent }: Props) {
+export function Composer({ initialTo, initialSubject, initialCc, replyToId, threadId, crmLinks = [], onClose, onSent }: Props) {
   const { user } = useAuth();
   const [to,      setTo]      = useState(initialTo ?? '');
   const [cc,      setCc]      = useState(initialCc ?? '');
@@ -56,6 +57,8 @@ export function Composer({ initialTo, initialSubject, initialCc, replyToId, thre
           body,
           tenantId:         tenant?.id,
           replyToMessageId: replyToId,
+          threadId:         threadId,
+          crmLinks:         crmLinks,
           attachments:      attachments.map(a => ({ name: a.name, type: a.type, data: a.data })),
         }),
       });

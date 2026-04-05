@@ -7,6 +7,7 @@ import { UserSettingsProvider } from '@/lib/UserSettingsContext';
 import { ThemeProvider } from '@/lib/ThemeContext';
 import { TaskQueueProvider } from '@/lib/TaskQueueContext';
 import { PageTitleProvider } from '@/lib/PageTitleContext';
+import { ActivityTracker } from '@/components/ActivityTracker';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -16,6 +17,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           <ThemeProvider>
             <TaskQueueProvider>
               <PageTitleProvider>
+                <ActivityTracker />
                 {children}
               </PageTitleProvider>
             </TaskQueueProvider>

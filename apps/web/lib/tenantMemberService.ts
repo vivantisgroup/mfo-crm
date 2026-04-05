@@ -73,6 +73,7 @@ export const ROLE_LABELS: Record<PlatformRole, string> = {
   account_executive:          '💼 Account Executive',
   sdr:                        '📞 SDR',
   customer_success_manager:   '🤝 Customer Success Manager',
+  data_analyst:               '📊 Data Analyst',
 };
 
 export const ROLE_DESCRIPTIONS: Record<PlatformRole, string> = {
@@ -91,13 +92,14 @@ export const ROLE_DESCRIPTIONS: Record<PlatformRole, string> = {
   account_executive:          'Own an opportunity pipeline — demos, proposals, closings, and account handoff',
   sdr:                        'Sales Development Rep — lead generation, cold outreach, and qualification',
   customer_success_manager:   'Post-sale health, onboarding, renewals, and expansion revenue',
+  data_analyst:               'Business intelligence, platform metrics, and ECharts reporting',
 };
 
 const TENANT_ROLES: PlatformRole[] = [
   'tenant_admin', 'relationship_manager', 'cio',
   'controller', 'compliance_officer', 'report_viewer', 'external_advisor',
   'sales_operations', 'business_manager',
-  'sales_manager', 'revenue_manager', 'account_executive', 'sdr', 'customer_success_manager',
+  'sales_manager', 'revenue_manager', 'account_executive', 'sdr', 'customer_success_manager', 'data_analyst',
 ];
 
 export { TENANT_ROLES };
@@ -156,6 +158,20 @@ export async function addMemberToTenant(
 
   await batch.commit();
 
+  // Auto-link to any existing CRM Contact
+  try {
+    const contactSnap = await getDocs(query(collection(db, 'platform_contacts'), where('email', '==', targetUser.email.toLowerCase())));
+    const updateBatch = writeBatch(db);
+    let count = 0;
+    contactSnap.docs.forEach(d => {
+      updateBatch.update(d.ref, { linkedUserUid: targetUser.uid });
+      count++;
+    });
+    if (count > 0) await updateBatch.commit();
+  } catch (err) {
+    console.error('Failed to auto-link CRM contact:', err);
+  }
+
   // Audit
   await audit(tenantId, performer, 'MEMBER_ADDED', targetUser.uid, 'user',
     `${targetUser.displayName} added to ${tenantName} as ${ROLE_LABELS[role]}`);
@@ -209,6 +225,20 @@ export async function addPlaceholderMember(
   batch.set(memberRef, member);
 
   await batch.commit();
+
+  // Auto-link to any existing CRM Contact
+  try {
+    const contactSnap = await getDocs(query(collection(db, 'platform_contacts'), where('email', '==', email.toLowerCase())));
+    const updateBatch = writeBatch(db);
+    let count = 0;
+    contactSnap.docs.forEach(d => {
+      updateBatch.update(d.ref, { linkedUserUid: tempUid });
+      count++;
+    });
+    if (count > 0) await updateBatch.commit();
+  } catch (err) {
+    console.error('Failed to auto-link CRM contact:', err);
+  }
 
   await audit(tenantId, performer, 'MEMBER_ADDED_PLACEHOLDER', tempUid, 'user',
     `Placeholder member ${email} added to ${tenantName} as ${ROLE_LABELS[role]}`);

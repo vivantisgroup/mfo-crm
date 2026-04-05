@@ -3,9 +3,12 @@
 import React, {
   createContext, useContext, useState, useEffect, useCallback, useRef,
 } from 'react';
-import { TASKS, TASK_QUEUES, TASK_TYPES, TIME_ENTRIES, PLATFORM_USERS } from './mockData';
+import { TASK_TYPES } from './mockData';
 import type { Task, TaskQueue, TaskType, TimeEntry, AppNotification } from './types';
 import { logAction } from './auditLog';
+import { useAuth } from './AuthContext';
+import { db } from './firebase';
+import { collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 
 // ─── Tenant config (would come from admin settings in production) ─────────────
 const DEFAULT_TIME_INTERVAL_MINUTES = 15;
@@ -27,7 +30,7 @@ interface TaskQueueCtx {
   completeTask: (taskId: string) => void;
 
   // Queue management (admin only)
-  addQueue:     (q: Omit<TaskQueue, 'id'>, actorId: string, actorName: string) => TaskQueue;
+  addQueue:     (q: Omit<TaskQueue, 'id'>, actorId: string, actorName: string) => Promise<string>;
   updateQueue:  (id: string, patch: Partial<TaskQueue>, actorId: string, actorName: string) => void;
   /** Returns task count for a queue across all statuses (open, in_progress, completed, archived) */
   queueTaskCount: (queueId: string) => number;
@@ -48,10 +51,10 @@ interface TaskQueueCtx {
   ) => void;
 
   // Time tracking
-  activeClockTaskId: string | null;
+  activeClockItem: { id: string, type: string, name: string, title?: string, startAt: number } | null;
   clockElapsedSec:   number;
-  startClock:  (taskId: string, activityType?: string) => void;
-  stopClock:   (taskId: string) => void;
+  startClock:  (entityObj: { id: string, type: string, name: string, title?: string }, activityType?: string) => void;
+  stopClock:   (notes?: string, activityType?: string) => void;
   getTaskTime: (taskId: string) => number; // total minutes logged
 
   // Notifications
@@ -75,57 +78,80 @@ function snapToInterval(minutes: number, interval = DEFAULT_TIME_INTERVAL_MINUTE
 }
 
 function makeNotifId() { return `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`; }
-function makeQueueId()  { return `q-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`; }
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function TaskQueueProvider({ children }: { children: React.ReactNode }) {
-  const [tasks,         setTasks]         = useState<Task[]>(TASKS);
-  const [queues,        setQueues]        = useState<TaskQueue[]>(TASK_QUEUES);   // now mutable
-  const [taskTypes]                        = useState<TaskType[]>(TASK_TYPES);
-  const [timeEntries,   setTimeEntries]   = useState<TimeEntry[]>(TIME_ENTRIES);
+  const { tenant, user } = useAuth();
+  
+  const [tasks,         setTasks]         = useState<Task[]>([]);
+  const [queues,        setQueues]        = useState<TaskQueue[]>([]);
+  const [taskTypes]                       = useState<TaskType[]>(TASK_TYPES);
+  const [timeEntries,   setTimeEntries]   = useState<TimeEntry[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
+  // DB Sync
+  useEffect(() => {
+    if (!tenant?.id) return;
+    
+    const usTasks = onSnapshot(collection(db, 'tenants', tenant.id, 'tasks'), snap => {
+       setTasks(snap.docs.map(d => ({id: d.id, ...d.data()}) as Task));
+    });
+    
+    // In Firestore, respect definition of queues ("task_queues")
+    const usQueues = onSnapshot(collection(db, 'tenants', tenant.id, 'task_queues'), snap => {
+       setQueues(snap.docs.map(d => ({id: d.id, ...d.data()}) as TaskQueue));
+    });
+    
+    const usTime = onSnapshot(collection(db, 'tenants', tenant.id, 'time_entries'), snap => {
+       setTimeEntries(snap.docs.map(d => ({id: d.id, ...d.data()}) as TimeEntry));
+    });
+
+    return () => { usTasks(); usQueues(); usTime(); };
+  }, [tenant?.id]);
+
   // ── Time tracking ──────────────────────────────────────────────────────────
-  const [activeClockTaskId,  setActiveClockTaskId]  = useState<string | null>(null);
-  const [activeClockStart,   setActiveClockStart]   = useState<number | null>(null);
+  const [activeClockItem,  setActiveClockItem]  = useState<{ id: string, type: string, name: string, title?: string, startAt: number } | null>(null);
   const [clockElapsedSec,    setClockElapsedSec]    = useState(0);
   const clockInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Tick live clock
   useEffect(() => {
-    if (activeClockStart === null) { setClockElapsedSec(0); return; }
+    if (!activeClockItem) { setClockElapsedSec(0); return; }
     clockInterval.current = setInterval(() => {
-      setClockElapsedSec(Math.floor((Date.now() - activeClockStart) / 1000));
+      setClockElapsedSec(Math.floor((Date.now() - activeClockItem.startAt) / 1000));
     }, 1000);
     return () => { if (clockInterval.current) clearInterval(clockInterval.current); };
-  }, [activeClockStart]);
+  }, [activeClockItem]);
 
-  const startClock = useCallback((taskId: string, _actType = 'note') => {
-    if (activeClockTaskId) stopClock(activeClockTaskId);  // auto-stop prev
-    setActiveClockTaskId(taskId);
-    setActiveClockStart(Date.now());
-  }, [activeClockTaskId]);
+  const startClock = useCallback((entityObj: { id: string, type: string, name: string, title?: string }, _actType = 'note') => {
+    if (activeClockItem) stopClock();  // auto-stop prev
+    setActiveClockItem({ ...entityObj, startAt: Date.now() });
+  }, [activeClockItem]);
 
-  const stopClock = useCallback((taskId: string) => {
-    if (!activeClockStart) return;
-    const durMin = snapToInterval((Date.now() - activeClockStart) / 60000);
-    const entry: TimeEntry = {
-      id: `te-${Date.now()}`,
-      taskId,
-      userId: 'usr-rm-001',   // current user — in production, from auth context
-      userName: 'Alexandra Torres',
-      activityType: 'note',
-      startedAt: new Date(activeClockStart).toISOString(),
+  const stopClock = useCallback((notes?: string, activityType?: string) => {
+    if (!activeClockItem || !tenant?.id || !user?.id) return;
+    const durMin = snapToInterval((Date.now() - activeClockItem.startAt) / 60000);
+    const entry = {
+      taskId: activeClockItem.type === 'task' ? activeClockItem.id : null,
+      linkedEntityId: activeClockItem.id,
+      linkedEntityType: activeClockItem.type,
+      linkedEntityName: activeClockItem.name,
+      userId: user.id,
+      userName: user.name,
+      activityType: activityType || 'executing',
+      startedAt: new Date(activeClockItem.startAt).toISOString(),
       endedAt:   new Date().toISOString(),
       durationMinutes: durMin,
+      notes: notes || activeClockItem.title || ''
     };
-    setTimeEntries(prev => [...prev, entry]);
-    setActiveClockTaskId(null);
-    setActiveClockStart(null);
+    
+    addDoc(collection(db, 'tenants', tenant.id, 'time_entries'), entry).catch(console.error);
+
+    setActiveClockItem(null);
     setClockElapsedSec(0);
     if (clockInterval.current) clearInterval(clockInterval.current);
-  }, [activeClockStart]);
+  }, [activeClockItem, tenant?.id, user?.id, user?.name]);
 
   const getTaskTime = useCallback((taskId: string) =>
     timeEntries.filter(e => e.taskId === taskId)
@@ -134,8 +160,9 @@ export function TaskQueueProvider({ children }: { children: React.ReactNode }) {
   // ── Task actions ───────────────────────────────────────────────────────────
 
   const updateTask = useCallback((id: string, patch: Partial<Task>) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
-  }, []);
+    if (!tenant?.id) return;
+    updateDoc(doc(db, 'tenants', tenant.id, 'tasks', id), patch).catch(console.error);
+  }, [tenant?.id]);
 
   const acceptTask = useCallback((taskId: string, userId: string, userName: string) => {
     updateTask(taskId, {
@@ -154,9 +181,9 @@ export function TaskQueueProvider({ children }: { children: React.ReactNode }) {
   }, [updateTask]);
 
   const completeTask = useCallback((taskId: string) => {
-    if (activeClockTaskId === taskId) stopClock(taskId);
+    if (activeClockItem?.id === taskId) stopClock();
     updateTask(taskId, { status: 'completed', completedAt: new Date().toISOString() });
-  }, [updateTask, activeClockTaskId, stopClock]);
+  }, [updateTask, activeClockItem, stopClock]);
 
   // ── Queue management ───────────────────────────────────────────────────────
 
@@ -164,26 +191,28 @@ export function TaskQueueProvider({ children }: { children: React.ReactNode }) {
     return tasks.filter(t => t.queueId === queueId).length;
   }, [tasks]);
 
-  const addQueue = useCallback((
+  const addQueue = useCallback(async (
     q: Omit<TaskQueue, 'id'>,
     actorId: string,
     actorName: string,
-  ): TaskQueue => {
-    const newQueue: TaskQueue = { ...q, id: makeQueueId() };
-    setQueues(prev => [...prev, newQueue]);
+  ): Promise<string> => {
+    if (!tenant?.id) throw new Error("No active tenant");
+    
+    const docRef = await addDoc(collection(db, 'tenants', tenant.id, 'task_queues'), q);
+    
     // Audit
     logAction({
-      tenantId:     'tenant-001',
+      tenantId:     tenant.id,
       userId:       actorId,
       userName:     actorName,
       action:       'QUEUE_CREATED',
-      resourceId:   newQueue.id,
+      resourceId:   docRef.id,
       resourceType: 'task_queue',
-      resourceName: `Queue created: "${newQueue.name}"`,
+      resourceName: `Queue created: "${q.name}"`,
       status:       'success',
     });
-    return newQueue;
-  }, []);
+    return docRef.id;
+  }, [tenant?.id]);
 
   const updateQueue = useCallback((
     id: string,
@@ -191,34 +220,39 @@ export function TaskQueueProvider({ children }: { children: React.ReactNode }) {
     actorId: string,
     actorName: string,
   ) => {
-    setQueues(prev => prev.map(q => q.id === id ? { ...q, ...patch } : q));
-    logAction({
-      tenantId:     'tenant-001',
-      userId:       actorId,
-      userName:     actorName,
-      action:       'QUEUE_UPDATED',
-      resourceId:   id,
-      resourceType: 'task_queue',
-      resourceName: `Queue updated: "${patch.name ?? id}"`,
-      status:       'success',
-    });
-  }, []);
+    if (!tenant?.id) return;
+    updateDoc(doc(db, 'tenants', tenant.id, 'task_queues', id), patch).then(() => {
+      logAction({
+        tenantId:     tenant.id,
+        userId:       actorId,
+        userName:     actorName,
+        action:       'QUEUE_UPDATED',
+        resourceId:   id,
+        resourceType: 'task_queue',
+        resourceName: `Queue updated: "${patch.name ?? id}"`,
+        status:       'success',
+      });
+    }).catch(console.error);
+  }, [tenant?.id]);
 
-  const removeEmptyQueue = useCallback((
+  const removeEmptyQueue = useCallback(async (
     queueId: string,
     actorId: string,
     actorName: string,
-    tenantId: string,
+    tenantIdParam: string,
   ) => {
+    if (!tenant?.id) return;
     const count = tasks.filter(t => t.queueId === queueId).length;
     if (count > 0) {
       console.warn('[TaskQueue] removeEmptyQueue called on non-empty queue', queueId);
       return;
     }
     const name = queues.find(q => q.id === queueId)?.name ?? queueId;
-    setQueues(prev => prev.filter(q => q.id !== queueId));
+    
+    await deleteDoc(doc(db, 'tenants', tenant.id, 'task_queues', queueId));
+    
     logAction({
-      tenantId,
+      tenantId: tenant.id,
       userId:       actorId,
       userName:     actorName,
       action:       'QUEUE_DELETED',
@@ -227,35 +261,36 @@ export function TaskQueueProvider({ children }: { children: React.ReactNode }) {
       resourceName: `Queue deleted: "${name}"`,
       status:       'success',
     });
-  }, [tasks, queues]);
+  }, [tasks, queues, tenant?.id]);
 
-  const migrateAndRemoveQueue = useCallback((
+  const migrateAndRemoveQueue = useCallback(async (
     fromQueueId: string,
     toQueueId:   string,
     actorId:     string,
     actorName:   string,
-    tenantId:    string,
+    tenantIdParam:    string,
   ) => {
+    if (!tenant?.id) return;
     const affected = tasks.filter(t => t.queueId === fromQueueId);
     if (affected.length === 0) {
-      removeEmptyQueue(fromQueueId, actorId, actorName, tenantId);
+      removeEmptyQueue(fromQueueId, actorId, actorName, tenant?.id);
       return;
     }
 
     // Migrate tasks
-    setTasks(prev => prev.map(t =>
-      t.queueId === fromQueueId ? { ...t, queueId: toQueueId } : t
-    ));
+    for (const t of affected) {
+      await updateDoc(doc(db, 'tenants', tenant.id, 'tasks', t.id), { queueId: toQueueId });
+    }
 
     const fromName = queues.find(q => q.id === fromQueueId)?.name ?? fromQueueId;
     const toName   = queues.find(q => q.id === toQueueId)?.name   ?? toQueueId;
 
     // Remove queue
-    setQueues(prev => prev.filter(q => q.id !== fromQueueId));
+    await deleteDoc(doc(db, 'tenants', tenant.id, 'task_queues', fromQueueId));
 
     // Audit — one log entry for the whole operation
     logAction({
-      tenantId,
+      tenantId: tenant.id,
       userId:       actorId,
       userName:     actorName,
       action:       'QUEUE_MIGRATED_AND_DELETED',
@@ -264,7 +299,7 @@ export function TaskQueueProvider({ children }: { children: React.ReactNode }) {
       resourceName: `Migrated ${affected.length} task(s) from "${fromName}" → "${toName}", then deleted "${fromName}"`,
       status:       'success',
     });
-  }, [tasks, queues, removeEmptyQueue]);
+  }, [tasks, queues, removeEmptyQueue, tenant?.id]);
 
   // ── Notifications ──────────────────────────────────────────────────────────
 
@@ -287,77 +322,17 @@ export function TaskQueueProvider({ children }: { children: React.ReactNode }) {
 
   const acceptNotification = useCallback((id: string) => {
     const notif = notifications.find(n => n.id === id);
-    if (notif?.taskId) acceptTask(notif.taskId, 'usr-rm-001', 'Alexandra Torres');
+    if (notif?.taskId && user) acceptTask(notif.taskId, user.id, user.name);
     setNotifications(prev => prev.map(n =>
       n.id === id ? { ...n, readAt: new Date().toISOString() } : n));
-  }, [notifications, acceptTask]);
+  }, [notifications, acceptTask, user]);
 
   const clearAllNotifications = useCallback(() => {
     setNotifications(prev => prev.map(n => ({ ...n, dismissedAt: new Date().toISOString() })));
   }, []);
 
-  // ── SLA watcher — runs every 60s and emits notifications for breaches ──────
-  useEffect(() => {
-    const check = () => {
-      const now = Date.now();
-      tasks.forEach(task => {
-        if (task.status === 'completed' || task.status === 'cancelled') return;
-        const queue     = queues.find(q => q.id === task.queueId);
-        const taskType  = taskTypes.find(t => t.id === task.taskTypeId);
-        const createdMs = new Date(task.createdAt).getTime();
-
-        // Assignment SLA
-        if (!task.assignedUserId && queue) {
-          const ageMin = (now - createdMs) / 60000;
-          if (ageMin > queue.assignSlaMinutes && !task.slaBreached) {
-            updateTask(task.id, { slaBreached: true, slaBreachMinutes: Math.round(ageMin - queue.assignSlaMinutes) });
-            addNotification({
-              type: 'sla_assign_breach',
-              title: `⚠ Unassigned SLA Breach — ${queue.name}`,
-              body: `"${task.title}" for ${task.familyName} has not been picked up (${Math.round(ageMin)} min).`,
-              taskId: task.id, queueId: queue.id, familyId: task.familyId,
-              severity: 'critical',
-            });
-          }
-        }
-
-        // Completion SLA
-        if (task.dueDate && taskType) {
-          const dueMs = new Date(task.dueDate).getTime();
-          if (now > dueMs && !task.slaBreached) {
-            updateTask(task.id, { slaBreached: true });
-            addNotification({
-              type: 'sla_completion_breach',
-              title: `⚠ Overdue — ${taskType.name}`,
-              body: `"${task.title}" for ${task.familyName} passed its due date.`,
-              taskId: task.id, familyId: task.familyId,
-              severity: 'critical',
-            });
-          }
-        }
-      });
-    };
-
-    // Seed initial breaches from mock data
-    tasks.filter(t => t.slaBreached && !t.assignedUserId).forEach(t => {
-      const q = queues.find(q => q.id === t.queueId);
-      if (!q) return;
-      const already = notifications.some(n => n.taskId === t.id && n.type === 'sla_assign_breach');
-      if (!already) {
-        addNotification({
-          type: 'sla_assign_breach',
-          title: `⚠ Unassigned SLA Breach — ${q.name}`,
-          body: `"${t.title}" for ${t.familyName} (${t.slaBreachMinutes} min over SLA).`,
-          taskId: t.id, queueId: q.id, familyId: t.familyId, severity: 'critical',
-        });
-      }
-    });
-
-    const interval = setInterval(check, 60_000);
-    return () => clearInterval(interval);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, queues, taskTypes]);
-
+  // ── MLA watcher skipped in production for remote CF/Firestore Triggers, keeping local shim for notifications ─
+  
   // ── Analytics ──────────────────────────────────────────────────────────────
 
   const getTimeByFamily = useCallback(() => {
@@ -397,7 +372,7 @@ export function TaskQueueProvider({ children }: { children: React.ReactNode }) {
       updateTask, acceptTask, completeTask,
       addQueue, updateQueue, queueTaskCount,
       removeEmptyQueue, migrateAndRemoveQueue,
-      activeClockTaskId, clockElapsedSec, startClock, stopClock, getTaskTime,
+      activeClockItem, clockElapsedSec, startClock, stopClock, getTaskTime,
       dismissNotification, openNotification, acceptNotification, clearAllNotifications,
       getTimeByFamily, getTimeByUser, getTimeByActivity,
     }}>

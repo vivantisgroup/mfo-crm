@@ -1,12 +1,32 @@
 'use client';
 
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { Search } from 'lucide-react';
+import { LayoutDashboard, Layers, List, BarChart2 } from 'lucide-react';
+import { SecondaryDock, type SecondaryDockTab } from '@/components/SecondaryDock';
 import { useTaskQueue } from '@/lib/TaskQueueContext';
 import { TASK_TYPES } from '@/lib/mockData';
 import { StatusBadge } from '@/components/StatusBadge';
 import type { Task } from '@/lib/types';
 import { LiveModeGate, TasksEmptyState } from '@/components/LiveModeGate';
 import { CommunicationPanel } from '@/components/CommunicationPanel';
+import ReactECharts from 'echarts-for-react';
+import { usePageTitle } from '@/lib/PageTitleContext';
+import { useAuth } from '@/lib/AuthContext';
+import { getTenantMembers } from '@/lib/tenantMemberService';
+import { getAllOrgs } from '@/lib/crmService';
+import { getEmployees } from '@/lib/hrService';
+
+function useIsPlatform() {
+  const [isPlatform, setIsPlatform] = useState(false);
+  useEffect(() => {
+    try {
+      const t = JSON.parse(localStorage.getItem('mfo_active_tenant') ?? '{}');
+      if (t?.id === 'platform') setIsPlatform(true);
+    } catch { /* ignore */ }
+  }, []);
+  return isPlatform;
+}
 
 // ─── Sort helpers ─────────────────────────────────────────────────────────────
 
@@ -238,42 +258,10 @@ function TaskCard({ task, draggable, onClick, onDragStart, onDragEnd }: {
   );
 }
 
-// ─── Mini Bar Chart ───────────────────────────────────────────────────────────
-
-function BarChart({ data, colorFn }: {
-  data: { label: string; value: number; sublabel?: string }[];
-  colorFn?: (i: number) => string;
-}) {
-  const max = Math.max(...data.map(d => d.value), 1);
-  const COLORS = ['#6366f1', '#22d3ee', '#f59e0b', '#34d399', '#a78bfa', '#f87171'];
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {data.map((d, i) => (
-        <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 100, fontSize: 11, color: 'var(--text-secondary)', textAlign: 'right', flexShrink: 0, lineHeight: 1.2 }}>
-            {d.label}{d.sublabel && <div style={{ fontSize: 10, opacity: 0.6 }}>{d.sublabel}</div>}
-          </div>
-          <div style={{ flex: 1, height: 22, background: 'var(--bg-elevated)', borderRadius: 4, position: 'relative', overflow: 'hidden' }}>
-            <div style={{
-              width: `${(d.value / max) * 100}%`, height: '100%',
-              background: colorFn ? colorFn(i) : COLORS[i % COLORS.length],
-              borderRadius: 4,
-              transition: 'width 0.6s cubic-bezier(0.16,1,0.3,1)',
-              opacity: 0.85,
-            }} />
-          </div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', width: 40, textAlign: 'right', flexShrink: 0 }}>
-            {fmt(d.value)}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // ─── Analytics View ───────────────────────────────────────────────────────────
 
 function AnalyticsView() {
+  const isPlatform = useIsPlatform();
   const { getTimeByFamily, getTimeByUser, getTimeByActivity, tasks, queues, timeEntries } = useTaskQueue();
   const byFamily   = getTimeByFamily();
   const byUser     = getTimeByUser();
@@ -289,6 +277,60 @@ function AnalyticsView() {
   const ACTIVITY_LABELS: Record<string, string> = {
     email: 'Email', call: 'Call', meeting: 'Meeting', note: 'Research / Notes',
     task_completed: 'Task Completed', document_shared: 'Document', capital_call: 'Capital Call',
+  };
+
+  // ECharts Configurations
+  const familyOptions = {
+    tooltip: { trigger: 'item', formatter: '{b}: {c} mins' },
+    series: [{
+      type: 'treemap',
+      roam: false,
+      nodeClick: false,
+      breadcrumb: { show: false },
+      data: byFamily.map(f => ({ name: f.familyName, value: f.minutes, itemStyle: { color: f.minutes > 60 ? '#6366f1' : '#10b981' } })),
+    }]
+  };
+
+  const userBarOptions = {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+    xAxis: { type: 'value', name: 'Minutes' },
+    yAxis: { type: 'category', data: byUser.map(u => u.userName) },
+    series: [{
+      name: 'Time Logged',
+      type: 'bar',
+      data: byUser.map(u => u.minutes),
+      itemStyle: { color: '#8b5cf6', borderRadius: [0, 4, 4, 0] }
+    }]
+  };
+
+  const activityPieOptions = {
+    tooltip: { trigger: 'item', formatter: '{b}: {c} mins ({d}%)' },
+    legend: { bottom: '0%', left: 'center' },
+    series: [{
+      name: 'Activity',
+      type: 'pie',
+      radius: ['40%', '70%'],
+      avoidLabelOverlap: false,
+      itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 },
+      label: { show: false, position: 'center' },
+      emphasis: { label: { show: true, fontSize: 16, fontWeight: 'bold' } },
+      labelLine: { show: false },
+      data: byActivity.map(a => ({ name: ACTIVITY_LABELS[a.activityType] ?? a.activityType, value: a.minutes }))
+    }]
+  };
+
+  const queueLoadOptions = {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+    xAxis: { type: 'category', data: queueLoad.map(q => q.label) },
+    yAxis: { type: 'value', name: 'Open Tasks' },
+    series: [{
+      name: 'Tasks',
+      type: 'bar',
+      data: queueLoad.map(q => ({ value: q.value, itemStyle: { color: q.color } })),
+      itemStyle: { borderRadius: [4, 4, 0, 0] }
+    }]
   };
 
   return (
@@ -307,7 +349,7 @@ function AnalyticsView() {
             borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)',
           }}>
             <div style={{ fontSize: 22, marginBottom: 6 }}>{kpi.icon}</div>
-            <div style={{ fontSize: 24, fontWeight: 800, color: kpi.alert && Number(kpi.value) > 0 ? '#ef4444' : 'var(--text-primary)' }}>
+            <div style={{ fontSize: 24, fontWeight: 800, color: kpi.alert && Number(kpi.value.toString().replace(/[^0-9.-]+/g,"")) > 0 ? '#ef4444' : 'var(--text-primary)' }}>
               {kpi.value}
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{kpi.label}</div>
@@ -317,38 +359,35 @@ function AnalyticsView() {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 24, boxShadow: 'var(--shadow-sm)' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 20 }}>⏱ Time by Family</div>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 20 }}>⏱ Time by {isPlatform ? 'Entity' : 'Family'}</div>
           {byFamily.length === 0 ? (
-            <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>No time logged yet</div>
+            <div style={{ color: 'var(--text-tertiary)', fontSize: 13, height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-canvas)', borderRadius: 8 }}>No time logged yet</div>
           ) : (
-            <BarChart data={byFamily.map(f => ({ label: f.familyName, value: f.minutes }))} />
+            <ReactECharts option={familyOptions} style={{ height: '300px' }} />
           )}
         </div>
 
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 24, boxShadow: 'var(--shadow-sm)' }}>
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 20 }}>👤 Time by Team Member</div>
           {byUser.length === 0 ? (
-            <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>No time logged yet</div>
+            <div style={{ color: 'var(--text-tertiary)', fontSize: 13, height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-canvas)', borderRadius: 8 }}>No time logged yet</div>
           ) : (
-            <BarChart data={byUser.map(u => ({ label: u.userName.split(' ')[0], sublabel: u.userName.split(' ')[1], value: u.minutes }))} />
+            <ReactECharts option={userBarOptions} style={{ height: '300px' }} />
           )}
         </div>
 
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 24, boxShadow: 'var(--shadow-sm)' }}>
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 20 }}>🗂 Time by Activity Type</div>
           {byActivity.length === 0 ? (
-            <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>No time logged yet</div>
+            <div style={{ color: 'var(--text-tertiary)', fontSize: 13, height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-canvas)', borderRadius: 8 }}>No time logged yet</div>
           ) : (
-            <BarChart data={byActivity.map(a => ({ label: ACTIVITY_LABELS[a.activityType] ?? a.activityType, value: a.minutes }))} />
+            <ReactECharts option={activityPieOptions} style={{ height: '300px' }} />
           )}
         </div>
 
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 24, boxShadow: 'var(--shadow-sm)' }}>
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 20 }}>📋 Open Tasks by Queue</div>
-          <BarChart
-            data={queueLoad.map(q => ({ label: q.label, value: q.value }))}
-            colorFn={i => queueLoad[i]?.color ?? '#6366f1'}
-          />
+          <ReactECharts option={queueLoadOptions} style={{ height: '300px' }} />
         </div>
       </div>
     </div>
@@ -607,6 +646,7 @@ function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
 }
 
 function ListView({ tasks: allTasks, onSelectTask }: { tasks: Task[]; onSelectTask: (task: Task) => void }) {
+  const isPlatform = useIsPlatform();
   const { queues, getTaskTime } = useTaskQueue();
 
   // ── Column sort state ──────────────────────────────────────────────────────
@@ -827,7 +867,7 @@ function ListView({ tasks: allTasks, onSelectTask }: { tasks: Task[]; onSelectTa
               {sh('title',    'Task')}
               {sh('queue',    'Queue')}
               {sh('assignee', 'Assignee')}
-              {sh('family',   'Family')}
+              {sh('family',   isPlatform ? 'Entity' : 'Family')}
               {sh('priority', 'Priority')}
               {sh('due',      'Due Date')}
               {sh('time',     'Time Logged')}
@@ -944,20 +984,144 @@ function ListView({ tasks: allTasks, onSelectTask }: { tasks: Task[]; onSelectTa
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+function TaskDropdowns({ task }: { task: Task }) {
+  const isPlatform = useIsPlatform();
+  const { tenant } = useAuth();
+  const { updateTask } = useTaskQueue();
+  
+  const [members, setMembers] = useState<{ id: string; name: string }[]>([]);
+  const [families, setFamilies] = useState<{ id: string; name: string }[]>([]);
+  const [employees, setEmployees] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    if (!tenant?.id) return;
+    
+    // Fetch members (Tenant members)
+    getTenantMembers(tenant.id).then(res => {
+      setMembers(res.map(r => ({ id: r.uid, name: r.displayName || r.email })));
+    }).catch(console.error);
+
+    // Fetch HR employees
+    getEmployees().then(res => {
+      setEmployees(res.map(r => ({ id: r.id, name: r.name })));
+    }).catch(console.error);
+
+    // Fetch platform orgs/families
+    if (isPlatform) {
+      getAllOrgs().then(res => {
+        setFamilies(res.map(r => ({ id: r.id, name: r.name })));
+      }).catch(console.error);
+    } else {
+      // Stub: in real non-platform tenants we'd fetch from their specific family service
+      // For now, allow dynamic switching if possible
+    }
+  }, [tenant?.id, isPlatform]);
+
+  const selectStyle: React.CSSProperties = {
+    padding: '6px 10px', borderRadius: 'var(--radius-md)',
+    background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+    color: 'var(--text-primary)', fontSize: 12, cursor: 'pointer',
+    width: '100%'
+  };
+
+  const handleAssigneeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    if (!val) {
+      updateTask(task.id, { assignedUserId: '', assignedUserName: '', assignedTo: '' });
+      return;
+    }
+    // Attempt to match from members, then employees
+    const mem = members.find(m => m.id === val);
+    if (mem) {
+      updateTask(task.id, { assignedUserId: mem.id, assignedUserName: mem.name, assignedTo: mem.name });
+      return;
+    }
+    const emp = employees.find(ep => ep.id === val);
+    if (emp) {
+      updateTask(task.id, { assignedUserId: emp.id, assignedUserName: emp.name, assignedTo: emp.name });
+    }
+  };
+
+  const handleFamilyChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    const fam = families.find(f => f.id === val);
+    if (fam) {
+      updateTask(task.id, { familyId: fam.id, familyName: fam.name });
+    }
+  };
+
+  const handleDueDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    updateTask(task.id, { dueDate: e.target.value ? new Date(e.target.value).toISOString() : '' });
+  };
+
+  return (
+    <>
+      <div>
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+          {isPlatform ? 'Entity' : 'Family'}
+        </span>
+        {isPlatform && families.length > 0 ? (
+           <select style={selectStyle} value={task.familyId || ''} onChange={handleFamilyChange}>
+             <option value="">-- Select {isPlatform ? 'Entity' : 'Family'} --</option>
+             {families.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+           </select>
+        ) : (
+           <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--brand-400)' }}>{task.familyName}</span>
+        )}
+      </div>
+      <div>
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Assignee</span>
+        <select style={selectStyle} value={task.assignedUserId || task.assignedUserName || ''} onChange={handleAssigneeChange}>
+          <option value="">Unassigned</option>
+          {members.length > 0 && (
+            <optgroup label="Tenant Members">
+              {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </optgroup>
+          )}
+          {employees.length > 0 && (
+            <optgroup label="Employees (HR)">
+              {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </optgroup>
+          )}
+          {/* Fallback if assigned user is not in our loaded lists */}
+          {task.assignedUserName && !members.some(m => m.id === task.assignedUserId) && !employees.some(e => e.id === task.assignedUserId) && (
+            <option value={task.assignedUserId || task.assignedUserName}>{task.assignedUserName}</option>
+          )}
+        </select>
+      </div>
+      <div>
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Due Date</span>
+        <input 
+          type="date" 
+          style={selectStyle} 
+          value={task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 10) : ''} 
+          onChange={handleDueDateChange} 
+        />
+      </div>
+    </>
+  );
+}
+
 function TaskDetailView({ task, onClose }: { task: Task; onClose: () => void }) {
+  const isPlatform = useIsPlatform();
   const { queues } = useTaskQueue();
   const q = queues.find(x => x.id === task.queueId);
   const taskType = TASK_TYPES.find(t => t.id === task.taskTypeId);
+  
+  const { setTitle } = usePageTitle();
+  
+  useEffect(() => {
+    setTitle('Workflows', '', [
+      { label: 'Queues', onClick: onClose },
+      { label: task.title }
+    ]);
+    return () => {
+      setTitle('Workflows', '', []);
+    };
+  }, [task.title, onClose, setTitle]);
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* ── Breadcrumb Header ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, fontSize: 13, color: 'var(--text-tertiary)', fontWeight: 600 }}>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--brand-400)', cursor: 'pointer', padding: 0, fontWeight: 600 }}>Queues</button>
-        <span>/</span>
-        <span style={{ color: 'var(--text-primary)' }}>{task.title}</span>
-      </div>
-
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 400px', gap: 24, flex: 1, minHeight: 0 }}>
         {/* Left Col: Task Details */}
         <div style={{ paddingRight: 8, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -989,18 +1153,7 @@ function TaskDetailView({ task, onClose }: { task: Task; onClose: () => void }) 
           <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 20 }}>
             <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: 'var(--text-secondary)' }}>Details</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 24px' }}>
-              <div>
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Family</span>
-                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--brand-400)' }}>{task.familyName}</span>
-              </div>
-              <div>
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Assignee</span>
-                <span style={{ fontSize: 14, fontWeight: 500 }}>{task.assignedUserName || 'Unassigned'}</span>
-              </div>
-              <div>
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Due Date</span>
-                <span style={{ fontSize: 14, fontWeight: 500 }}>{task.dueDate ? new Date(task.dueDate).toLocaleDateString() : '—'}</span>
-              </div>
+              <TaskDropdowns task={task} />
               <div>
                 <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Created</span>
                 <span style={{ fontSize: 14, fontWeight: 500 }}>{new Date(task.createdAt).toLocaleDateString()}</span>
@@ -1028,6 +1181,8 @@ function TaskDetailView({ task, onClose }: { task: Task; onClose: () => void }) 
 type ViewMode = 'board' | 'queue' | 'list' | 'analytics';
 
 export default function TasksPage() {
+  const { setTitle } = usePageTitle();
+  const isPlatform = useIsPlatform();
   const { tasks, queues } = useTaskQueue();
 
   const [view,           setView]           = useState<ViewMode>('board');
@@ -1058,55 +1213,51 @@ export default function TasksPage() {
   const families    = [...new Set(tasks.map(t => t.familyName))];
 
   const hasGlobalFilters = search || familyFilter !== 'All' || queueFilter !== 'All' || priorityFilter !== 'All';
+  const MAIN_TABS: SecondaryDockTab[] = [
+    { id: 'board', label: 'Board', icon: LayoutDashboard },
+    { id: 'queue', label: 'Queues', icon: Layers },
+    { id: 'list', label: 'List', icon: List },
+    { id: 'analytics', label: 'Analytics', icon: BarChart2 },
+  ];
+
+  useEffect(() => {
+    if (!selectedTask) {
+      setTitle('Workflows', 'Task Queues', undefined);
+    }
+  }, [setTitle, selectedTask]);
 
   // Views — Board & Queue get priority-sorted list; List manages its own sort
   if (selectedTask) {
     return (
-      <LiveModeGate emptyState={<TasksEmptyState />}>
-        <div className="page animate-fade-in" style={{ maxWidth: 1440, margin: '0 auto', height: 'calc(100vh - 84px)' }}>
+      <LiveModeGate emptyState={<TasksEmptyState />} hasLiveData={tasks.length > 0}>
+        <div className="flex flex-col absolute inset-0 overflow-y-auto bg-canvas z-0">
+          <div className="page animate-fade-in" style={{ maxWidth: 1440, margin: '0 auto', paddingBottom: 60 }}>
           <TaskDetailView task={selectedTask} onClose={() => setSelectedTask(null)} />
         </div>
+      </div>
       </LiveModeGate>
     );
   }
 
   return (
-    <LiveModeGate emptyState={<TasksEmptyState />}>
-    <div className="page animate-fade-in" style={{ maxWidth: 1440, margin: '0 auto' }}>
-      {/* Header */}
-      <div style={{ marginBottom: 28, paddingBottom: 20, borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-0.02em', color: 'var(--text-primary)', margin: 0 }}>
-            Workflows & <span style={{ color: 'var(--brand-400)' }}>Task Queues</span>
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginTop: 4 }}>
-            {tasks.filter(t => t.status !== 'completed').length} active
+    <LiveModeGate emptyState={<TasksEmptyState />} hasLiveData={tasks.length > 0}>
+    <div className="flex flex-col absolute inset-0 overflow-hidden bg-canvas z-0">
+      <SecondaryDock tabs={MAIN_TABS as any} activeTab={view} onTabChange={setView as any} />
+      <main className="flex-1 flex flex-col min-h-0 relative animate-fade-in px-4 lg:px-8 pt-6 pb-12 overflow-y-auto w-full">
+        {/* Page Header Actions / Stats */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+            {tasks.filter(t => t.status !== 'completed').length} active tasks
             {unassigned > 0 && <> · <span style={{ color: '#f59e0b', fontWeight: 600 }}>{unassigned} unassigned</span></>}
             {breachCount > 0 && <> · <span style={{ color: '#ef4444', fontWeight: 600 }}>⚠ {breachCount} SLA breach{breachCount !== 1 ? 'es' : ''}</span></>}
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <div style={{ display: 'flex', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: 2 }}>
-            {([['board','Board','📋'],['queue','Queues','🗂'],['list','List','☰'],['analytics','Analytics','📊']] as const).map(([id, label, icon]) => (
-              <button
-                key={id}
-                onClick={() => setView(id)}
-                className={`btn btn-sm ${view === id ? 'btn-secondary' : 'btn-ghost'}`}
-                style={{ border: 'none', fontSize: 12, gap: 4, boxShadow: view === id ? 'var(--shadow-sm)' : 'none' }}
-              >
-                {icon} {label}
-              </button>
-            ))}
           </div>
           <button className="btn btn-primary" style={{ fontSize: 13 }}>+ New Task</button>
         </div>
-      </div>
 
-      {/* Global filter bar (shared across board / queue / list) */}
       {view !== 'analytics' && (
         <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
           <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
-            <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', fontSize: 13, pointerEvents: 'none' }}>🔍</span>
+            <Search size={16} className="text-tertiary shrink-0" />
             <input
               type="text" value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Search tasks…"
@@ -1114,17 +1265,17 @@ export default function TasksPage() {
             />
           </div>
           {[
-            { value: familyFilter,   onChange: setFamilyFilter,   opts: ['All', ...families],                  label: 'All Families',  lbl: (v: string) => v },
+            { value: familyFilter,   onChange: setFamilyFilter,   opts: ['All', ...families],                  label: isPlatform ? 'All Entities' : 'All Families',  lbl: (v: string) => v },
             { value: queueFilter,    onChange: setQueueFilter,    opts: ['All', ...queues.map(q => q.id)],     label: 'All Queues',    lbl: (v: string) => queues.find(q => q.id === v)?.name ?? v },
             { value: priorityFilter, onChange: setPriorityFilter, opts: ['All', 'urgent', 'high', 'normal', 'low'], label: 'All Priorities', lbl: (v: string) => v },
           ].map((f, i) => (
             <select
-              key={i} value={f.value}
+              key={f.label} value={f.value}
               onChange={e => f.onChange(e.target.value)}
               style={{ padding: '8px 10px', borderRadius: 'var(--radius-md)', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', fontSize: 13, cursor: 'pointer' }}
             >
-              {f.opts.map(o => (
-                <option key={o} value={o}>{o === 'All' ? f.label : f.lbl(o)}</option>
+              {f.opts.map((o, idx) => (
+                <option key={`${o}-${idx}`} value={o}>{o === 'All' ? f.label : f.lbl(o)}</option>
               ))}
             </select>
           ))}
@@ -1143,6 +1294,7 @@ export default function TasksPage() {
       {view === 'queue'     && <QueueView     tasks={filteredSorted} onSelectTask={setSelectedTask} />}
       {view === 'list'      && <ListView      tasks={filtered} onSelectTask={setSelectedTask} />}
       {view === 'analytics' && <AnalyticsView />}
+      </main>
     </div>
     </LiveModeGate>
   );

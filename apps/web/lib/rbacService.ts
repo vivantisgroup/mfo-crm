@@ -271,6 +271,23 @@ export const ROLE_PERMISSIONS: Record<PlatformRole, Permission[]> = {
     'admin:settings',
   ],
 
+  data_analyst: [
+    // Full data access for analytics
+    'families:read','families:export',
+    'contacts:read',
+    'activities:read',
+    'tasks:read',
+    'calendar:read',
+    'portfolio:read','portfolio:export',
+    'documents:read',
+    // Full reporting — this is the core function
+    'reports:read','reports:generate','reports:export','reports:distribute',
+    // Governance + compliance read
+    'governance:read',
+    'compliance:read','suitability:read',
+    'audit:read','audit:export',
+  ],
+
   account_executive: [
     // Own CRM records
     'families:read','families:write','families:export',

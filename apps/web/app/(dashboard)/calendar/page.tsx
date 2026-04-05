@@ -1,94 +1,101 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { usePageTitle } from '@/lib/PageTitleContext';
+import { useAuth } from '@/lib/AuthContext';
+import { getAllMailConnections } from '@/lib/emailIntegrationService';
+import useSWR from 'swr';
 
 import { 
-  format, 
-  addMonths, 
-  subMonths, 
-  startOfMonth, 
-  endOfMonth, 
-  startOfWeek, 
-  endOfWeek, 
-  isSameMonth, 
-  isSameDay, 
-  addDays, 
-  eachDayOfInterval,
-  parseISO
+  format, addMonths, subMonths, startOfMonth, endOfMonth, 
+  startOfWeek, endOfWeek, isSameMonth, isSameDay, eachDayOfInterval
 } from 'date-fns';
-import { useTranslation } from '@/lib/i18n/context';
 import { TASKS, ACTIVITIES, GOVERNANCE_MEETINGS, SERVICE_REQUESTS } from '@/lib/mockData';
-import { Cloud, RefreshCw, ChevronLeft, ChevronRight, Mail, Calendar as CalendarIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Mail, Plus, RefreshCcw, AlertCircle } from 'lucide-react';
+import { Card, Badge, Title, Text, Button } from '@tremor/react';
+
+// Import our new advanced composer
+import EventComposer from './components/EventComposer';
 
 const EVENT_COLORS = {
   task:       { bg: 'rgba(99,102,241,0.12)',  border: '#6366f1',  dot: '#6366f1'  },
   activity:   { bg: 'rgba(16,185,129,0.12)',  border: '#10b981',  dot: '#10b981'  },
   governance: { bg: 'rgba(167,139,250,0.12)', border: '#a78bfa',  dot: '#a78bfa'  },
   concierge:  { bg: 'rgba(245,158,11,0.12)',  border: '#f59e0b',  dot: '#f59e0b'  },
+  calendar:   { bg: 'rgba(59,130,246,0.12)',  border: '#3b82f6',  dot: '#3b82f6'  }, // For Google/MS events
 };
 
-export default function CalendarPage() {
-  const { t, language } = useTranslation();
-  usePageTitle('Calendar');
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [isSyncing, setIsSyncing]     = useState(false);
-  const [activeSync, setActiveSync]   = useState<'outlook' | 'google' | null>('outlook');
-  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
+const fetcher = (url: string) => fetch(url).then(r => {
+  if (!r.ok) throw new Error('Failed to fetch');
+  return r.json();
+});
 
-  // Consolidate all event-like items
+export default function CalendarPage() {
+  usePageTitle('Calendar');
+  const { user, firebaseUser } = useAuth();
+  
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [activeProvider, setActiveProvider] = useState<'microsoft' | 'google' | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<any>(null);
+
+  // Composer State
+  const [isComposerOpen, setIsComposerOpen] = useState(false);
+  const [composerDate, setComposerDate] = useState<Date>(new Date());
+  const [eventToEdit, setEventToEdit] = useState<any>(null);
+
+  // Discover active provider integration
+  useEffect(() => {
+    if (user) {
+      getAllMailConnections(user.uid).then(conns => {
+         setConnectionStatus(conns);
+         if (conns.microsoft) setActiveProvider('microsoft');
+         else if (conns.google) setActiveProvider('google');
+      });
+    }
+  }, [user]);
+
+  // Fetch true calendar items based on provider
+  // We use SWR so when composer saves, we just call mutate
+  const [idToken, setIdToken] = useState<string>('');
+  useEffect(() => {
+     firebaseUser?.getIdToken().then(setIdToken);
+  }, [firebaseUser]);
+
+  const apiQuery = user && idToken && activeProvider 
+    ? `/api/calendar/list?uid=${user.uid}&idToken=${idToken}&provider=${activeProvider}`
+    : null;
+    
+  const { data: calData, mutate, isValidating } = useSWR(apiQuery, fetcher, { revalidateOnFocus: false });
+
+  // Consolidate CRM Mock events & Real Sync Database events into one Unified View
   const events = useMemo(() => {
     const all: any[] = [];
 
-    TASKS.forEach(task => {
-      all.push({
-        id: `task-${task.id}`,
-        title: task.title,
-        date: parseISO(task.dueDate || new Date().toISOString()),
-        type: 'task',
-        priority: task.priority,
-        familyName: task.familyName,
-      });
-    });
+    // Map fetched Live Calendar events
+    if (calData && calData.events) {
+       calData.events.forEach((ev: any) => {
+          all.push({
+             ...ev,
+             date: new Date(ev.start),
+             type: 'calendar',
+          });
+       });
+    }
 
+    // Include some CRM events 
+    TASKS.forEach(task => {
+      all.push({ id: `task-${task.id}`, title: task.title, date: new Date(task.dueDate || new Date()), type: 'task', priority: task.priority, familyName: task.familyName });
+    });
     ACTIVITIES.forEach(act => {
       if (act.activityType === 'meeting' || act.activityType === 'call') {
-        all.push({
-          id: `act-${act.id}`,
-          title: act.subject,
-          date: parseISO(act.occurredAt || new Date().toISOString()),
-          type: 'activity',
-          subType: act.activityType,
-          familyName: act.familyName,
-        });
+        all.push({ id: `act-${act.id}`, title: act.subject, date: new Date(act.occurredAt || new Date()), type: 'activity', subType: act.activityType, familyName: act.familyName });
       }
     });
 
-    GOVERNANCE_MEETINGS.forEach(meet => {
-      all.push({
-        id: `gov-${meet.id}`,
-        title: meet.governanceName,
-        date: parseISO(meet.meetingDate),
-        type: 'governance',
-        familyName: meet.familyName,
-      });
-    });
+    return all.sort((a,b) => a.date.getTime() - b.date.getTime());
+  }, [calData]);
 
-    SERVICE_REQUESTS.forEach(req => {
-      if (req.targetDate) {
-        all.push({
-          id: `req-${req.id}`,
-          title: req.title,
-          date: parseISO(req.targetDate),
-          type: 'concierge',
-          familyName: req.familyName,
-        });
-      }
-    });
-
-    return all;
-  }, []);
-
+  // Grid mechanics
   const monthStart = startOfMonth(currentDate);
   const monthEnd   = endOfMonth(monthStart);
   const startDate  = startOfWeek(monthStart);
@@ -98,222 +105,219 @@ export default function CalendarPage() {
 
   const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
   const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
-
-  const handleSync = () => {
-    setIsSyncing(true);
-    setTimeout(() => setIsSyncing(false), 2000);
-  };
-
   const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-  const selectedEvents = selectedDay
-    ? events.filter(e => isSameDay(e.date, selectedDay))
-    : [];
+  // Handlers
+  const handleDayClick = (day: Date) => {
+      setComposerDate(day);
+      setEventToEdit(null);
+      if (activeProvider) {
+         setIsComposerOpen(true);
+      }
+  };
+
+  const handleEventClick = (e: React.MouseEvent, ev: any) => {
+      e.stopPropagation(); // prevent day click
+      if (ev.type === 'calendar' && activeProvider) {
+         setEventToEdit(ev);
+         setComposerDate(ev.date);
+         setIsComposerOpen(true);
+      } else {
+         // It's a CRM event - handle opening CRM modal (not implemented in this scope)
+         alert(`This is a CRM entity: ${ev.type}. Navigate to CRM to edit.`);
+      }
+  };
 
   return (
-    <div className="page" style={{ padding: 0 }}>
-      {/* Layout */}
-      <div style={{ display: 'flex', height: 'calc(100vh - var(--header-height))', overflow: 'hidden' }}>
-
-        {/* ── Sidebar ── */}
-        <div style={{
-          width: 220, borderRight: '1px solid var(--border)',
-          background: 'var(--bg-surface)', padding: '20px 16px',
-          display: 'flex', flexDirection: 'column', gap: 24,
-          overflowY: 'auto', flexShrink: 0,
-        }}>
-          {/* Integrations */}
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-              Cloud Integrations
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {[
-                { id: 'outlook' as const, icon: '📧', label: 'Outlook M365', sub: 'Connected', color: '#3b82f6' },
-                { id: 'google'  as const, icon: '📅', label: 'Google Workspace', sub: 'Disconnected', color: '#ef4444' },
-              ].map(s => (
-                <div
-                  key={s.id}
-                  onClick={() => setActiveSync(s.id)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
-                    background: activeSync === s.id ? `${s.color}10` : 'transparent',
-                    border: `1px solid ${activeSync === s.id ? `${s.color}44` : 'transparent'}`,
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  <span style={{ fontSize: 16 }}>{s.icon}</span>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 600 }}>{s.label}</div>
-                    <div style={{ fontSize: 10, color: s.id === 'outlook' ? '#22c55e' : 'var(--text-tertiary)' }}>{s.sub}</div>
-                  </div>
-                  {activeSync === s.id && <div style={{ width: 6, height: 6, borderRadius: '50%', background: s.color, marginLeft: 'auto' }} />}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Legend */}
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-              Legend
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {Object.entries(EVENT_COLORS).map(([type, c]) => (
-                <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
-                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: c.dot, flexShrink: 0 }} />
-                  <span style={{ textTransform: 'capitalize', color: 'var(--text-secondary)' }}>{type}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Selected day events */}
-          {selectedDay && (
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-                {format(selectedDay, 'MMM d')}
-              </div>
-              {selectedEvents.length === 0 ? (
-                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>No events</div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {selectedEvents.map(ev => {
-                    const c = EVENT_COLORS[ev.type as keyof typeof EVENT_COLORS] ?? EVENT_COLORS.task;
-                    return (
-                      <div key={ev.id} style={{
-                        fontSize: 11, padding: '6px 9px', borderRadius: 6,
-                        background: c.bg, borderLeft: `3px solid ${c.border}`,
-                        color: 'var(--text-primary)', lineHeight: 1.4,
-                      }}>
-                        <div style={{ fontWeight: 600 }}>{ev.title}</div>
-                        {ev.familyName && <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2 }}>{ev.familyName}</div>}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
+    <div className="flex h-[calc(100vh-var(--header-height))] bg-slate-50 overflow-hidden">
+      
+      {/* ── Sidebar ── */}
+      <div className="w-[280px] bg-white border-r border-slate-200 flex flex-col pt-6 pb-6 shadow-sm z-10">
+        <div className="px-6 mb-8">
+           <Button icon={Plus} color="indigo" className="w-full shadow-sm" onClick={() => handleDayClick(new Date())} disabled={!activeProvider}>
+             New Event
+           </Button>
         </div>
 
-        {/* ── Calendar main ── */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-canvas)', minWidth: 0 }}>
-          {/* Month nav */}
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '14px 24px', borderBottom: '1px solid var(--border)',
-            background: 'var(--bg-surface)',
-          }}>
-            <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>
-              {format(currentDate, 'MMMM yyyy')}
-            </h2>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <div style={{ display: 'flex', background: 'var(--bg-elevated)', borderRadius: 8, padding: 2 }}>
-                {['Month', 'Week', 'Day'].map((v, i) => (
-                  <button key={v} className={`btn btn-ghost btn-sm`} style={{ minWidth: 52, fontSize: 11, opacity: i > 0 ? 0.4 : 1 }}>{v}</button>
-                ))}
-              </div>
-              <div style={{ display: 'flex', gap: 4 }}>
-                <button onClick={prevMonth} className="icon-btn btn-sm"><ChevronLeft size={16} /></button>
-                <button onClick={() => setCurrentDate(new Date())} className="btn btn-secondary btn-sm" style={{ fontSize: 11 }}>Today</button>
-                <button onClick={nextMonth} className="icon-btn btn-sm"><ChevronRight size={16} /></button>
-              </div>
-            </div>
-          </div>
-
-          {/* Grid — flex column fills remaining height exactly */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            {/* Day labels row */}
-            <div style={{
-              display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)',
-              background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)',
-            }}>
-              {dayLabels.map(label => (
-                <div key={label} style={{
-                  padding: '8px 0', textAlign: 'center',
-                  fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)',
-                  textTransform: 'uppercase', letterSpacing: '0.06em',
-                }}>
-                  {label}
-                </div>
-              ))}
-            </div>
-
-            {/* Day cells — each row gets equal slice of remaining height */}
-            <div style={{
-              flex: 1,
-              display: 'grid',
-              gridTemplateColumns: 'repeat(7, 1fr)',
-              gridTemplateRows: `repeat(${weeks}, 1fr)`,
-              gap: 0,
-              overflow: 'hidden',
-            }}>
-              {days.map((day, idx) => {
-                const dayEvents = events.filter(e => isSameDay(e.date, day));
-                const isCurrentMonth = isSameMonth(day, monthStart);
-                const isToday  = isSameDay(day, new Date());
-                const isSel    = selectedDay && isSameDay(day, selectedDay);
-                const MAX_VIS  = 3;
-
-                return (
-                  <div
-                    key={day.toString()}
-                    onClick={() => setSelectedDay(isSel ? null : day)}
-                    style={{
-                      background:
-                        isSel       ? 'var(--brand-900)' :
-                        isToday     ? 'var(--bg-elevated)' :
-                        isCurrentMonth ? 'var(--bg-canvas)' : 'var(--bg-surface)',
-                      padding: '6px 8px',
-                      display: 'flex', flexDirection: 'column', gap: 3,
-                      opacity: isCurrentMonth ? 1 : 0.35,
-                      border: isSel ? `1px solid var(--brand-500)` : isToday ? `1px solid var(--brand-500)44` : '1px solid var(--border)',
-                      cursor: 'pointer', overflow: 'hidden',
-                      transition: 'background 0.12s',
-                    }}
-                  >
-                    <span style={{
-                      fontSize: 12, fontWeight: isToday ? 800 : 500,
-                      color: isToday ? 'var(--brand-400)' : 'var(--text-secondary)',
-                      lineHeight: 1,
-                    }}>
-                      {format(day, 'd')}
-                    </span>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflow: 'hidden' }}>
-                      {dayEvents.slice(0, MAX_VIS).map(event => {
-                        const c = EVENT_COLORS[event.type as keyof typeof EVENT_COLORS] ?? EVENT_COLORS.task;
-                        return (
-                          <div
-                            key={event.id}
-                            title={`${event.title} · ${event.familyName}`}
-                            style={{
-                              fontSize: 9, padding: '1px 5px', borderRadius: 3,
-                              background: c.bg, borderLeft: `2px solid ${c.border}`,
-                              color: 'var(--text-primary)',
-                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                              lineHeight: 1.4,
-                            }}
-                          >
-                            {event.title}
-                          </div>
-                        );
-                      })}
-                      {dayEvents.length > MAX_VIS && (
-                        <span style={{ fontSize: 9, color: 'var(--text-tertiary)', paddingLeft: 3 }}>
-                          +{dayEvents.length - MAX_VIS} more
-                        </span>
+        {/* Sync Status area */}
+        <div className="px-6 mb-8 flex flex-col gap-4">
+          <Text className="text-xs font-bold uppercase tracking-wider text-slate-400">Integrations</Text>
+          
+          <Card 
+            className={`p-3 cursor-pointer border-l-4 transition-all ${activeProvider === 'microsoft' ? 'border-l-blue-500 bg-blue-50/50' : 'border-l-transparent hover:bg-slate-50'}`} 
+            onClick={() => connectionStatus?.microsoft && setActiveProvider('microsoft')}
+          >
+             <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                   <div className="w-6 h-6 rounded bg-blue-100 flex items-center justify-center text-xs">🟦</div>
+                   <div>
+                      <div className="text-sm font-semibold text-slate-800">Microsoft 365</div>
+                      {connectionStatus?.microsoft ? (
+                         <div className="flex items-center gap-1 mt-0.5">
+                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]"></div>
+                            <span className="text-[10px] text-emerald-600 font-medium">Synced</span>
+                         </div>
+                      ) : (
+                         <span className="text-[10px] text-slate-400">Disconnected</span>
                       )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                   </div>
+                </div>
+             </div>
+          </Card>
+
+          <Card 
+            className={`p-3 cursor-pointer border-l-4 transition-all ${activeProvider === 'google' ? 'border-l-red-500 bg-red-50/50' : 'border-l-transparent hover:bg-slate-50'}`}
+            onClick={() => connectionStatus?.google && setActiveProvider('google')}
+          >
+             <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                   <div className="w-6 h-6 rounded bg-red-100 flex items-center justify-center text-xs">🔴</div>
+                   <div>
+                      <div className="text-sm font-semibold text-slate-800">Google Workspace</div>
+                      {connectionStatus?.google ? (
+                         <div className="flex items-center gap-1 mt-0.5">
+                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]"></div>
+                            <span className="text-[10px] text-emerald-600 font-medium">Synced</span>
+                         </div>
+                      ) : (
+                         <span className="text-[10px] text-slate-400">Disconnected</span>
+                      )}
+                   </div>
+                </div>
+             </div>
+          </Card>
+        </div>
+
+        {/* Legend */}
+        <div className="px-6">
+          <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Legend</Text>
+          <div className="flex flex-col gap-2.5">
+            {Object.entries(EVENT_COLORS).map(([type, c]) => (
+              <div key={type} className="flex items-center gap-2 text-xs font-medium text-slate-600 capitalize">
+                <div className="w-2.5 h-2.5 rounded-full" style={{ background: c.dot }} />
+                <span>{type}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
+
+      {/* ── Main Workspace ── */}
+      <div className="flex-1 flex flex-col overflow-hidden relative">
+         {!activeProvider && (
+            <div className="absolute inset-0 bg-white/70 backdrop-blur-[2px] z-50 flex items-center justify-center">
+               <div className="bg-white border border-slate-200 shadow-xl rounded-2xl p-8 max-w-sm text-center">
+                  <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-4 text-amber-500">
+                     <AlertCircle size={32} />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900 mb-2">No Calendar Connected</h3>
+                  <p className="text-sm text-slate-500 mb-6">You need to connect a Microsoft 365 or Google Workspace account via Settings to unlock the live Calendar Sync functionalities.</p>
+                  <Button onClick={() => window.location.assign('/admin/settings')}>Go to Integrations</Button>
+               </div>
+            </div>
+         )}
+         
+        {/* Header */}
+        <div className="bg-white border-b border-slate-200 px-8 py-5 flex items-center justify-between shrink-0 shadow-sm">
+          <div className="flex items-center gap-3">
+             <Title className="text-slate-800 tracking-tight text-2xl">{format(currentDate, 'MMMM yyyy')}</Title>
+             {isValidating && <RefreshCcw size={16} className="animate-spin text-slate-400 ml-2" />}
+          </div>
+          <div className="flex gap-4 items-center">
+            <div className="bg-slate-100 p-1 rounded-lg flex shadow-inner">
+               <button className="px-4 py-1.5 text-xs font-bold bg-white shadow-sm rounded-md text-slate-800">Month</button>
+               <button className="px-4 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700">Week</button>
+            </div>
+            <div className="flex items-center gap-1 pl-2 border-l border-slate-200">
+              <button onClick={prevMonth} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"><ChevronLeft size={18} /></button>
+              <button onClick={() => setCurrentDate(new Date())} className="px-4 py-1.5 text-xs font-bold bg-white border border-slate-200 shadow-sm rounded-lg text-slate-700 hover:bg-slate-50">Today</button>
+              <button onClick={nextMonth} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"><ChevronRight size={18} /></button>
+            </div>
+          </div>
+        </div>
+
+        {/* CSS Grid layout filling exact height */}
+        <div className="flex-1 flex flex-col">
+           {/* Headers row */}
+           <div className="grid grid-cols-7 bg-slate-50/80 border-b border-slate-200 flex-shrink-0">
+             {dayLabels.map(label => (
+               <div key={label} className="py-2.5 text-center text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+                 {label}
+               </div>
+             ))}
+           </div>
+           
+           {/* Cells container */}
+           <div 
+              className="flex-1 grid grid-cols-7 border-l border-slate-200" 
+              style={{ gridTemplateRows: `repeat(${weeks}, minmax(0, 1fr))` }} // Important: equal slice
+           >
+             {days.map((day, idx) => {
+                const dayEvents = events.filter(e => isSameDay(e.date, day));
+                const isCurrentMonth = isSameMonth(day, monthStart);
+                const isToday = isSameDay(day, new Date());
+                
+                return (
+                   <div 
+                     key={day.toISOString()}
+                     onClick={() => handleDayClick(day)}
+                     className={`flex flex-col p-2 border-r border-b border-slate-200 relative group cursor-pointer hover:bg-indigo-50/30 transition-colors ${!isCurrentMonth ? 'bg-slate-50/50 opacity-60' : 'bg-white'}`}
+                   >
+                     {/* Day numeric label */}
+                     <div className="flex justify-between items-start mb-1.5">
+                        <span className={`text-[13px] font-bold w-7 h-7 flex items-center justify-center rounded-full ${isToday ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-700'}`}>
+                           {format(day, 'd')}
+                        </span>
+                        <div className="w-5 h-5 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                           <Plus size={12}/>
+                        </div>
+                     </div>
+
+                     {/* Events render */}
+                     <div className="flex flex-col gap-1 overflow-y-auto no-scrollbar flex-1 pb-1">
+                        {dayEvents.slice(0, 5).map(event => {
+                           const c = EVENT_COLORS[event.type as keyof typeof EVENT_COLORS] || EVENT_COLORS.task;
+                           return (
+                              <div
+                                key={event.id}
+                                onClick={(e) => handleEventClick(e, event)}
+                                className="group/event w-full py-1 px-2 rounded-md shadow-[0_1px_2px_rgba(0,0,0,0.02)] border border-transparent truncate hover:scale-[1.01] transition-transform"
+                                style={{ background: c.bg, borderLeft: `2.5px solid ${c.border}` }}
+                                title={event.title}
+                              >
+                                 <span className="text-[10px] font-semibold text-slate-800 leading-tight">
+                                    {event.start && <span className="mr-1 text-slate-500 font-medium">{format(new Date(event.start), 'HH:mm')}</span>}
+                                    {event.title}
+                                 </span>
+                              </div>
+                           )
+                        })}
+                        {dayEvents.length > 5 && (
+                           <div className="text-[10px] font-bold text-slate-400 pl-1 mt-1">
+                              +{dayEvents.length - 5} more
+                           </div>
+                        )}
+                     </div>
+                   </div>
+                );
+             })}
+           </div>
+        </div>
+      </div>
+      
+      {/* Sync Composer rendering */}
+      {activeProvider && (
+         <EventComposer 
+            isOpen={isComposerOpen} 
+            onClose={() => setIsComposerOpen(false)} 
+            eventToEdit={eventToEdit}
+            selectedDate={composerDate}
+            provider={activeProvider}
+            onSaved={() => {
+               mutate(); // Refetch SWR events automatically
+            }}
+         />
+      )}
     </div>
   );
 }

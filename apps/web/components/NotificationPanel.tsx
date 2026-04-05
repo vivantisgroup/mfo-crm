@@ -4,6 +4,7 @@ import React, { useRef, useEffect } from 'react';
 import { useTaskQueue } from '@/lib/TaskQueueContext';
 import type { AppNotification } from '@/lib/types';
 import { formatDistanceToNow, parseISO } from 'date-fns';
+import { Timer, AlertCircle, CheckCircle, BellRing, Dot } from 'lucide-react';
 
 function age(iso: string) {
   try { return formatDistanceToNow(parseISO(iso), { addSuffix: true }); }
@@ -16,12 +17,12 @@ const SEVERITY_STYLE: Record<string, { bg: string; border: string; dot: string }
   info:     { bg: 'rgba(99,102,241,0.07)', border: 'rgba(99,102,241,0.2)',  dot: '#6366f1' },
 };
 
-const TYPE_ICON: Record<string, string> = {
-  sla_assign_breach:     '⏱',
-  sla_completion_breach: '🔴',
-  task_assigned:         '✅',
-  task_overdue:          '🔴',
-  task_completed:        '✅',
+const TYPE_ICON: Record<string, React.ReactNode> = {
+  sla_assign_breach:     <Timer size={14} className="text-[#ef4444]" />,
+  sla_completion_breach: <AlertCircle size={14} className="text-[#ef4444]" />,
+  task_assigned:         <CheckCircle size={14} className="text-[#22c55e]" />,
+  task_overdue:          <AlertCircle size={14} className="text-[#ef4444]" />,
+  task_completed:        <CheckCircle size={14} className="text-[#22c55e]" />,
 };
 
 interface Props {
@@ -99,7 +100,7 @@ export function NotificationPanel({ onClose }: Props) {
       <div style={{ overflowY: 'auto', flex: 1 }}>
         {visible.length === 0 ? (
           <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>🔔</div>
+            <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center' }}><BellRing size={28} className="opacity-40" /></div>
             All caught up!
           </div>
         ) : (
@@ -132,8 +133,8 @@ function NotifItem({
     }}>
       {/* Top row: icon + title + age */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-        <span style={{ fontSize: 14, lineHeight: 1.4, flexShrink: 0 }}>
-          {TYPE_ICON[n.type] ?? '•'}
+        <span style={{ display: 'flex', alignItems: 'center', height: 18, flexShrink: 0 }}>
+          {TYPE_ICON[n.type] ?? <Dot size={14} />}
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{

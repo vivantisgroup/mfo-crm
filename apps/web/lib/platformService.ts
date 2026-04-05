@@ -21,6 +21,7 @@ import {
   collectionGroup,
   doc,
   getDoc,
+  getDocFromServer,
   getDocs,
   setDoc,
   query,
@@ -30,6 +31,7 @@ import {
   updateDoc,
   deleteDoc,
   arrayRemove,
+  increment,
 } from 'firebase/firestore';
 import type { User as FirebaseUser } from 'firebase/auth';
 
@@ -53,7 +55,8 @@ export type PlatformRole =
   | 'revenue_manager'
   | 'account_executive'
   | 'sdr'
-  | 'customer_success_manager';
+  | 'customer_success_manager'
+  | 'data_analyst';
 
 export interface PlatformConfig {
   initialized:    boolean;
@@ -90,6 +93,8 @@ export interface UserProfile {
   createdAt:     string;
   updatedAt?:    string;
   lastLoginAt?:  string;
+  lastActivityAt?: string;
+  loginCount?:   number;
   photoURL?:     string;
 }
 
@@ -152,7 +157,7 @@ function nowISO() { return new Date().toISOString(); }
 const PLATFORM_CONFIG_REF = () => doc(db, 'platform', 'config');
 
 export async function getPlatformConfig(): Promise<PlatformConfig | null> {
-  const snap = await getDoc(PLATFORM_CONFIG_REF());
+  const snap = await getDocFromServer(PLATFORM_CONFIG_REF());
   if (!snap.exists()) return null;
   return snap.data() as PlatformConfig;
 }
@@ -165,7 +170,7 @@ export async function isPlatformInitialized(): Promise<boolean> {
 // ─── Users ────────────────────────────────────────────────────────────────────
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
-  const snap = await getDoc(doc(db, 'users', uid));
+  const snap = await getDocFromServer(doc(db, 'users', uid));
   if (!snap.exists()) return null;
   return snap.data() as UserProfile;
 }
@@ -282,7 +287,11 @@ export async function deleteUser(
 /** Touch lastLoginAt on every sign-in — intentionally non-throwing. */
 export async function touchLastLogin(uid: string): Promise<void> {
   try {
-    await updateDoc(doc(db, 'users', uid), { lastLoginAt: nowISO() });
+    await updateDoc(doc(db, 'users', uid), { 
+      lastLoginAt: nowISO(),
+      lastActivityAt: nowISO(),
+      loginCount: increment(1)
+    });
   } catch (e: any) {
     // Permission-denied or not-found are non-fatal here — the session still succeeds.
     console.warn('[touchLastLogin] non-fatal:', e?.code ?? e?.message);
@@ -297,7 +306,7 @@ export async function getAllTenants(): Promise<TenantRecord[]> {
 }
 
 export async function getTenant(id: string): Promise<TenantRecord | null> {
-  const snap = await getDoc(doc(db, 'tenants', id));
+  const snap = await getDocFromServer(doc(db, 'tenants', id));
   if (!snap.exists()) return null;
   return snap.data() as TenantRecord;
 }
@@ -574,6 +583,8 @@ export async function ensureUserProfile(
     status:      'active',
     createdAt:   nowISO(),
     lastLoginAt: nowISO(),
+    lastActivityAt: nowISO(),
+    loginCount:  1,
   };
   await setDoc(doc(db, 'users', firebaseUser.uid), profile);
   return profile;

@@ -80,7 +80,7 @@ export default function CopilotPage() {
   const {
     status: txStatus, error: txError,
     startRecording, stopRecording, pauseRecording, resumeRecording, elapsedMs,
-  } = useTranscription({
+  } = useTranscription({ tenantId: "temp",
     sessionId: session?.sessionId ?? 'none',
     language:  session?.language ?? 'en',
     onChunk:   handleChunk,

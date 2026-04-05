@@ -153,6 +153,30 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // 4c. Setup Google Pub/Sub Webhook Watch
+    let initialHistoryId = null;
+    try {
+      const watchRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/watch', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${tokens.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          labelIds: ['INBOX', 'SENT'],
+          topicName: `projects/${PROJECT_ID}/topics/gmail-sync-topic`,
+        }),
+      });
+      if (watchRes.ok) {
+        const watchData = await watchRes.json();
+        initialHistoryId = watchData.historyId;
+      } else {
+        console.warn('[google/callback] Gmail watch failed. Make sure Pub/Sub topic privileges are set.', await watchRes.text());
+      }
+    } catch (err) {
+      console.error('[google/callback] Failed to invoke Gmail watch:', err);
+    }
+
     // 4b. Persist integration record via Firestore REST API (no Admin SDK required)
     await writeFirestoreDoc(idToken, `users/${uid}/integrations/google`, {
       provider:        'google',
@@ -168,6 +192,7 @@ export async function GET(req: NextRequest) {
       syncDirection:   'both',
       autoLogToCrm:    true,
       syncWindowDays:  30,
+      latestHistoryId: initialHistoryId,
       _accessToken:    tokens.access_token,
       _refreshToken:   refreshTokenToStore,
       _expiresAt:      Date.now() + (tokens.expires_in ?? 3600) * 1000,

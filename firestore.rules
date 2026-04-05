@@ -68,7 +68,7 @@ service cloud.firestore {
         'revenue_manager', 'account_executive', 'sdr',
         'customer_success_manager', 'sales_operations',
         'relationship_manager', 'cio', 'controller',
-        'compliance_officer', 'report_viewer'
+        'compliance_officer', 'report_viewer', 'data_analyst'
       ];
     }
 
@@ -120,6 +120,11 @@ service cloud.firestore {
     // ─── TOTP MFA Secrets ─────────────────────────────────────────────────────
     match /user_mfa_secrets/{uid} {
       allow read, write, delete: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    // ─── Platform Tags ────────────────────────────────────────────────────────
+    match /platform_tags/{tagId} {
+      allow read, create, update, delete: if isSignedIn();
     }
 
     // ─── Users ────────────────────────────────────────────────────────────────
@@ -260,14 +265,14 @@ service cloud.firestore {
 
     // ─── Subscriptions (billing) ──────────────────────────────────────────────
     match /subscriptions/{tenantId} {
-      // Tenant admins and members can read their own subscription
-      allow read: if isSaasMasterAdmin() || belongsToTenant(tenantId);
+      // Tenant admins and members can read their own subscription, BI roles can read all
+      allow read: if isSaasMasterAdmin() || userRole() in ['revenue_manager', 'data_analyst'] || belongsToTenant(tenantId);
       allow write: if isSaasMasterAdmin();
     }
 
     // ─── Invoices ─────────────────────────────────────────────────────────────
     match /invoices/{invoiceId} {
-      allow read: if isSaasMasterAdmin()
+      allow read: if isSaasMasterAdmin() || userRole() in ['revenue_manager', 'data_analyst']
                   || (isSignedIn() && isTenantAdmin(resource.data.get('tenantId', '')));
       allow create, update: if isSaasMasterAdmin();
       allow delete: if false;
@@ -301,6 +306,20 @@ service cloud.firestore {
       allow delete: if isSaasMasterAdmin();
     }
 
+    // ─── Platform Expenses ────────────────────────────────────────────────────
+
+    match /platform_accounting/{docId} {
+      allow read, write: if isSalesRole();
+    }
+    match /platform_people/{docId} {
+      allow read, write: if isSalesRole();
+    }
+    match /platform_expenses/{expenseId} {
+      allow read: if isSaasMasterAdmin() || isSalesRole();
+      allow create, update: if isSaasMasterAdmin() || isSalesRole();
+      allow delete: if isSaasMasterAdmin();
+    }
+
     // ─── Platform CRM — Organizations ────────────────────────────────────────
     match /platform_orgs/{orgId} {
       allow read:           if canReadCrm();
@@ -317,6 +336,13 @@ service cloud.firestore {
 
     // ─── Platform CRM — Opportunities ────────────────────────────────────────
     match /platform_opportunities/{oppId} {
+      allow read:           if canReadCrm();
+      allow create, update: if isSalesRole();
+      allow delete:         if isSaasMasterAdmin();
+    }
+
+    // ─── Platform CRM — Account Plans ────────────────────────────────────────
+    match /platform_org_account_plans/{planId} {
       allow read:           if canReadCrm();
       allow create, update: if isSalesRole();
       allow delete:         if isSaasMasterAdmin();
@@ -471,7 +497,15 @@ service cloud.firestore {
       allow read, write: if isTenantMember(tenantId);
     }
 
+    // ─── Tenant Tags ──────────────────────────────────────────────────────────
+    match /tenant_tags/{tenantId}/tags/{tagId} {
+      allow read, write: if isTenantMember(tenantId);
+    }
+
     // ─── Platform Catalog: Roles & Email Templates ────────────────────────────
+    match /platform_tags/{tagId} {
+      allow read, write: if isSignedIn();
+    }
     match /roles/{roleId} {
       allow read: if isSignedIn();
       allow write: if isSaasMasterAdmin() || isSetupMode();
@@ -481,9 +515,15 @@ service cloud.firestore {
       allow write: if isSaasMasterAdmin() || isSetupMode();
     }
 
+    // ─── Microsoft Teams Webhooks ─────────────────────────────────────────────
+    match /webhooks_teams_log/{docId} {
+      // In production this would be scoped to tenant/chatId
+      allow read: if isSignedIn();
+    }
+
     // ─── Deny-all catch-all ───────────────────────────────────────────────────
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write, delete: if isSaasMasterAdmin();
     }
   }
 }

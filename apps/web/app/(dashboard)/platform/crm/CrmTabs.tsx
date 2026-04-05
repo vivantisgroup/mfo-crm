@@ -1,14 +1,17 @@
 'use client';
 import React, { useState, useMemo, useEffect } from 'react';
+import { ChevronLeft, Search } from 'lucide-react';
 import {
   type PlatformOrg, type Opportunity, type CrmActivity, type SalesTeam,
   STAGE_LABELS, STAGE_COLORS, STAGES, REGION_LABELS, REGION_COLORS,
   ACTIVITY_ICONS, ACTIVITY_LABELS, ACTIVITY_TYPES,
-  createActivity, updateOpportunity, type ActivityType, type DealStage,
+  createActivity, updateActivity, updateOpportunity, type ActivityType, type DealStage,
   getAllOrgs, getAllOpportunities, getAllActivities, getSalesTeams, createOpportunity, createSalesTeam,
   getPlatformSalesUsers, type SalesUser,
+  type PipelineStageConfig, DEFAULT_PIPELINE_STAGES,
 } from '@/lib/crmService';
 import { getAllSubscriptions } from '@/lib/subscriptionService';
+import { BarList } from '@tremor/react';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 function fmtMoney(n: number) { if (!n) return '—'; if (n >= 1e9) return `$${(n/1e9).toFixed(1)}B`; if (n >= 1e6) return `$${(n/1e6).toFixed(1)}M`; return `$${(n/1e3).toFixed(0)}K`; }
@@ -22,8 +25,9 @@ function Chip({ label, color }: { label: string; color: string }) {
 const OPEN_STAGES: DealStage[] = ['lead','qualification','demo','proposal','negotiation'];
 
 // ─── Dashboard Tab ────────────────────────────────────────────────────────────
-export function DashboardTab({ orgs, opps, activities }: { orgs: PlatformOrg[]; opps: Opportunity[]; activities: CrmActivity[] }) {
-  const openOpps = opps.filter(o => OPEN_STAGES.includes(o.stage));
+export function DashboardTab({ orgs, opps, activities, pipelineStages = DEFAULT_PIPELINE_STAGES }: { orgs: PlatformOrg[]; opps: Opportunity[]; activities: CrmActivity[]; pipelineStages?: PipelineStageConfig[] }) {
+  const openStageIds = pipelineStages.filter(s => s.id !== 'closed_lost').map(s=>s.id);
+  const openOpps = opps.filter(o => openStageIds.includes(o.stage));
   const wonOpps  = opps.filter(o => o.stage === 'closed_won');
   const pipelineValue = openOpps.reduce((s,o) => s+o.valueUsd,0);
   const weightedValue = openOpps.reduce((s,o) => s+o.valueUsd*(o.probability/100),0);
@@ -31,13 +35,24 @@ export function DashboardTab({ orgs, opps, activities }: { orgs: PlatformOrg[]; 
   const avgDeal = wonOpps.length ? wonOpps.reduce((s,o)=>s+o.valueUsd,0)/wonOpps.length : 0;
 
   // Stage funnel
-  const funnelStages = STAGES.filter(s => s !== 'closed_lost');
-  const funnelMax = Math.max(1, ...funnelStages.map(s => opps.filter(o=>o.stage===s).length));
+  const funnelStages = pipelineStages.filter(s => s.id !== 'closed_lost');
+  const funnelMax = Math.max(1, ...funnelStages.map(s => opps.filter(o=>o.stage===s.id).length));
 
   // Region breakdown
   const regions = ['latam','emea','apac','north_america','global'] as const;
   const regionRevenue = regions.map(r => ({ r, v: wonOpps.filter(o=>o.region===r).reduce((s,o)=>s+o.valueUsd,0) }));
   const regionMax = Math.max(1, ...regionRevenue.map(x=>x.v));
+
+  // Industry breakdown
+  const indMap: Record<string, number> = {};
+  wonOpps.forEach(o => {
+    const org = orgs.find(x => x.id === o.orgId);
+    const ind = org?.industry || 'Other';
+    indMap[ind] = (indMap[ind] || 0) + o.valueUsd;
+  });
+  const industryData = Object.entries(indMap)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a,b) => b.value - a.value);
 
   // Recent activities  
   const recentActs = [...activities].slice(0,5);
@@ -63,19 +78,19 @@ export function DashboardTab({ orgs, opps, activities }: { orgs: PlatformOrg[]; 
         ))}
       </div>
 
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:20 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:20 }}>
         {/* Funnel */}
         <div style={{ padding:'20px 22px', background:'var(--bg-elevated)', borderRadius:14, border:'1px solid var(--border)' }}>
           <div style={{ fontWeight:700, fontSize:13, marginBottom:16 }}>🎯 Pipeline Funnel</div>
           {funnelStages.map(s => {
-            const count  = opps.filter(o=>o.stage===s).length;
-            const value  = opps.filter(o=>o.stage===s).reduce((t,o)=>t+o.valueUsd,0);
+            const count  = opps.filter(o=>o.stage===s.id).length;
+            const value  = opps.filter(o=>o.stage===s.id).reduce((t,o)=>t+o.valueUsd,0);
             const pct    = Math.round((count/funnelMax)*100);
-            const c      = STAGE_COLORS[s];
+            const c      = s.color;
             return (
-              <div key={s} style={{ marginBottom:10 }}>
+              <div key={s.id} style={{ marginBottom:10 }}>
                 <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, marginBottom:4 }}>
-                  <span style={{ fontWeight:600 }}>{STAGE_LABELS[s].replace(/^.+ /,'')}</span>
+                  <span style={{ fontWeight:600 }}>{s.label.replace(/^.+ /,'')}</span>
                   <span style={{ color:'var(--text-tertiary)' }}>{count} · {fmtMoney(value)}</span>
                 </div>
                 <div style={{ height:8, borderRadius:999, background:'var(--bg-canvas)', overflow:'hidden' }}>
@@ -105,6 +120,18 @@ export function DashboardTab({ orgs, opps, activities }: { orgs: PlatformOrg[]; 
             );
           })}
         </div>
+        
+        {/* Industry Vertical */}
+        <div style={{ padding:'20px 22px', background:'var(--bg-elevated)', borderRadius:14, border:'1px solid var(--border)' }}>
+          <div style={{ fontWeight:700, fontSize:13, marginBottom:16 }}>🏢 Value by Industry Vertical</div>
+          {industryData.length === 0 ? (
+             <div style={{ textAlign:'center', color:'var(--text-tertiary)', fontSize:13, marginTop:20 }}>No classified wins.</div>
+          ) : (
+             <div className="mt-4">
+                <BarList data={industryData} color="indigo" valueFormatter={(v) => fmtMoney(v)} />
+             </div>
+          )}
+        </div>
       </div>
 
       {/* Deals closing soon + Recent activity */}
@@ -124,7 +151,7 @@ export function DashboardTab({ orgs, opps, activities }: { orgs: PlatformOrg[]; 
                   <div style={{ fontWeight:600 }}>{o.orgName}</div>
                   <div style={{ fontSize:11, color:'var(--text-tertiary)' }}>{fmtDate(o.closeDate)} · {o.assignedToName ?? o.ownerName ?? '—'}</div>
                 </div>
-                <div style={{ fontWeight:700, color: STAGE_COLORS[o.stage] }}>{fmtMoney(o.valueUsd)}</div>
+                <div style={{ fontWeight:700, color: pipelineStages.find(s=>s.id===o.stage)?.color || '#6366f1' }}>{fmtMoney(o.valueUsd)}</div>
               </div>
             ))}
           {openOpps.filter(o=>{ const d=Math.ceil((new Date(o.closeDate).getTime()-Date.now())/86400000); return d>=0&&d<=30; }).length===0 &&
@@ -150,73 +177,162 @@ export function DashboardTab({ orgs, opps, activities }: { orgs: PlatformOrg[]; 
 
 // ─── Pipeline (Opportunity Kanban) Tab ────────────────────────────────────────
 export function PipelineTab({
-  orgs, opps, onOppClick, onCreateOpp, performer,
+  orgs, opps, subs = [], onOppClick, onCreateOpp, onUpdateOpp, performer, filterOrgId, onReturn,
+  pipelineStages = DEFAULT_PIPELINE_STAGES, onUpdatePipelineStages,
 }: {
-  orgs: PlatformOrg[]; opps: Opportunity[];
-  onOppClick:(o:Opportunity)=>void;
+  orgs: PlatformOrg[]; opps: Opportunity[]; subs?: TenantSubscription[];
+  onOppClick?:(o:Opportunity)=>void;
   onCreateOpp:(o:Opportunity)=>void;
+  onUpdateOpp?:(o:Opportunity)=>void;
   performer:{uid:string;name:string};
+  filterOrgId?: string | null;
+  onReturn?: () => void;
+  pipelineStages?: PipelineStageConfig[];
+  onUpdatePipelineStages?: (stages: PipelineStageConfig[]) => void;
 }) {
   const [search, setSearch] = useState('');
   const [showNew, setShowNew] = useState(false);
+  const [showConfig, setShowConfig] = useState(false);
+  const [configStages, setConfigStages] = useState<PipelineStageConfig[]>(pipelineStages);
   const [form, setForm] = useState({
-    orgId:'', title:'', stage:'lead' as DealStage, valueUsd:0,
+    orgId: filterOrgId || '', title:'', stage:'lead' as DealStage, valueUsd:0,
     probability:20, closeDate:'', assignedToUid: performer.uid, notes:'', products:[] as string[],
   });
   const [saving, setSaving] = useState(false);
   const [salesUsers, setSalesUsers] = useState<SalesUser[]>([]);
+  const [editingOpp, setEditingOpp] = useState<Opportunity | null>(null);
 
   useEffect(() => {
     getPlatformSalesUsers().then(setSalesUsers).catch(() => {});
   }, []);
 
   const filtered = useMemo(()=> opps.filter(o=>{
+    if (filterOrgId && o.orgId !== filterOrgId) return false;
     if (!search) return true;
     const assignee = o.assignedToName ?? o.ownerName ?? '';
     return `${o.orgName} ${o.title} ${assignee}`.toLowerCase().includes(search.toLowerCase());
-  }), [opps, search]);
+  }), [opps, search, filterOrgId]);
 
-  const openStages = STAGES.filter(s => s !== 'closed_lost');
+  const openStages = pipelineStages.filter(s => s.id !== 'closed_lost');
+  const openStageIds = openStages.map(s => s.id);
 
-  async function handleCreate(e: React.FormEvent) {
+  async function handleCreateOrUpdate(e: React.FormEvent) {
     e.preventDefault(); if (!form.orgId || !form.title) return;
     setSaving(true);
     try {
       const org = orgs.find(o=>o.id===form.orgId);
       const assignee = salesUsers.find(u => u.uid === form.assignedToUid);
-      const opp = await createOpportunity({
-        ...form,
-        orgName:         org?.name ?? '',
-        ownerId:         form.assignedToUid,
-        ownerName:       assignee?.displayName ?? performer.name,
-        assignedToUid:   form.assignedToUid,
-        assignedToName:  assignee?.displayName ?? performer.name,
-        assignedToDept:  assignee?.department,
-        region:          org?.region ?? 'global',
-        products:        form.products,
-        contactId:'', contactName:'', lostReason:'', createdBy: performer.uid,
-      }, performer);
-      onCreateOpp(opp);
+      
+      if (editingOpp) {
+        // Edit flow
+        const updates = {
+          ...form,
+          orgName:         org?.name ?? '',
+          ownerId:         form.assignedToUid,
+          ownerName:       assignee?.displayName ?? performer.name,
+          assignedToUid:   form.assignedToUid,
+          assignedToName:  assignee?.displayName ?? performer.name,
+          assignedToDept:  assignee?.department,
+          region:          org?.region ?? 'global',
+          products:        form.products,
+        };
+        await updateOpportunity(editingOpp.id, updates);
+        if (onUpdateOpp) onUpdateOpp({ ...editingOpp, ...updates });
+      } else {
+        // Create flow
+        const opp = await createOpportunity({
+          ...form,
+          orgName:         org?.name ?? '',
+          ownerId:         form.assignedToUid,
+          ownerName:       assignee?.displayName ?? performer.name,
+          assignedToUid:   form.assignedToUid,
+          assignedToName:  assignee?.displayName ?? performer.name,
+          assignedToDept:  assignee?.department,
+          region:          org?.region ?? 'global',
+          products:        form.products,
+          contactId:'', contactName:'', lostReason:'', createdBy: performer.uid,
+        }, performer);
+        onCreateOpp(opp);
+      }
+      
       setShowNew(false);
-      setForm({ orgId:'', title:'', stage:'lead', valueUsd:0, probability:20, closeDate:'', assignedToUid: performer.uid, notes:'', products:[] });
+      setEditingOpp(null);
+      setForm({ orgId: filterOrgId || '', title:'', stage:'lead', valueUsd:0, probability:20, closeDate:'', assignedToUid: performer.uid, notes:'', products:[] });
     } finally { setSaving(false); }
   }
 
-  const pipelineValue = filtered.filter(o=>OPEN_STAGES.includes(o.stage)).reduce((s,o)=>s+o.valueUsd,0);
+  const handleOpenEdit = (opp: Opportunity) => {
+    setForm({
+       orgId: opp.orgId,
+       title: opp.title,
+       stage: opp.stage,
+       valueUsd: opp.valueUsd,
+       probability: opp.probability,
+       closeDate: opp.closeDate || '',
+       assignedToUid: opp.assignedToUid || opp.ownerId || '',
+       notes: opp.notes || '',
+       products: opp.products || []
+    });
+    setEditingOpp(opp);
+    setShowNew(true);
+  };
+
+  const pipelineValue = filtered.filter(o => openStageIds.includes(o.stage)).reduce((s,o)=>s+o.valueUsd,0);
+
+  async function handleDrop(e: React.DragEvent, newStage: DealStage) {
+    e.preventDefault();
+    const oppId = e.dataTransfer.getData('oppId');
+    if (!oppId || !onUpdateOpp) return;
+    const opp = opps.find(o => o.id === oppId);
+    if (!opp || opp.stage === newStage) return;
+    
+    // Optimistic update
+    onUpdateOpp({ ...opp, stage: newStage });
+    try {
+      await updateOpportunity(opp.id, { stage: newStage });
+    } catch {
+      // rollback on error
+      onUpdateOpp(opp);
+    }
+  }
+
+  const filteredOrg = filterOrgId ? orgs.find(o => o.id === filterOrgId) : null;
 
   return (
-    <div>
+    <div className="flex flex-col h-full bg-slate-50/50">
+      {filterOrgId && filteredOrg && (
+        <div className="bg-white border-b border-slate-200 shadow-sm flex items-center px-8 py-3 mb-6 -mx-6 -mt-6 cursor-pointer hover:bg-slate-50 transition-colors z-10" onClick={onReturn}>
+            <div className="flex items-center gap-2 text-indigo-600 font-bold text-sm">
+                <ChevronLeft size={16} />
+                Back to {filteredOrg.name} Details
+            </div>
+        </div>
+      )}
+
       <div style={{ display:'flex', gap:10, marginBottom:16, alignItems:'center' }}>
-        <input className="input" placeholder="🔍 Search deals…" value={search} onChange={e=>setSearch(e.target.value)} style={{ flex:1 }} />
+        <div className="header-search cursor-text max-w-md w-full" style={{ flex: 1 }}>
+          <Search size={16} className="text-tertiary shrink-0" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search deals…" className="flex-1 min-w-0 bg-transparent border-none outline-none text-[13px] text-primary placeholder-tertiary" />
+        </div>
         <div style={{ fontSize:13, color:'var(--text-secondary)', whiteSpace:'nowrap' }}>
           Open: <strong style={{ color:'#6366f1' }}>{fmtMoney(pipelineValue)}</strong>
         </div>
-        <button className="btn btn-primary btn-sm" onClick={()=>setShowNew(v=>!v)}>{showNew?'✕ Cancel':'+ Opportunity'}</button>
+        {onUpdatePipelineStages && (
+           <button className="btn btn-ghost btn-sm" onClick={() => { setConfigStages(pipelineStages); setShowConfig(true); }}>⚙️ Queues</button>
+        )}
+        <button className="btn btn-primary btn-sm" onClick={()=>{
+           if (showNew) { setShowNew(false); setEditingOpp(null); }
+           else {
+              setForm({ orgId: filterOrgId || '', title:'', stage:'lead', valueUsd:0, probability:20, closeDate:'', assignedToUid: performer.uid, notes:'', products:[] });
+              setEditingOpp(null);
+              setShowNew(true);
+           }
+        }}>{showNew ? '✕ Cancel' : '+ Opportunity'}</button>
       </div>
 
       {showNew && (
-        <form onSubmit={handleCreate} style={{ padding:'20px 22px', background:'var(--bg-elevated)', borderRadius:12, border:'1px solid var(--border)', marginBottom:20 }}>
-          <div style={{ fontWeight:700, fontSize:14, marginBottom:16 }}>🎯 New Opportunity</div>
+        <form onSubmit={handleCreateOrUpdate} style={{ padding:'20px 22px', background:'var(--bg-elevated)', borderRadius:12, border:'1px solid var(--border)', marginBottom:20 }}>
+          <div style={{ fontWeight:700, fontSize:14, marginBottom:16 }}>{editingOpp ? '✏️ Edit Opportunity' : '🎯 New Opportunity'}</div>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
             <div>
               <FieldLabel>Organization *</FieldLabel>
@@ -231,8 +347,12 @@ export function PipelineTab({
             </div>
             <div>
               <FieldLabel>Stage</FieldLabel>
-              <select className="input" style={{ width:'100%' }} value={form.stage} onChange={e=>setForm(p=>({...p,stage:e.target.value as DealStage}))}>
-                {STAGES.map(s=><option key={s} value={s}>{STAGE_LABELS[s].replace(/^.+ /,'')}</option>)}
+              <select className="input" style={{ width:'100%' }} value={form.stage} onChange={e=>{
+                const newStageId = e.target.value as DealStage;
+                const pStage = pipelineStages.find(s=>s.id === newStageId);
+                setForm(p=>({...p, stage: newStageId, probability: pStage?.probability ?? 50 }));
+              }}>
+                {pipelineStages.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
               </select>
             </div>
             <div>
@@ -269,8 +389,8 @@ export function PipelineTab({
             </div>
           </div>
           <div style={{ display:'flex', gap:10, marginTop:14 }}>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={()=>setShowNew(false)}>Cancel</button>
-            <button type="submit" className="btn btn-primary btn-sm" disabled={saving||!form.orgId||!form.title}>{saving?'…':'✅ Create'}</button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={()=>{ setShowNew(false); setEditingOpp(null); }}>Cancel</button>
+            <button type="submit" className="btn btn-primary btn-sm" disabled={saving||!form.orgId||!form.title}>{saving?'…': (editingOpp ? '💾 Save Changes' : '✅ Create')}</button>
           </div>
         </form>
       )}
@@ -278,23 +398,31 @@ export function PipelineTab({
       {/* Kanban */}
       <div style={{ display:'grid', gridTemplateColumns:`repeat(${openStages.length},minmax(170px,1fr))`, gap:12, overflowX:'auto', minWidth:900 }}>
         {openStages.map(stage=>{
-          const cards = filtered.filter(o=>o.stage===stage);
+          const cards = filtered.filter(o=>o.stage===stage.id);
           const cv    = cards.reduce((s,o)=>s+o.valueUsd,0);
-          const c     = STAGE_COLORS[stage];
+          const c     = stage.color || '#cbd5e1';
           return (
-            <div key={stage}>
+            <div key={stage.id} style={{ minHeight: 400 }} onDragOver={e => e.preventDefault()} onDrop={e => handleDrop(e, stage.id)}>
               <div style={{ display:'flex', justifyContent:'space-between', padding:'6px 10px', background:`${c}18`, borderRadius:8, marginBottom:8 }}>
-                <span style={{ fontSize:11, fontWeight:700, color:c }}>{STAGE_LABELS[stage].replace(/^.+ /,'')}</span>
+                <span style={{ fontSize:11, fontWeight:700, color:c }}>{stage.label}</span>
                 <span style={{ fontSize:10, color:'var(--text-tertiary)', fontWeight:600 }}>{cards.length} · {fmtMoney(cv)}</span>
               </div>
               <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                {cards.map(opp=>(
-                  <div key={opp.id} onClick={()=>onOppClick(opp)}
-                    style={{ padding:'12px 14px', background:'var(--bg-elevated)', border:`1px solid ${c}44`, borderLeft:`3px solid ${c}`, borderRadius:10, cursor:'pointer', transition:'transform 0.15s' }}
+                {cards.map(opp=> {
+                  const org = orgs.find(o => o.id === opp.orgId);
+                  const isTrial = org?.tenantIds?.some((tid: string) => subs?.some(s => s.tenantId === tid && s.status === 'trial'));
+                  return (
+                  <div key={opp.id} onClick={()=>{ if (onOppClick) onOppClick(opp); handleOpenEdit(opp); }}
+                    draggable
+                    onDragStart={e => e.dataTransfer.setData('oppId', opp.id)}
+                    style={{ padding:'12px 14px', background:'var(--bg-elevated)', border:`1px solid ${c}44`, borderLeft:`3px solid ${c}`, borderRadius:10, cursor:'grab', transition:'transform 0.15s', userSelect:'none' }}
                     onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-2px)';}}
                     onMouseLeave={e=>{e.currentTarget.style.transform='';}}
                   >
-                    <div style={{ fontWeight:700, fontSize:12, marginBottom:2 }}>{opp.orgName}</div>
+                    <div style={{ fontWeight:700, fontSize:12, marginBottom:2, display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+                       <span>{opp.orgName}</span>
+                       {isTrial && <span style={{ fontSize:9, background:'#fce7f3', color:'#ec4899', padding:'2px 4px', borderRadius:4, textTransform:'uppercase', letterSpacing:'0.05em' }}>Trial</span>}
+                    </div>
                     <div style={{ fontSize:11, color:'var(--text-secondary)', marginBottom:6 }}>{opp.title}</div>
                     <div style={{ display:'flex', justifyContent:'space-between', fontSize:11 }}>
                       <span style={{ fontWeight:700, color:c }}>{fmtMoney(opp.valueUsd)}</span>
@@ -303,7 +431,8 @@ export function PipelineTab({
                     {opp.closeDate && <div style={{ fontSize:10, color:'var(--text-tertiary)', marginTop:4 }}>📅 {fmtDate(opp.closeDate)}</div>}
                     <div style={{ fontSize:10, color:'var(--text-tertiary)', marginTop:2 }}>👤 {opp.assignedToName ?? opp.ownerName ?? '—'}</div>
                   </div>
-                ))}
+                  );
+                })}
                 {cards.length===0 && <div style={{ padding:'16px', textAlign:'center', color:'var(--text-tertiary)', fontSize:11, border:'1px dashed var(--border)', borderRadius:8 }}>Empty</div>}
               </div>
             </div>
@@ -325,22 +454,53 @@ export function PipelineTab({
           </div>
         </div>
       )}
+
+      {/* Config Modal */}
+      {showConfig && onUpdatePipelineStages && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:999, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(2px)' }}>
+          <div style={{ background:'white', width:'100%', maxWidth:600, borderRadius:20, padding:24, boxShadow:'0 20px 40px rgba(0,0,0,0.1)' }}>
+            <h3 style={{ fontSize:18, fontWeight:800, marginBottom:4 }}>Pipeline Queues</h3>
+            <p style={{ fontSize:12, color:'var(--text-tertiary)', marginBottom:20 }}>Configure your sales pipeline progression below. Stages are globally applied to this tenant's CRM.</p>
+            
+            <div style={{ display:'flex', flexDirection:'column', gap:8, maxHeight:'50vh', overflowY:'auto', paddingRight:8, marginBottom:20 }}>
+              {configStages.map((stage, idx) => (
+                <div key={idx} style={{ display:'flex', gap:8, alignItems:'center', background:'var(--bg-canvas)', padding:10, borderRadius:12 }}>
+                  <div style={{ cursor:'ns-resize', color:'var(--text-tertiary)', paddingInline:4 }}>↕</div>
+                  <input className="input" style={{ width:100, fontSize:12 }} placeholder="id_code" value={stage.id} onChange={e=>{const c=[...configStages]; c[idx].id=e.target.value.toLowerCase().replace(/\s+/g,'_'); setConfigStages(c);}} disabled={stage.id==='closed_won'||stage.id==='closed_lost'} />
+                  <input className="input" style={{ flex:1, fontSize:13 }} placeholder="Stage Label" value={stage.label} onChange={e=>{const c=[...configStages]; c[idx].label=e.target.value; setConfigStages(c);}} />
+                  <input type="number" className="input" style={{ width:70, fontSize:13 }} placeholder="Prob %" value={stage.probability} onChange={e=>{const c=[...configStages]; c[idx].probability=+e.target.value; setConfigStages(c);}} />
+                  <input type="color" style={{ width:32, height:32, cursor:'pointer', border:'none', borderRadius:4, padding:0, background:'transparent' }} value={stage.color} onChange={e=>{const c=[...configStages]; c[idx].color=e.target.value; setConfigStages(c);}} />
+                  <button onClick={()=>{const c=[...configStages]; c.splice(idx,1); setConfigStages(c);}} disabled={stage.id==='closed_won'||stage.id==='closed_lost'} style={{ color:'#ef4444', background:'none', border:'none', fontSize:16, opacity: (stage.id==='closed_won'||stage.id==='closed_lost')? 0.2 : 1, cursor:'pointer' }}>×</button>
+                </div>
+              ))}
+              <div style={{ marginTop:8 }}>
+                <button className="btn btn-ghost btn-sm" onClick={() => setConfigStages([...configStages, { id: `stage_${configStages.length+1}`, label: 'New Stage', color: '#cbd5e1', probability: 50 }])}>+ Add Queue Stage</button>
+              </div>
+            </div>
+
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:10, borderTop:'1px solid var(--border)', paddingTop:16 }}>
+              <button className="btn btn-ghost" onClick={() => setShowConfig(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={() => { onUpdatePipelineStages(configStages); setShowConfig(false); }}>Save Pipeline</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── Activities Tab ───────────────────────────────────────────────────────────
 export function ActivitiesTab({
-  activities, orgs, onCreated, performer,
-}: { activities: CrmActivity[]; orgs: PlatformOrg[]; onCreated:(a:CrmActivity)=>void; performer:{uid:string;name:string}; }) {
+  activities, orgs, onCreated, onUpdateActivity, performer,
+}: { activities: CrmActivity[]; orgs: PlatformOrg[]; onCreated:(a:CrmActivity)=>void; onUpdateActivity?:(a:CrmActivity)=>void; performer:{uid:string;name:string}; }) {
   const [typeF, setTypeF]   = useState<ActivityType|'all'>('all');
   const [search, setSearch] = useState('');
   const [showNew, setShowNew]= useState(false);
   const [saving, setSaving]  = useState(false);
-  const [form, setForm] = useState({
-    orgId:'', type:'call' as ActivityType, direction:'outbound' as 'inbound'|'outbound'|'internal',
-    subject:'', body:'', outcome:'', scheduledAt: new Date().toISOString().slice(0,16),
-  });
+  
+  const initialForm = { orgId:'', type:'call' as ActivityType, direction:'outbound' as 'inbound'|'outbound'|'internal', subject:'', body:'', outcome:'', scheduledAt: new Date().toISOString().slice(0,16) };
+  const [form, setForm] = useState(initialForm);
+  const [editingId, setEditingId] = useState<string|null>(null);
 
   const filtered = useMemo(()=> activities.filter(a => {
     if (typeF!=='all' && a.type!==typeF) return false;
@@ -362,25 +522,42 @@ export function ActivitiesTab({
       }, performer);
       onCreated(act);
       setShowNew(false);
-      setForm({ orgId:'', type:'call', direction:'outbound', subject:'', body:'', outcome:'', scheduledAt:new Date().toISOString().slice(0,16) });
+      setForm(initialForm);
+    } finally { setSaving(false); }
+  }
+
+  async function handleEditAction(e: React.FormEvent) {
+    e.preventDefault(); if (!form.orgId||!form.subject||!editingId||!onUpdateActivity) return;
+    setSaving(true);
+    try {
+      const org = orgs.find(o=>o.id===form.orgId);
+      const patch = { ...form, orgName:org?.name, scheduledAt:new Date(form.scheduledAt).toISOString() };
+      await updateActivity(editingId, patch);
+      const old = activities.find(a=>a.id===editingId);
+      if (old) onUpdateActivity({ ...old, ...patch } as CrmActivity);
+      setEditingId(null);
+      setForm(initialForm);
     } finally { setSaving(false); }
   }
 
   return (
     <div>
       {/* Toolbar */}
-      <div style={{ display:'flex', gap:10, marginBottom:16, alignItems:'center', flexWrap:'wrap' }}>
-        <input className="input" placeholder="🔍 Search activities…" value={search} onChange={e=>setSearch(e.target.value)} style={{ flex:1, minWidth:180 }} />
+        <div style={{ display:'flex', gap:10, marginBottom:16, alignItems:'center', flexWrap:'wrap' }}>
+          <div className="header-search cursor-text max-w-md w-full" style={{ flex: 1, minWidth: 180 }}>
+            <Search size={16} className="text-tertiary shrink-0" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search activities…" className="flex-1 min-w-0 bg-transparent border-none outline-none text-[13px] text-primary placeholder-tertiary" />
+          </div>
         <select className="input" value={typeF} onChange={e=>setTypeF(e.target.value as any)}>
           <option value="all">All Types</option>
           {ACTIVITY_TYPES.map(t=><option key={t} value={t}>{ACTIVITY_ICONS[t]} {ACTIVITY_LABELS[t]}</option>)}
         </select>
-        <button className="btn btn-primary btn-sm" onClick={()=>setShowNew(v=>!v)}>{showNew?'✕ Cancel':'+ Log Activity'}</button>
+        <button className="btn btn-primary btn-sm" onClick={()=>{setShowNew(v=>!v);setEditingId(null);setForm(initialForm);}}>{showNew?'✕ Cancel':'+ Log Activity'}</button>
       </div>
 
-      {showNew && (
-        <form onSubmit={handleCreate} style={{ padding:'20px 22px', background:'var(--bg-elevated)', borderRadius:12, border:'1px solid var(--border)', marginBottom:20 }}>
-          <div style={{ fontWeight:700, fontSize:14, marginBottom:16 }}>📅 Log Activity</div>
+      {(showNew || editingId) && (
+        <form onSubmit={editingId ? handleEditAction : handleCreate} style={{ padding:'20px 22px', background:'var(--bg-elevated)', borderRadius:12, border:'1px solid var(--border)', marginBottom:20 }}>
+          <div style={{ fontWeight:700, fontSize:14, marginBottom:16 }}>📅 {editingId ? 'Edit Activity' : 'Log Activity'}</div>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
             <div>
               <FieldLabel>Organization *</FieldLabel>
@@ -421,8 +598,8 @@ export function ActivitiesTab({
             </div>
           </div>
           <div style={{ display:'flex', gap:10, marginTop:14 }}>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={()=>setShowNew(false)}>Cancel</button>
-            <button type="submit" className="btn btn-primary btn-sm" disabled={saving||!form.orgId||!form.subject}>{saving?'…':'✅ Log'}</button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={()=>{setShowNew(false); setEditingId(null); setForm(initialForm);}}>Cancel</button>
+            <button type="submit" className="btn btn-primary btn-sm" disabled={saving||!form.orgId||!form.subject}>{saving?'…':(editingId?'✅ Save Changes':'✅ Log')}</button>
           </div>
         </form>
       )}
@@ -430,23 +607,62 @@ export function ActivitiesTab({
       {filtered.length===0 ? (
         <div style={{ textAlign:'center', padding:'40px 20px', border:'1px dashed var(--border)', borderRadius:12, color:'var(--text-tertiary)' }}>No activities found.</div>
       ) : (
-        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-          {filtered.map(a=>(
-            <div key={a.id} style={{ padding:'14px 16px', background:'var(--bg-elevated)', borderRadius:10, border:'1px solid var(--border)', display:'flex', gap:14, alignItems:'flex-start' }}>
-              <div style={{ fontSize:22, flexShrink:0, marginTop:2 }}>{ACTIVITY_ICONS[a.type]}</div>
-              <div style={{ flex:1 }}>
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:2 }}>
-                  <div style={{ fontWeight:700, fontSize:13 }}>{a.subject}</div>
-                  <div style={{ fontSize:11, color:'var(--text-tertiary)' }}>{fmtDate(a.scheduledAt)}</div>
-                </div>
-                <div style={{ fontSize:12, color:'var(--text-secondary)', marginBottom:a.body?6:0 }}>
-                  {a.orgName} · <Chip label={a.direction} color={a.direction==='inbound'?'#22c55e':a.direction==='outbound'?'#6366f1':'#94a3b8'} /> · {a.performedByName}
-                </div>
-                {a.body && <div style={{ fontSize:12, color:'var(--text-secondary)', lineHeight:1.5 }}>{a.body}</div>}
-                {a.outcome && <div style={{ fontSize:11, marginTop:4, color:'#f59e0b', fontWeight:600 }}>💬 {a.outcome}</div>}
-              </div>
-            </div>
-          ))}
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          {filtered.map(a=>{
+             const initials = (a.performedByName || 'U').split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase();
+             const avatarColor = `hsl(${((a.performedByName?.length || 0) * 40) % 360}, 65%, 45%)`;
+
+             return (
+               <div 
+                 key={a.id} 
+                 onClick={() => {
+                    setEditingId(a.id); setShowNew(false);
+                    setForm({ orgId:a.orgId, type:a.type, direction:a.direction, subject:a.subject, body:a.body, outcome:a.outcome||'', scheduledAt:new Date(a.scheduledAt).toISOString().slice(0,16) });
+                    window.scrollTo({top:0, behavior:'smooth'});
+                 }}
+                 style={{ padding:'16px 20px', background:'var(--bg-elevated)', borderRadius:12, border:'1px solid var(--border)', cursor:'pointer', transition:'all 0.2s', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}
+                 className="hover-lift"
+                 onMouseEnter={e=>e.currentTarget.style.borderColor='var(--brand-300)'}
+                 onMouseLeave={e=>e.currentTarget.style.borderColor='var(--border)'}
+               >
+                 <div style={{ display:'flex', gap:14, alignItems:'flex-start', marginBottom: 12 }}>
+                    <div style={{ position:'relative', flexShrink:0 }}>
+                       <div style={{ width: 42, height: 42, borderRadius: '50%', background: avatarColor, color: 'white', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800, fontSize:15, letterSpacing: '0.05em', boxShadow:'inset 0 0 0 1px rgba(0,0,0,0.1)' }}>
+                         {initials}
+                       </div>
+                       <div style={{ position:'absolute', bottom:-2, right:-4, background:'var(--bg-elevated)', borderRadius:'50%', padding:2, fontSize:12, boxShadow:'0 0 0 2px var(--bg-elevated)' }}>
+                         {ACTIVITY_ICONS[a.type]}
+                       </div>
+                    </div>
+                    
+                    <div style={{ flex:1 }}>
+                       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+                         <div>
+                            <div style={{ fontWeight:800, fontSize:13, color:'var(--text-primary)', display:'flex', alignItems:'center', gap:6 }}>
+                               {a.performedByName}
+                               <span style={{ fontSize:11, color:'var(--text-tertiary)', fontWeight:500 }}>logged an activity</span>
+                            </div>
+                            <div style={{ fontSize:12, color:'var(--text-secondary)', marginTop: 2, display:'flex', alignItems:'center', gap:6 }}>
+                               {a.orgName} <span style={{ color:'var(--border-strong)' }}>|</span> <Chip label={a.direction} color={a.direction==='inbound'?'#22c55e':a.direction==='outbound'?'#6366f1':'#94a3b8'} />
+                            </div>
+                         </div>
+                         <div style={{ fontSize:11, color:'var(--text-tertiary)', fontWeight:600 }}>
+                            {fmtDate(a.scheduledAt)}
+                         </div>
+                       </div>
+                    </div>
+                 </div>
+
+                 <div style={{ marginLeft: 56 }}>
+                    <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--text-primary)', marginBottom: 4 }}>
+                       {a.subject}
+                    </div>
+                    {a.body && <div style={{ fontSize:13, color:'var(--text-secondary)', lineHeight:1.6, whiteSpace: 'pre-wrap', background:'var(--bg-canvas)', padding:'10px 14px', borderRadius:8, border:'1px solid var(--border)', marginTop:8 }}>{a.body}</div>}
+                    {a.outcome && <div style={{ fontSize:12, marginTop:10, padding:'6px 12px', background:'#f59e0b15', color:'#d97706', fontWeight:700, borderRadius:8, display:'inline-block', border:'1px solid #f59e0b33' }}>💬 {a.outcome}</div>}
+                 </div>
+               </div>
+             );
+          })}
         </div>
       )}
     </div>

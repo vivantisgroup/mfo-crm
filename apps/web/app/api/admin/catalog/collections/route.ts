@@ -1,5 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminFirestore } from '@/lib/firebaseAdmin';
+import { getAdminFirestore, getAdminAuth } from '@/lib/firebaseAdmin';
+
+async function verifyAccess(req: NextRequest) {
+  const authHeader = req.headers.get('authorization') ?? '';
+  const token = authHeader.replace(/^Bearer\s+/i, '');
+  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  try {
+    const adminAuth = getAdminAuth();
+    const decoded = await adminAuth.verifyIdToken(token);
+    const adminDb = getAdminFirestore();
+    const userSnap = await adminDb.collection('users').doc(decoded.uid).get();
+    const role = userSnap.data()?.role;
+    if (role !== 'saas_master_admin' && role !== 'firm_admin') {
+      return NextResponse.json({ error: 'Forbidden. Requires saas_master_admin or firm_admin.' }, { status: 403 });
+    }
+    return null; // OK
+  } catch {
+    return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+  }
+}
 
 // Definitive collection list — kept in sync with the schema
 const KNOWN_COLLECTIONS = [
@@ -15,6 +35,9 @@ const KNOWN_COLLECTIONS = [
 ];
 
 export async function GET(req: NextRequest) {
+  const authRes = await verifyAccess(req);
+  if (authRes) return authRes;
+
   try {
     const db = getAdminFirestore();
     const { searchParams } = new URL(req.url);

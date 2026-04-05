@@ -57,6 +57,7 @@ export interface ActiveTenant {
   isInternal?:  boolean;
   isSuperadmin?: boolean;
   brandColor?:  string;
+  industryVertical?: string;
 }
 
 export type AuthStage =
@@ -133,6 +134,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isInternal:  tenantRecord.isInternal,
     isSuperadmin: userProfile?.role === 'saas_master_admin',
     brandColor:  tenantRecord.brandColor,
+    industryVertical: tenantRecord.industryVertical,
   } : null;
 
   const isSaasMasterAdmin = userProfile?.role === 'saas_master_admin';
@@ -179,6 +181,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const localLast   = typeof localStorage   !== 'undefined' ? localStorage.getItem(`lastTenantId_${profile.uid}`)   : null;
       const sessionLast = typeof sessionStorage  !== 'undefined' ? sessionStorage.getItem('activeTenantId')               : null;
       const storedId    = localLast || sessionLast || profile.tenantId || null;
+      const isMfaVerified = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('mfa_verified') === 'true' : false;
 
       // ── Single tenant (or no tenants yet) — go straight to authenticated ──
       // Users with 0 tenants are newly created; we don't block them.
@@ -192,16 +195,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // After they set their real password, mfaEnrollRequired will gate the next login.
         if (profile.mustChangePassword) {
           setStage('authenticated');
-        } else if (profile.mfaEnrollRequired || (tRecord?.mfaConfig?.mfaMode === 'totp' && !profile.mfaEnabled)) {
+        } else if (tRecord?.mfaConfig?.mfaMode !== 'disabled' && (profile.mfaEnrollRequired || (tRecord?.mfaConfig?.mfaMode === 'totp' && !profile.mfaEnabled))) {
           if (tRecord) setPendingTenantId(tRecord.id);
           setStage('mfa_enroll');
         } else if (tRecord?.mfaRequired) {
-          if (tRecord.mfaConfig?.mfaMode === 'totp' && profile.mfaEnabled) {
-             // The user already cleared `verifyTotpLogin` at /login
-             setStage('authenticated');
-          } else {
+          if (tRecord.mfaConfig?.mfaMode !== 'disabled' && !isMfaVerified) {
              setPendingTenantId(tenantId!);
              setStage('mfa_required');
+          } else {
+             setStage('authenticated');
           }
         } else {
           setStage('authenticated');
@@ -219,15 +221,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setTenantRecord(stored);
         if (profile.mustChangePassword) {
           setStage('authenticated');
-        } else if (profile.mfaEnrollRequired || (stored.mfaConfig?.mfaMode === 'totp' && !profile.mfaEnabled)) {
+        } else if (stored.mfaConfig?.mfaMode !== 'disabled' && (profile.mfaEnrollRequired || (stored.mfaConfig?.mfaMode === 'totp' && !profile.mfaEnabled))) {
           setPendingTenantId(stored.id);
           setStage('mfa_enroll');
         } else if (stored.mfaRequired) {
-          if (stored.mfaConfig?.mfaMode === 'totp' && profile.mfaEnabled) {
-             setStage('authenticated');
-          } else {
+          if (stored.mfaConfig?.mfaMode !== 'disabled' && !isMfaVerified) {
              setPendingTenantId(storedId!);
              setStage('mfa_required');
+          } else {
+             setStage('authenticated');
           }
         } else {
           setStage('authenticated');
@@ -317,7 +319,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [auth, loadProfile]);
 
   const logout = useCallback(async () => {
-    if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('activeTenantId');
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem('activeTenantId');
+      sessionStorage.removeItem('mfa_verified');
+    }
     setFbUser(null);
     setUserProfile(null);
     setTenantRecord(null);
@@ -340,7 +345,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (typeof localStorage !== 'undefined' && userProfile?.uid) {
       localStorage.setItem(`lastTenantId_${userProfile.uid}`, tenantId);
     }
-    if (tRecord.mfaRequired) {
+    
+    // Store in session storage so soft-navs remember
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem('activeTenantId', tenantId);
+    }
+
+    const isMfaVerified = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('mfa_verified') === 'true' : false;
+
+    if (tRecord.mfaRequired && tRecord.mfaConfig?.mfaMode !== 'disabled' && !isMfaVerified) {
       setPendingTenantId(tenantId);
       setStage('mfa_required');
     } else {
@@ -358,23 +371,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(`lastTenantId_${userProfile.uid}`, pendingTenantId);
     }
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem('mfa_verified', 'true');
+    }
     updateUserProfile(userProfile.uid, { tenantId: pendingTenantId }).catch(console.error);
     setUserProfile(prev => prev ? { ...prev, tenantId: pendingTenantId } : prev);
     setPendingTenantId(null);
     setStage('authenticated');
   }, [pendingTenantId, userProfile]);
 
-  /** Called from /mfa-enroll after successful TOTP enrollment. Clears the enroll gate. */
+  /** Called from the mfa-enroll page after a successful TOTP setup. */
   const completeMfaEnroll = useCallback(async () => {
     if (!userProfile) return;
-    await updateUserProfile(userProfile.uid, { mfaEnrollRequired: false, mfaEnabled: true, mfaEnrolledAt: new Date().toISOString() }).catch(console.error);
+    await updateUserProfile(userProfile.uid, { mfaEnrollRequired: false, mfaEnabled: true, mfaEnrolledAt: new Date().toISOString() });
     setUserProfile(prev => prev ? { ...prev, mfaEnrollRequired: false, mfaEnabled: true } : prev);
-    // Now check if tenant also needs email OTP
-    if (tenantRecord?.mfaRequired && pendingTenantId) {
-      setStage('mfa_required');
-    } else {
-      setStage('authenticated');
+    
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem('mfa_verified', 'true');
     }
+
+    if (tenantRecord?.mfaRequired && pendingTenantId) {
+      if (tenantRecord.mfaConfig?.mfaMode !== 'disabled') {
+        const isMfaVerified = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('mfa_verified') === 'true' : false;
+        if (!isMfaVerified) {
+          setStage('mfa_required');
+          return;
+        }
+      }
+    }
+    
+    if (pendingTenantId) {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(`lastTenantId_${userProfile.uid}`, pendingTenantId);
+      }
+      updateUserProfile(userProfile.uid, { tenantId: pendingTenantId }).catch(console.error);
+      setUserProfile(prev => prev ? { ...prev, tenantId: pendingTenantId } : prev);
+      setPendingTenantId(null);
+    }
+    setStage('authenticated');
   }, [userProfile, tenantRecord, pendingTenantId]);
 
   const switchTenant = useCallback(async (tenantId: string) => {

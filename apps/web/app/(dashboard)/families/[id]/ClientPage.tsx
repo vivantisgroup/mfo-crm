@@ -13,6 +13,8 @@ import { ContactRelationshipGraph } from '@/components/ContactRelationshipGraph'
 import { SuitabilityAssessment } from '@/components/SuitabilityAssessment';
 import { InvestmentAdvisory } from '@/components/InvestmentAdvisory';
 import { CommunicationPanel } from '@/components/CommunicationPanel';
+import { SecondaryDock } from '@/components/SecondaryDock';
+import { usePageTitle } from '@/lib/PageTitleContext';
 
 export default function FamilyDetailPage() {
   const params   = useParams();
@@ -40,31 +42,39 @@ export default function FamilyDetailPage() {
     );
   }
 
+  const { setTitle } = usePageTitle();
+  useEffect(() => {
+    if (family) {
+      setTitle('Family Profile', '', [
+        { label: 'Families', onClick: () => router.push('/families') },
+        { label: family.name }
+      ]);
+    }
+  }, [family, router, setTitle]);
+
   return (
     <div className="page animate-fade-in" style={{ maxWidth: 1400, margin: '0 auto' }}>
-      {/* Breadcrumbs */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, fontSize: 13, color: 'var(--text-tertiary)', fontWeight: 600 }}>
-        <button onClick={() => router.push('/families')} style={{ background: 'none', border: 'none', color: 'var(--brand-400)', cursor: 'pointer', padding: 0, fontWeight: 600 }}>Families</button>
-        <span>/</span>
-        <span style={{ color: 'var(--text-primary)' }}>{family.name}</span>
-      </div>
-
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 16, gap: 12 }}>
         <button className="btn btn-secondary btn-sm">Edit Family</button>
         <button className="btn btn-primary btn-sm">Generate Report</button>
       </div>
 
-      <div className="tabs" style={{ marginBottom: 24, borderBottom: '1px solid var(--border)', display: 'flex', gap: 0, overflowX: 'auto' }}>
-        {['overview', 'communications', 'members', 'entities', 'network', 'suitability', 'advisory', 'tickets', 'settings'].map(t => (
-          <button
-            key={t}
-            className={`tab ${activeTab === t ? 'active' : ''}`}
-            onClick={() => setActiveTab(t)}
-            style={{ padding:'10px 18px', fontSize:13, background:'none', border:'none', borderBottom:`2px solid ${activeTab===t?'var(--brand-500)':'transparent'}`, cursor:'pointer', whiteSpace:'nowrap', color:activeTab===t?'var(--brand-500)':'var(--text-secondary)', textTransform: 'capitalize' }}
-          >
-            {t}
-          </button>
-        ))}
+      <div style={{ marginBottom: 24, paddingBottom: 16 }}>
+        <SecondaryDock 
+          tabs={[
+            { id: 'overview', label: 'Overview', icon: '📊' },
+            { id: 'communications', label: 'Comms', icon: '💬' },
+            { id: 'members', label: 'Members', icon: '👥' },
+            { id: 'entities', label: 'Entities', icon: '🏢' },
+            { id: 'network', label: 'Network', icon: '🔗' },
+            { id: 'suitability', label: 'Suitability', icon: '🛡️' },
+            { id: 'advisory', label: 'Advisory', icon: '💡' },
+            { id: 'tickets', label: 'Tickets', icon: '🎫' },
+            { id: 'settings', label: 'Settings', icon: '⚙️' }
+          ]}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+        />
       </div>
 
       <div style={{ marginTop: 24, flex: 1, minHeight: 0 }}>

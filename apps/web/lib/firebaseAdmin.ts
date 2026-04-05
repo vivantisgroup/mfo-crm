@@ -167,3 +167,19 @@ export function isAdminAvailable(): boolean {
 export function hasAdminWriteAccess(): boolean {
   try { getAdminApp(); return _hasCredentials; } catch { return false; }
 }
+
+/**
+ * Drops the currently loaded SDK instances. Extremely useful for gracefully
+ * recovering from Session Revocations and invalid_grant/invalid_rapt errors
+ * when Google Cloud forces an ADC rotation but Node keeps the old instance cached.
+ */
+export async function forceReinitializeAdmin() {
+  if (_app) {
+    try { await _app.delete(); } catch { /* ignore */ }
+  }
+  _app = null;
+  _db = null;
+  _auth = null;
+  _hasCredentials = false;
+  _initError = null;
+}

@@ -1,5 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminFirestore } from '@/lib/firebaseAdmin';
+import { getAdminFirestore, getAdminAuth } from '@/lib/firebaseAdmin';
+
+async function verifyAccess(req: NextRequest) {
+  const authHeader = req.headers.get('authorization') ?? '';
+  const token = authHeader.replace(/^Bearer\s+/i, '');
+  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  try {
+    const adminAuth = getAdminAuth();
+    const decoded = await adminAuth.verifyIdToken(token);
+    const adminDb = getAdminFirestore();
+    const userSnap = await adminDb.collection('users').doc(decoded.uid).get();
+    const role = userSnap.data()?.role;
+    if (role !== 'saas_master_admin' && role !== 'firm_admin') {
+      return NextResponse.json({ error: 'Forbidden. Requires saas_master_admin or firm_admin.' }, { status: 403 });
+    }
+    return null; // OK
+  } catch {
+    return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+  }
+}
+
 
 export interface ConsistencyIssue {
   id:          string;
@@ -24,7 +45,10 @@ const VALID_ROLES = [
 // =============================================================================
 // POST — run consistency checks (Admin SDK — bypasses Firestore rules)
 // =============================================================================
-export async function POST(_req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const authRes = await verifyAccess(req);
+  if (authRes) return authRes;
+
   try {
     const db     = getAdminFirestore();
     const issues: ConsistencyIssue[] = [];
@@ -43,18 +67,22 @@ export async function POST(_req: NextRequest) {
     ];
 
     // ── Orphaned Collection checks ──────────────────────────────────────────
-    const liveCollections = await db.listCollections();
-    for (const c of liveCollections) {
-      if (!KNOWN_COLLECTIONS.includes(c.id)) {
-        issues.push({
-          id: `issue_${idx++}`, collection: c.id, docId: 'collection',
-          field: 'schema', severity: 'warning', issueType: 'unknown_collection',
-          title: `Unknown Collection: ${c.id}`,
-          description: `The collection "${c.id}" exists in the database but is not part of the active MFO schema.`,
-          howToFix: 'No auto-fix available. Manually review and delete if confirmed obsolete using the Database Explorer.',
-          canAutoFix: false,
-        });
+    try {
+      const liveCollections = await db.listCollections();
+      for (const c of liveCollections) {
+        if (!KNOWN_COLLECTIONS.includes(c.id)) {
+          issues.push({
+            id: `issue_${idx++}`, collection: c.id, docId: 'collection',
+            field: 'schema', severity: 'warning', issueType: 'unknown_collection',
+            title: `Unknown Collection: ${c.id}`,
+            description: `The collection "${c.id}" exists in the database but is not part of the active MFO schema.`,
+            howToFix: 'No auto-fix available. Manually review and delete if confirmed obsolete using the Database Explorer.',
+            canAutoFix: false,
+          });
+        }
       }
+    } catch (e: any) {
+      console.warn('[consistency] listCollections failed. Skipping orphaned collection checks.', e.message);
     }
 
     const [usersSnap, tenantsSnap, mfaSnap, auditSnap] = await Promise.all([
@@ -184,6 +212,9 @@ export async function POST(_req: NextRequest) {
 // PATCH — apply a specific fix
 // =============================================================================
 export async function PATCH(req: NextRequest) {
+  const authRes = await verifyAccess(req);
+  if (authRes) return authRes;
+
   try {
     const db = getAdminFirestore();
     const body = await req.json() as { issueId: string; issue: ConsistencyIssue };

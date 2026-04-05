@@ -14,7 +14,6 @@ import {
   getPlatformConfig, getTenantsForUser, touchLastLogin,
   type TenantRecord, type UserProfile,
 } from '@/lib/platformService';
-import { verifyTotpLogin, totpSecondsRemaining } from '@/lib/mfaService';
 
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -22,6 +21,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Loader2, ShieldCheck, UserPlus, LogIn, ChevronRight, LockKeyhole, Eye, EyeOff } from 'lucide-react';
+import { useAuth } from '@/lib/AuthContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,8 +30,8 @@ type Screen =
   | 'signin'
   | 'signup'
   | 'forgot_password'   // ← password reset email flow
-  | 'mfa_challenge'     // ← TOTP OTP entry after password OK
   | 'tenant_select'     // ← workspace picker after full auth
+  | 'mfa_verify'        // ← inline MFA challenge
   | 'confirm_init'
   | 'initializing'
   | 'done';
@@ -69,97 +69,12 @@ function StatusIcon({ status }: { status: LogEntry['status'] }) {
   return <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />;
 }
 
-// ─── OTP Input — 6 individual digit boxes ────────────────────────────────────
-
-function OtpInput({ value, onChange, disabled, firstRef }: {
-  value:     string;
-  onChange:  (v: string) => void;
-  disabled?: boolean;
-  firstRef?: React.RefObject<HTMLInputElement | null>;
-}) {
-  const refs = useRef<(HTMLInputElement | null)[]>([]);
-
-  function handleKey(i: number, e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Backspace' && !value[i] && i > 0) {
-      refs.current[i - 1]?.focus();
-      onChange(value.slice(0, i - 1));
-    }
-  }
-
-  function handleChange(i: number, e: React.ChangeEvent<HTMLInputElement>) {
-    const digit = e.target.value.replace(/\D/g, '').slice(-1);
-    const next = value.slice(0, i) + digit + value.slice(i + 1);
-    onChange(next.slice(0, 6));
-    if (digit && i < 5) refs.current[i + 1]?.focus();
-  }
-
-  function handlePaste(e: React.ClipboardEvent) {
-    e.preventDefault();
-    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-    onChange(pasted);
-    const nextFocus = Math.min(pasted.length, 5);
-    refs.current[nextFocus]?.focus();
-  }
-
-  return (
-    <div className="flex gap-2 sm:gap-3 justify-center">
-      {[0,1,2,3,4,5].map(i => (
-        <input
-          key={i}
-          ref={el => {
-            refs.current[i] = el;
-            if (i === 0 && firstRef) (firstRef as React.MutableRefObject<HTMLInputElement | null>).current = el;
-          }}
-          type="text"
-          inputMode="numeric"
-          maxLength={1}
-          value={value[i] ?? ''}
-          onChange={e => handleChange(i, e)}
-          onKeyDown={e => handleKey(i, e)}
-          onPaste={handlePaste}
-          disabled={disabled}
-          autoComplete="one-time-code"
-          className={`w-10 h-12 sm:w-12 sm:h-14 text-center text-2xl font-bold bg-background border-2 rounded-xl focus:outline-none transition-all caret-transparent
-            ${value[i] ? 'border-primary ring-2 ring-primary/20 text-primary-foreground bg-primary/10' : 'border-border text-foreground hover:border-muted-foreground'}
-          `}
-        />
-      ))}
-    </div>
-  );
-}
-
-// ─── TOTP countdown ring ──────────────────────────────────────────────────────
-
-function TotpTimer() {
-  const [secs, setSecs] = useState(totpSecondsRemaining());
-  useEffect(() => {
-    const id = setInterval(() => setSecs(totpSecondsRemaining()), 1000);
-    return () => clearInterval(id);
-  }, []);
-  const pct = secs / 30;
-  const r = 12, circ = 2 * Math.PI * r;
-  const dash = circ * pct;
-  const color = secs <= 5 ? '#ef4444' : secs <= 10 ? '#f59e0b' : '#22c55e';
-  return (
-    <div className="flex items-center gap-2 justify-center mt-4">
-      <svg width={32} height={32} viewBox="0 0 32 32" className="-rotate-90">
-        <circle cx={16} cy={16} r={r} fill="none" className="stroke-border" strokeWidth={2.5} />
-        <circle cx={16} cy={16} r={r} fill="none" strokeWidth={2.5}
-          strokeDasharray={`${dash} ${circ}`} strokeLinecap="round"
-          style={{ stroke: color, transition: 'stroke-dasharray 1s linear, stroke 0.3s' }} />
-      </svg>
-      <span className="text-sm text-muted-foreground tabular-nums">
-        Code refreshes in <strong style={{ color }}>{secs}s</strong>
-      </span>
-    </div>
-  );
-}
-
 // ─── Login Component Logic ───────────────────────────────────────────────────────────
 
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { selectTenant } = useAuth();
   const isAdminRequest = searchParams.get('admin') === '1';
 
   const auth   = getAuth(firebaseApp);
@@ -195,29 +110,88 @@ function LoginContent() {
   const [selectedId,      setSelectedId]      = useState('');
   const [enteringTenant,  setEnteringTenant]  = useState(false);
 
-  // MFA challenge state
-  const [mfaUid,      setMfaUid]      = useState<string>('');
-  const [mfaFbUser,   setMfaFbUser]   = useState<any>(null);
-  const [otpCode,     setOtpCode]     = useState('');
-  const [mfaError,    setMfaError]    = useState('');
-  const [mfaLoading,  setMfaLoading]  = useState(false);
-  const [mfaShake,    setMfaShake]    = useState(false);
-  const firstOtpRef  = useRef<HTMLInputElement | null>(null);
-
   // Forgot password state
   const [resetSent,   setResetSent]   = useState(false);
   const [resetEmail,  setResetEmail]  = useState('');
 
-  /**
-   * mfaPassedRef — true after successful TOTP verification.
-   * Used by onAuthStateChanged (existing-session case) to avoid re-challenging.
-   */
-  const mfaPassedRef       = useRef(false);
+  // MFA state
+  const [pendingMfaTenant, setPendingMfaTenant] = useState<TenantRecord | null>(null);
+  const [mfaCode,          setMfaCode]          = useState('');
+  const [mfaSending,       setMfaSending]       = useState(false);
+  const [mfaSent,          setMfaSent]          = useState(false);
+  const [mfaCountdown,     setMfaCountdown]     = useState(0);
+  const [mfaDevCode,       setMfaDevCode]       = useState<string | null>(null);
+  const mfaTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (mfaCountdown > 0) {
+      mfaTimerRef.current = setInterval(() => setMfaCountdown(c => c - 1), 1000);
+      return () => { if (mfaTimerRef.current) clearInterval(mfaTimerRef.current); };
+    }
+  }, [mfaCountdown]);
+
+  // Auto-send Email OTP on screen enter
+  useEffect(() => {
+    if (screen === 'mfa_verify' && pendingMfaTenant?.mfaConfig?.mfaMode === 'email' && !mfaSent && !mfaSending) {
+      sendMfaCode().catch(console.error);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen, pendingMfaTenant]);
+
+  async function sendMfaCode() {
+    setMfaSending(true); setError('');
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken || !pendingMfaTenant?.id) throw new Error('Session expired.');
+      const res = await fetch('/api/mfa/send-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken, tenantId: pendingMfaTenant.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Failed to send code.');
+      setMfaSent(true);
+      setMfaCountdown(60);
+      if (data.devCode) setMfaDevCode(data.devCode);
+    } catch (e: any) { setError(e.message); }
+    finally { setMfaSending(false); }
+  }
+
+  async function verifyMfaCode(e: React.FormEvent) {
+    if (e) e.preventDefault();
+    if (mfaCode.length !== 6) { setError('Please enter the 6-digit code.'); return; }
+    setLoading(true); setError('');
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken || !pendingMfaTenant?.id || !authedUser) throw new Error('Session expired.');
+
+      if (pendingMfaTenant.mfaConfig?.mfaMode === 'totp') {
+        const { verifyTotpLogin } = await import('@/lib/mfaService');
+        const isValid = await verifyTotpLogin(authedUser.uid, mfaCode);
+        if (!isValid) throw new Error('Invalid or expired authenticator code.');
+      } else {
+        const res = await fetch('/api/mfa/verify-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken, tenantId: pendingMfaTenant.id, code: mfaCode }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? 'Verification failed.');
+      }
+
+      // We strictly register verified state THEN inform the Context Router so the global stage flips to 'authenticated'
+      sessionStorage.setItem('mfa_verified', 'true');
+      sessionStorage.setItem('activeTenantId', pendingMfaTenant.id);
+      await selectTenant(pendingMfaTenant.id);
+      router.replace('/dashboard');
+    } catch (e: any) { setError(e.message); }
+    finally { setLoading(false); }
+  }
 
   /**
    * signInInProgressRef — true while handleSignIn is running.
    * Prevents onAuthStateChanged from double-routing on a fresh sign-in,
-   * since handleSignIn manages the full flow (MFA + workspace) directly.
+   * since handleSignIn manages the full flow (workspace) directly.
    */
   const signInInProgressRef = useRef(false);
 
@@ -252,18 +226,6 @@ function LoginContent() {
 
           const profile = await ensureUserProfile(fbUser);
 
-          if (profile.mfaEnabled && !mfaPassedRef.current) {
-            // MFA not yet verified this mount → show challenge
-            setMfaUid(fbUser.uid);
-            setMfaFbUser(fbUser);
-            setOtpCode('');
-            setMfaError('');
-            setScreen('mfa_challenge');
-            setTimeout(() => firstOtpRef.current?.focus(), 80);
-            return;
-          }
-
-          // MFA passed or not required — route to workspace
           let ts = await getTenantsForUser(profile);
 
           // Fallback: same strategy as finishAuth — if tenantIds is empty,
@@ -398,7 +360,13 @@ function LoginContent() {
     if (ts.length === 0) throw new Error('Your account has no workspace assigned. Contact your administrator.');
     if (ts.length === 1) {
       await touchLastLogin(fbUser.uid);
-      router.replace('/dashboard');
+      const isMfaVerified = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('mfa_verified') === 'true' : false;
+      if (ts[0].mfaRequired && ts[0].mfaConfig?.mfaMode !== 'disabled' && !isMfaVerified) {
+        setPendingMfaTenant(ts[0]);
+        setScreen('mfa_verify');
+      } else {
+        router.replace('/dashboard');
+      }
     } else {
       setSelectedId(profile.tenantId ?? ts[0].id);
       setScreen('tenant_select');
@@ -463,18 +431,9 @@ function LoginContent() {
         console.warn('[handleSignIn] ensure-profile unavailable:', ensureErr);
       }
 
-      // Step 3: MFA gate (use server profile if available, else read locally)
+      // Step 3: ensure profile locally if server heal failed
       const profile = serverProfile ?? await ensureUserProfile(cred.user);
-      if (profile.mfaEnabled) {
-        setMfaUid(cred.user.uid);
-        setMfaFbUser(cred.user);
-        setOtpCode('');
-        setMfaError('');
-        setScreen('mfa_challenge');
-        setTimeout(() => firstOtpRef.current?.focus(), 80);
-        return;
-      }
-
+      
       // Step 4: Fast-path using server data if tenants were returned
       signInInProgressRef.current = false;
       if (serverProfile && serverTenants.length > 0) {
@@ -484,7 +443,13 @@ function LoginContent() {
         setUserProfile(serverProfile);
         setTenants(serverTenants);
         if (serverTenants.length === 1) {
-          router.replace('/dashboard');
+          const isMfaVerified = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('mfa_verified') === 'true' : false;
+          if (serverTenants[0].mfaRequired && serverTenants[0].mfaConfig?.mfaMode !== 'disabled' && !isMfaVerified) {
+            setPendingMfaTenant(serverTenants[0]);
+            setScreen('mfa_verify');
+          } else {
+            router.replace('/dashboard');
+          }
         } else {
           setSelectedId(serverProfile.tenantId ?? serverTenants[0]?.id ?? '');
           setScreen('tenant_select');
@@ -503,46 +468,32 @@ function LoginContent() {
   }
 
 
-  // ── MFA: verify TOTP code ─────────────────────────────────────────────────────
-  async function handleMfaVerify() {
-    if (!mfaUid || otpCode.length < 6 || mfaLoading) return;
-    setMfaLoading(true);
-    setMfaError('');
-    try {
-      await verifyTotpLogin(mfaUid, otpCode);
-      // Unlock both gates
-      mfaPassedRef.current       = true;
-      signInInProgressRef.current = false;
-      await finishAuth(mfaFbUser);
-    } catch (err: any) {
-      // Wrong code: show error, shake, clear, refocus
-      setMfaError(err.message ?? 'Incorrect code. Try again.');
-      setOtpCode('');
-      setMfaShake(true);
-      setTimeout(() => setMfaShake(false), 600);
-      setTimeout(() => firstOtpRef.current?.focus(), 30);
-    } finally {
-      setMfaLoading(false);
-    }
-  }
 
-  // Auto-submit when all 6 digits are entered
-  useEffect(() => {
-    if (screen === 'mfa_challenge' && otpCode.length === 6 && !mfaLoading) {
-      handleMfaVerify();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [otpCode, screen]);
 
   // ── Enter workspace ───────────────────────────────────────────────────────────
   async function handleEnterTenant() {
     if (!selectedId || !authedUser) return;
+    
     setEnteringTenant(true);
     try {
       await touchLastLogin(authedUser.uid);
+      const t = tenants.find(x => x.id === selectedId);
+      const isMfaVerified = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('mfa_verified') === 'true' : false;
+      
+      if (t?.mfaRequired && t.mfaConfig?.mfaMode !== 'disabled' && !isMfaVerified) {
+        setPendingMfaTenant(t);
+        setScreen('mfa_verify');
+        setEnteringTenant(false);
+        return;
+      }
+      
       sessionStorage.setItem('activeTenantId', selectedId);
+      await selectTenant(selectedId);
       router.replace('/dashboard');
-    } catch { setError('Failed to enter workspace.'); setEnteringTenant(false); }
+    } catch (err: any) { 
+      setError(friendlyAuthError(err.code ?? err.message));
+      setEnteringTenant(false); 
+    }
   }
 
   // ── Sign Up preflight ─────────────────────────────────────────────────────────
@@ -624,25 +575,6 @@ function LoginContent() {
       setInitError(msg);
     }
   }
-
-  // ─── Styles ──────────────────────────────────────────────────────────────────
-
-  const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '13px 16px', fontSize: 14, borderRadius: 10,
-    background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-    color: 'var(--text-primary)', outline: 'none', transition: 'border-color 0.15s',
-  };
-  const labelStyle: React.CSSProperties = {
-    display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)',
-    marginBottom: 7, textTransform: 'uppercase', letterSpacing: '0.05em',
-  };
-  const btnPrimary = (disabled = false): React.CSSProperties => ({
-    background: disabled ? '#4338ca' : 'var(--brand-500)', color: 'white',
-    padding: '15px', fontSize: 15, fontWeight: 700, borderRadius: 12, border: 'none',
-    cursor: disabled ? 'not-allowed' : 'pointer', width: '100%',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-    boxShadow: '0 4px 12px #6366f144', transition: 'background 0.15s', opacity: disabled ? 0.7 : 1,
-  });
 
   // ── LOADING ───────────────────────────────────────────────────────────────────
   if (screen === 'loading') {
@@ -730,7 +662,6 @@ function LoginContent() {
               ['Platform config written', 'platform/config → initialized: true'],
               ['Master tenant created', 'tenants/master → Platform HQ'],
               ['User profile created', 'users/{uid} → role: saas_master_admin'],
-              ['MFA setup prompted', 'You will be asked to enable TOTP 2FA after login'],
               ['Session established', 'Redirect to dashboard'],
             ].map(([step, detail]) => (
               <div key={step} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
@@ -773,7 +704,7 @@ function LoginContent() {
     );
   }
 
-  // ── SIGN IN / SIGN UP / MFA / TENANT SELECT ──────────────────────────────────
+  // ── SIGN IN / SIGN UP / TENANT SELECT ──────────────────────────────────
   const isFirstSetup = screen === 'signup';
 
   return (
@@ -804,7 +735,7 @@ function LoginContent() {
             ['$1.4B+', 'Platform AUM'],
             ['99.9%', 'Uptime SLA'],
             ['ISO 27001', 'Certified'],
-            ['TOTP MFA', 'Protected']
+            ['Secure', 'Protected']
           ].map(([v, l]) => (
             <div key={l}>
               <div className="text-2xl font-bold text-slate-100">{v}</div>
@@ -855,42 +786,74 @@ function LoginContent() {
             </div>
           )}
 
-          {/* ── MFA CHALLENGE SCREEN ── */}
-          {screen === 'mfa_challenge' && (
+          {/* ── MFA VERIFY SCREEN ── */}
+          {screen === 'mfa_verify' && pendingMfaTenant && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="text-center mb-8">
-                <div className="w-20 h-20 mx-auto bg-gradient-to-br from-primary to-indigo-400 rounded-full flex items-center justify-center shadow-lg shadow-primary/30 mb-6">
+                <div className="w-20 h-20 mx-auto bg-gradient-to-br from-indigo-500 to-indigo-900 rounded-full flex items-center justify-center shadow-lg shadow-indigo-500/20 border border-indigo-400/20 mb-6">
                   <ShieldCheck className="w-10 h-10 text-white" />
                 </div>
-                <h1 className="text-2xl font-bold tracking-tight mb-2">Verification Required</h1>
-                <p className="text-muted-foreground text-sm">
-                  Open your authenticator app and enter the 6-digit code for <strong className="text-foreground">{email}</strong>
+                <h1 className="text-2xl font-bold tracking-tight mb-2 text-foreground">
+                  {pendingMfaTenant.mfaConfig?.mfaMode === 'totp' ? 'Authenticator Code' : 'Verification Code'}
+                </h1>
+                <p className="text-muted-foreground text-sm leading-relaxed mb-6">
+                  {pendingMfaTenant.mfaConfig?.mfaMode === 'totp'
+                    ? <>Open your authenticator app and enter the 6-digit code for <strong>MFO Nexus</strong>.</>
+                    : mfaSent
+                      ? <>We sent a 6-digit code to <strong>{authedUser?.email}</strong>.</>
+                      : mfaSending ? 'Sending verification code…' : 'Preparing verification…'
+                  }
                 </p>
-              </div>
 
-              <div className={mfaShake ? 'animate-[mfa-shake_0.5s_ease]' : ''}>
-                <OtpInput value={otpCode} onChange={v => { setMfaError(''); setOtpCode(v); }} disabled={mfaLoading} firstRef={firstOtpRef} />
-              </div>
+                {mfaDevCode && pendingMfaTenant.mfaConfig?.mfaMode === 'email' && (
+                  <div className="mb-6 p-4 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-xl text-xs text-left">
+                    🛠️ Development mode. Your code: <strong className="font-mono text-sm">{mfaDevCode}</strong>
+                  </div>
+                )}
 
-              <TotpTimer />
+                <form onSubmit={verifyMfaCode} className="space-y-6">
+                  <div className="space-y-2 mt-4">
+                    <Label className="text-xs font-bold text-indigo-500 uppercase tracking-widest text-left block">
+                      6-Digit Code
+                    </Label>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="\d{6}"
+                      maxLength={6}
+                      value={mfaCode}
+                      onChange={e => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="• • • • • •"
+                      autoFocus
+                      disabled={loading || (pendingMfaTenant.mfaConfig?.mfaMode === 'email' && !mfaSent)}
+                      className="h-16 text-center text-3xl tracking-[0.3em] font-mono font-bold bg-slate-950/50 border-indigo-500/30 focus-visible:ring-indigo-500"
+                    />
+                  </div>
 
-              {mfaError && (
-                <div className="mt-4 p-3 bg-destructive/10 text-destructive text-sm text-center rounded-lg font-medium border border-destructive/20">
-                  {mfaError}
+                  <Button type="submit" size="lg" className="w-full font-bold text-base h-14 rounded-xl shadow-xl shadow-indigo-500/20 bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500" disabled={loading || mfaCode.length !== 6}>
+                    {loading ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Verifying…</> : '🔓 Verify & Enter Workspace'}
+                  </Button>
+                </form>
+
+                {pendingMfaTenant.mfaConfig?.mfaMode === 'email' && (
+                  <div className="mt-8">
+                    <Button variant="ghost" onClick={sendMfaCode} disabled={mfaSending || mfaCountdown > 0} className="text-sm text-muted-foreground hover:text-foreground">
+                      {mfaCountdown > 0 ? `Resend code in ${mfaCountdown}s` : 'Resend verification code'}
+                    </Button>
+                  </div>
+                )}
+
+                <div className="mt-6 text-center">
+                  <Button variant="ghost" onClick={() => {
+                    auth.signOut();
+                    setScreen('signin');
+                    setPendingMfaTenant(null);
+                    setMfaCode('');
+                  }} className="text-muted-foreground hover:text-foreground">
+                    ← Back to Sign In
+                  </Button>
                 </div>
-              )}
 
-              <Button size="lg" className="w-full mt-8 font-semibold text-base py-6 rounded-xl shadow-lg shadow-primary/20" onClick={handleMfaVerify} disabled={otpCode.length < 6 || mfaLoading}>
-                {mfaLoading ? <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Verifying…</> : 'Verify Code'}
-              </Button>
-
-              <div className="mt-4 text-center">
-                <Button variant="ghost" onClick={async () => {
-                  signInInProgressRef.current = false; setOtpCode(''); setMfaError(''); setMfaUid(''); setMfaFbUser(null);
-                  mfaPassedRef.current = false; await auth.signOut();
-                }} className="text-muted-foreground hover:text-foreground">
-                  ← Back to Sign In
-                </Button>
               </div>
             </div>
           )}
