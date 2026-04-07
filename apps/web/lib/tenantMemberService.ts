@@ -152,7 +152,9 @@ export async function addMemberToTenant(
   batch.set(userRef, {
     tenantIds: arrayUnion(tenantId),
     // If user has no primary tenant yet, set this as primary
-    ...(targetUser.tenantIds.length === 0 ? { tenantId } : {}),
+    ...((!targetUser.tenantIds || targetUser.tenantIds.length === 0) ? { tenantId } : {}),
+    role: role, // ← Important! Syncs global role so isTenantAdmin() rules pass.
+    lastAddedTenantId: tenantId, // ← allows Firestore Rules to verify the caller is a tenant admin
     updatedAt: now,
   }, { merge: true });
 
@@ -208,6 +210,7 @@ export async function addPlaceholderMember(
     createdAt:   now,
     tenantId:    tenantId,      // ← primary tenant (was missing — kritical fix!)
     tenantIds:   [tenantId],    // static array on create (arrayUnion only works on update)
+    lastAddedTenantId: tenantId, // ← allows Firestore Rules to verify the caller is a tenant admin
   }, { merge: true });
 
   // 2. Add to members collection
@@ -255,16 +258,24 @@ export async function removeMemberFromTenant(
   targetName: string,
   performer:  { uid: string; name: string },
 ): Promise<void> {
-  const now = new Date().toISOString();
-  const batch = writeBatch(db);
+  const { getAuth } = await import('firebase/auth');
+  const { firebaseApp } = await import('@mfo-crm/config');
+  const auth = getAuth(firebaseApp);
+  const idToken = await auth.currentUser?.getIdToken();
 
-  batch.delete(doc(db, 'tenants', tenantId, 'members', targetUid));
-  batch.update(doc(db, 'users', targetUid), {
-    tenantIds: arrayRemove(tenantId),
-    updatedAt: now,
+  if (!idToken) throw new Error('Not authenticated');
+
+  const res = await fetch(`/api/admin/tenants/${tenantId}/members/${targetUid}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ idToken })
   });
 
-  await batch.commit();
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => null);
+    throw new Error(errorData?.error || `Server error: ${res.status}`);
+  }
+
   await audit(tenantId, performer, 'MEMBER_REMOVED', targetUid, 'user',
     `${targetName} removed from ${tenantName}`);
 }
@@ -291,7 +302,9 @@ export async function updateMemberRole(
 
   // ← Also update the user's top-level profile so AuthContext live listener picks it up
   batch.update(doc(db, 'users', targetUid), {
-    role: newRole, updatedAt: now,
+    role: newRole, 
+    lastAddedTenantId: tenantId, // ← allows Firestore Rules to verify the caller is a tenant admin
+    updatedAt: now,
   });
 
   await batch.commit();

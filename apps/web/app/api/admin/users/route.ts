@@ -194,39 +194,43 @@ export async function POST(req: NextRequest) {
     try {
       if (hasAdminWriteAccess()) {
         const adminDb = getAdminFirestore();
-        await adminDb.collection('users').doc(uid).set({
+        const dataToWrite: any = {
           uid,
           email,
-          displayName: displayName ?? email.split('@')[0],
-          role:               'report_viewer',
-          tenantId:           null,
-          tenantIds:          [],
-          mfaEnabled:         false,
-          status:             'invited',
-          mustChangePassword: isNew,
-          createdAt:          now,
-          updatedAt:          now,
-        }, { merge: true });
+          updatedAt: now,
+        };
+        // Only set base defaults if this is a newly created user profile
+        if (isNew) {
+          Object.assign(dataToWrite, {
+            displayName: displayName ?? email.split('@')[0],
+            role: 'report_viewer',
+            tenantId: null,
+            tenantIds: [],
+            mfaEnabled: false,
+            status: 'invited',
+            mustChangePassword: true,
+            createdAt: now,
+          });
+        }
+        await adminDb.collection('users').doc(uid).set(dataToWrite, { merge: true });
       } else {
         // Fall back to REST API write using the caller's ID token.
         // Requires the caller (e.g. saas_master_admin or tenant_admin) to have write rules permission.
         const projectId = process.env.NEXT_PUBLIC_PROJECT_ID ?? process.env.FIREBASE_PROJECT_ID;
         if (!projectId) throw new Error('Cannot write via REST without a project ID');
         
-        const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${uid}?updateMask.fieldPaths=uid&updateMask.fieldPaths=email&updateMask.fieldPaths=displayName&updateMask.fieldPaths=role&updateMask.fieldPaths=tenantIds&updateMask.fieldPaths=mfaEnabled&updateMask.fieldPaths=status&updateMask.fieldPaths=mustChangePassword&updateMask.fieldPaths=createdAt&updateMask.fieldPaths=updatedAt`;
+        const updatePaths = isNew 
+          ? '&updateMask.fieldPaths=displayName&updateMask.fieldPaths=role&updateMask.fieldPaths=tenantIds&updateMask.fieldPaths=mfaEnabled&updateMask.fieldPaths=status&updateMask.fieldPaths=mustChangePassword&updateMask.fieldPaths=createdAt&updateMask.fieldPaths=lastAddedTenantId'
+          : '&updateMask.fieldPaths=lastAddedTenantId';
+
+        const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${uid}?updateMask.fieldPaths=uid&updateMask.fieldPaths=email&updateMask.fieldPaths=updatedAt${updatePaths}`;
         
-        const fields = {
+        const fields: any = {
           uid: { stringValue: uid },
           email: { stringValue: email },
-          displayName: { stringValue: displayName ?? email.split('@')[0] },
-          role: { stringValue: 'report_viewer' },
-          tenantIds: { arrayValue: { values: [] } },
-          mfaEnabled: { booleanValue: false },
-          status: { stringValue: 'invited' },
-          mustChangePassword: { booleanValue: isNew },
-          createdAt: { timestampValue: now },
           updatedAt: { timestampValue: now },
         };
+        if (tenantId) fields.lastAddedTenantId = { stringValue: tenantId };
 
         const res = await fetch(url, {
           method: 'PATCH',
@@ -244,9 +248,38 @@ export async function POST(req: NextRequest) {
       console.error('[POST /api/admin/users] Firestore write failed:', fsErr.message);
     }
 
+    let inviteLink: string | undefined;
+    let emailSent = false;
+    if (isNew) {
+      try {
+        const adminSdkConfigured = !!process.env.FIREBASE_ADMIN_SDK_JSON;
+        if (adminSdkConfigured && hasAdminWriteAccess()) {
+          const adminAuth = getAdminAuth();
+          inviteLink = await adminAuth.generatePasswordResetLink(email, {
+            url: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000/login'
+          });
+        }
+      } catch (err: any) {
+        console.error('[POST /api/admin/users] Failed to generate invite link via Admin SDK:', err.message);
+      }
+
+      if (!inviteLink) {
+        try {
+          // Cannot use returnOobLink: true without a Service Account (throws INSUFFICIENT_PERMISSION).
+          // We trigger native Firebase email sending instead.
+          await itPost('accounts:sendOobCode', {
+            requestType: 'PASSWORD_RESET',
+            email
+          });
+          emailSent = true;
+        } catch (oobErr: any) {
+          console.error('[POST /api/admin/users] Failed to generate invite link via REST:', oobErr.message);
+        }
+      }
+    }
+
     // ── Dispatch welcome email server-side ──────────────────────────────────
     // Only send for new users (existing users already have a real password).
-    let emailSent = false;
     if (isNew && tempPassword) {
       try {
         const tName = tenantName; const tId = tenantId; const lang = language;
@@ -295,6 +328,7 @@ export async function POST(req: NextRequest) {
       firestoreOk,
       emailSent,
       tempPassword: isNew ? tempPassword : undefined,
+      inviteLink,
     });
   } catch (e: any) {
     console.error('[POST /api/admin/users]', e);
@@ -371,27 +405,118 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    // Prefer Admin SDK to send the email (supports actionCodeSettings).
-    // Fall back to REST Identity Toolkit if Admin SDK isn't configured.
+    let generatedLink: string | undefined;
+    let emailSent = false;
+
+    // Prefer Admin SDK to get the link
     const adminSdkConfigured = !!process.env.FIREBASE_ADMIN_SDK_JSON;
-    if (adminSdkConfigured) {
+    if (adminSdkConfigured && hasAdminWriteAccess()) {
       try {
         const adminAuth = getAdminAuth();
-        await adminAuth.generatePasswordResetLink(email); // omitting action settings avoids domain issues
-      } catch { /* fall through to REST */ }
+        generatedLink = await adminAuth.generatePasswordResetLink(email, {
+          url: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000/login'
+        });
+      } catch (err: any) {
+        console.error('[PUT /api/admin/users] Admin SDK generate link failed:', err.message);
+      }
     }
 
-    // Send via Identity Toolkit REST (always works with just the API key)
-    // We intentionally omit continueUrl to avoid UNAUTHORIZED_DOMAIN errors
-    // from un-whitelisted Vercel preview domains.
-    await itPost('accounts:sendOobCode', {
-      requestType: 'PASSWORD_RESET',
-      email,
-    });
 
-    return NextResponse.json({ success: true });
+    if (!generatedLink) {
+      try {
+        // Fall back to REST Identity Toolkit (Cannot return link without service account)
+        await itPost('accounts:sendOobCode', {
+          requestType: 'PASSWORD_RESET',
+          email,
+          continueUrl: process.env.NEXT_PUBLIC_APP_URL ? `${process.env.NEXT_PUBLIC_APP_URL}/auth/action` : 'http://localhost:3000/auth/action'
+        });
+        emailSent = true;
+      } catch (oobErr: any) {
+        throw new Error('Failed to send Firebase native email: ' + oobErr.message);
+      }
+    }
+
+    // Attempt to email it if SMTP is ready
+    const smtpReady = !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+    if (smtpReady && generatedLink) {
+      try {
+        // @ts-ignore
+        const nodemailer = await import('nodemailer');
+        const transporter = nodemailer.default.createTransport({
+          host:   process.env.SMTP_HOST,
+          port:   Number(process.env.SMTP_PORT ?? 587),
+          secure: process.env.SMTP_SECURE === 'true',
+          auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+        });
+        await transporter.sendMail({
+          from:    process.env.SMTP_FROM ?? `"MFO Nexus" <${process.env.SMTP_USER}>`,
+          to:      email,
+          subject: `Your Platform Access Invitation Link`,
+          html:    `<div style="font-family: sans-serif; padding: 20px;">
+                      <h2>Welcome to MFO Nexus Platform</h2>
+                      <p>You have been invited to access the platform. Please set your password using the link below:</p>
+                      <a href="${generatedLink}" style="padding: 12px 24px; background: #6366f1; color: white; text-decoration: none; border-radius: 8px;">Set Password</a>
+                    </div>`,
+        });
+        emailSent = true;
+      } catch (mailErr: any) {
+        console.error('[PUT /api/admin/users] Invite email failed:', mailErr.message);
+      }
+    }
+
+    return NextResponse.json({ success: true, inviteLink: generatedLink, emailSent });
   } catch (e: any) {
     console.error('[PUT /api/admin/users]', e);
+    return NextResponse.json({ error: e.message ?? 'Unknown error' }, { status: 500 });
+  }
+}
+
+/**
+ * DELETE /api/admin/users
+ * Completely deletes a user from Firebase Auth and their global profile document.
+ * Body: { idToken: string; targetUid: string }
+ */
+export async function DELETE(req: NextRequest) {
+  try {
+    const { idToken, targetUid } = await req.json();
+    if (!idToken || !targetUid) {
+      return NextResponse.json({ error: 'idToken and targetUid are required.' }, { status: 400 });
+    }
+    const caller = await verifyIdToken(idToken);
+    if (!caller) {
+      return NextResponse.json(
+        { error: 'Not authenticated — your session may have expired.' },
+        { status: 401 },
+      );
+    }
+
+    // Attempt Admin SDK Delete First
+    const adminSdkConfigured = !!process.env.FIREBASE_ADMIN_SDK_JSON;
+    if (adminSdkConfigured && hasAdminWriteAccess()) {
+      try {
+        const adminAuth = getAdminAuth();
+        const adminDb = getAdminFirestore();
+        await adminAuth.deleteUser(targetUid);
+        await adminDb.collection('users').doc(targetUid).delete();
+        return NextResponse.json({ success: true, method: 'admin' });
+      } catch (e: any) {
+        console.error('[DELETE /api/admin/users] Admin SDK delete failed:', e.message);
+      }
+    }
+
+    // Without Admin SDK, we cannot delete the Auth record using just an API Key,
+    // because Identity Toolkit requires the *target* user's idToken to delete them, not the admin's.
+    // We will gracefully degrade by just deleting the global user profile from Firestore,
+    // which effectively "removes" them from the platform views.
+    const projectId = process.env.NEXT_PUBLIC_PROJECT_ID ?? process.env.FIREBASE_PROJECT_ID;
+    if (projectId) {
+      const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${targetUid}`;
+      await fetch(url, { method: 'DELETE', headers: { 'Authorization': `Bearer ${idToken}` } });
+    }
+
+    return NextResponse.json({ success: true, method: 'rest_partial' });
+  } catch (e: any) {
+    console.error('[DELETE /api/admin/users]', e);
     return NextResponse.json({ error: e.message ?? 'Unknown error' }, { status: 500 });
   }
 }
