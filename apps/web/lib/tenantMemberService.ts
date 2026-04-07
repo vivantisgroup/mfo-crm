@@ -118,6 +118,12 @@ export async function getTenantMember(tenantId: string, uid: string): Promise<Te
   return snap.exists() ? snap.data() as TenantMember : null;
 }
 
+export async function getAllGlobalMemberships(): Promise<TenantMember[]> {
+  const { collectionGroup } = await import('firebase/firestore');
+  const snap = await getDocs(collectionGroup(db, 'members'));
+  return snap.docs.map(d => d.data() as TenantMember);
+}
+
 /**
  * Add an existing user (by uid) to a tenant.
  * Atomically writes the member doc + updates users.tenantIds.

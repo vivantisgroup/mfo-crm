@@ -150,7 +150,7 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
  const [invoices, setInvoices] = useState<Invoice[]>([]);
  const [events, setEvents] = useState<SubscriptionEvent[]>([]);
  const [loading, setLoading] = useState(false);
- const [msg, setMsg] = useState<string | null>(null);
+ const [msg, setMsg] = useState<React.ReactNode | null>(null);
 
  // Members tab state
  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
@@ -158,6 +158,7 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
  const [invitations, setInvitations] = useState<TenantInvitation[]>([]);
  const [membersLoaded, setMembersLoaded] = useState(false);
  const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
+  const [globalMemberships, setGlobalMemberships] = useState<TenantMember[]>([]);;
  const [memberInput, setMemberInput] = useState('');
  const [memberRole, setMemberRole] = useState<import('@/lib/platformService').PlatformRole>('report_viewer');
  const [memberLang, setMemberLang] = useState((sub as any).defaultLanguage ?? 'en');
@@ -429,7 +430,7 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
  const createRes = await fetch('/api/admin/users', {
  method: 'POST',
  headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify({ idToken, email: input, displayName }),
+ body: JSON.stringify({ idToken, email: input, displayName, tenantName: sub.tenantName }),
  });
  const createData = await createRes.json();
  if (!createRes.ok) {
@@ -473,21 +474,35 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
  );
 
  // Send invite email if requested
- let successMsg = `✅ User ${input} ${isNew ? 'created' : 'found'} and added to ${sub.tenantName}.`;
- if (sendInvite) {
- const invRes = await fetch('/api/admin/users', {
- method: 'PUT',
- headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify({ idToken, email: input }),
- });
- const invData = await invRes.json();
- if (invRes.ok) {
- successMsg += ' 📧 Password-reset invitation email sent.';
- } else {
- successMsg += ` (Invite email failed: ${invData.error ?? 'unknown'})`;
- }
+ let successMsg: React.ReactNode = `✅ User ${input} ${isNew ? 'created' : 'found'} and added to ${sub.tenantName}.`;
+ 
+ if (createData.inviteLink) {
+   successMsg = (
+     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+       <div>✅ <strong>User {input} created successfully.</strong></div>
+       <div style={{ color: 'var(--text-primary)', marginTop: 4 }}>
+         <strong>Action required:</strong> Share this secure enrollment link with the user so they can set their password.
+       </div>
+       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 2 }}>
+         <input type="text" readOnly value={createData.inviteLink} style={{ flex: 1, padding: '8px 12px', fontSize: 13, background: 'var(--bg-elevated)', border: '1px solid var(--brand-500)', borderRadius: 6, color: 'var(--brand-500)', fontFamily: 'monospace' }} onClick={e => (e.target as HTMLInputElement).select()} />
+         <button className="btn btn-primary btn-sm" onClick={() => navigator.clipboard.writeText(createData.inviteLink as string)}>Copy Link</button>
+       </div>
+     </div>
+   );
+ } else if (sendInvite && !createData.emailSent) {
+   const invRes = await fetch('/api/admin/users', {
+     method: 'PUT',
+     headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify({ idToken, email: input }),
+   });
+   const invData = await invRes.json();
+   if (invRes.ok) {
+     successMsg = `✅ User ${input} created. 📧 Password-reset invitation email sent via Firebase.`;
+   } else {
+     successMsg = `✅ User ${input} created. (Invite email failed: ${invData.error ?? 'unknown'})`;
+   }
  } else if (isNew && tempPassword) {
- successMsg += ` Temp password: ${tempPassword}`;
+   successMsg = `✅ User ${input} created. Temp password: ${tempPassword}`;
  }
 
  setMsg(successMsg);
@@ -545,6 +560,54 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
  } catch (e: any) { setMsg(`❌ ${e.message}`); }
  }
 
+ async function doGenerateInviteLink(email: string) {
+   setLoading(true); setMsg(null);
+   try {
+     const { getAuth } = await import('firebase/auth');
+     const { firebaseApp } = await import('@mfo-crm/config');
+     const auth = getAuth(firebaseApp);
+     const idToken = await new Promise<string | null>((resolve) => {
+       if (auth.currentUser) auth.currentUser.getIdToken(true).then(resolve).catch(() => resolve(null));
+       else {
+         const unsub = auth.onAuthStateChanged(u => {
+           unsub();
+           if (u) u.getIdToken(true).then(resolve).catch(() => resolve(null));
+           else resolve(null);
+         });
+       }
+     });
+
+     if (!idToken) throw new Error('Session expired');
+
+     const { adminGeneratePasswordResetLink } = await import('@/lib/usersAdmin');
+     const res = await adminGeneratePasswordResetLink(email, idToken);
+
+     if (!res.success) throw new Error(res.error);
+
+     setMsg(
+       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+         <div>✅ <strong>Invitation Generated for {email}</strong></div>
+         {res.emailSent && <div style={{ color: '#22c55e', marginTop: 4 }}>📧 Magic link sent via email.</div>}
+         {res.inviteLink && (
+           <>
+             <div style={{ color: 'var(--text-primary)', marginTop: 4 }}>
+               <strong>Action required:</strong> Share this secure enrollment link with the user so they can set their password.
+             </div>
+             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 2 }}>
+               <input type="text" readOnly value={res.inviteLink} style={{ flex: 1, padding: '8px 12px', fontSize: 13, background: 'var(--bg-elevated)', border: '1px solid var(--brand-500)', borderRadius: 6, color: 'var(--brand-500)', fontFamily: 'monospace' }} onClick={e => (e.target as HTMLInputElement).select()} />
+               <button className="btn btn-primary btn-sm" onClick={() => navigator.clipboard.writeText(res.inviteLink as string)}>Copy Link</button>
+             </div>
+           </>
+         )}
+       </div>
+     );
+   } catch (e: any) {
+     setMsg(`❌ Failed to generate invite link: ${e.message}`);
+   } finally {
+     setLoading(false);
+   }
+ }
+
 
  const TABS: SecondaryDockTab[] = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -585,7 +648,7 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
  {/* Tabs */}
  <div style={{ display: 'flex', gap: 0, borderBottom: 'none' }}>
  {TABS.map(t => (
- <button key={t.id} onClick={() => setTab(t.id)} style={{
+ <button key={t.id} onClick={() => setTab(t.id as any)} style={{
  padding: '10px 18px', fontSize: 13, fontWeight: tab === t.id ? 700 : 500,
  background: 'none', border: 'none',
  borderBottom: `2px solid ${tab === t.id ? (t.id === 'delete' ? '#ef4444' : 'var(--brand-500)') : 'transparent'}`,
@@ -597,7 +660,11 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
  </div>
 
  {/* Message */}
- {msg && <div style={{ margin: '12px 28px 0', padding: '10px 14px', background: msg.startsWith('✅') ? '#22c55e15' : '#ef444415', borderRadius: 8, fontSize: 13, color: msg.startsWith('✅') ? '#22c55e' : '#ef4444' }}>{msg}</div>}
+ {msg && (
+  <div style={{ margin: '12px 28px 0', padding: '10px 14px', background: typeof msg === 'string' && (msg as string).startsWith('✅') ? '#22c55e15' : (typeof msg !== 'string' ? '#22c55e15' : '#ef444415'), borderRadius: 8, fontSize: 13, color: typeof msg === 'string' && (msg as string).startsWith('✅') ? '#22c55e' : (typeof msg !== 'string' ? '#22c55e' : '#ef4444') }}>
+    {msg}
+  </div>
+ )}
 
  <div style={{ padding: '20px 28px 28px' }}>
 
@@ -715,8 +782,6 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
  <CommunicationPanel
  familyId={sub.tenantId} // tenant acts as the logical entity
  familyName={sub.tenantName}
- linkedRecordType="crm" // The "crm" equivalent at platform level is handling tenant records
- linkedRecordId={sub.tenantId}
  />
  </div>
  )}
@@ -1047,7 +1112,14 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
  
      return (
        <div className={"animate-fade-in pl-1"}>
-          <button className={"btn btn-light btn-sm mb-6"} onClick={() => setSelectedMemberId(null)}>← Back to List</button>
+          <div className={"mb-6 flex items-center justify-between"}>
+            <button className={"btn btn-light btn-sm"} onClick={() => setSelectedMemberId(null)}>← Back to List</button>
+            {(!userObj?.lastLoginAt || m.status === 'invited') && (
+              <button className={"btn btn-primary btn-sm"} onClick={() => doGenerateInviteLink(m.email)} disabled={loading}>
+                {loading ? '…' : 'Generate Invitation Link'}
+              </button>
+            )}
+          </div>
           
           {/* Detailed Card */}
           <div className={"bg-white p-6 rounded-3xl border border-slate-200 flex flex-col md:flex-row gap-6 mt-2 relative"}>
@@ -1145,10 +1217,10 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
   {members.map(m => (
   <div key={m.uid} 
     onClick={(e) => {
-       if ((e.target).tagName === 'SELECT' || (e.target).tagName === 'BUTTON') return;
+       if ((e.target as HTMLElement).tagName === 'SELECT' || (e.target as HTMLElement).tagName === 'BUTTON') return;
        setSelectedMemberId(m.uid);
     }}
-    style={{ display: 'grid', gridTemplateColumns: '32px 1fr auto auto auto',
+    style={{ display: 'grid', gridTemplateColumns: '32px 1fr auto auto auto auto',
   alignItems: 'center', gap: 12, padding: '10px 14px',
   background: m.status === 'suspended' ? 'var(--bg-canvas)' : 'var(--bg-elevated)',
   borderRadius: 8, opacity: m.status === 'suspended' ? 0.6 : 1, border: '1px solid var(--border)', cursor: 'pointer' }} className={"hover:border-slate-300 transition-colors"}>
@@ -1168,6 +1240,21 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
   value={m.role} onChange={e => doChangeRole(m, e.target.value)}>
   {TENANT_ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
   </select>
+
+  {m.status === 'invited' ? (
+    <button onClick={(e) => { e.stopPropagation(); doGenerateInviteLink(m.email); }} disabled={loading}
+    style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--brand-500)44',
+    background: 'none', cursor: 'pointer', color: 'var(--brand-400)' }}>
+    {loading ? '…' : '📧 Send Invitation'}
+    </button>
+  ) : (
+    <button onClick={(e) => { e.stopPropagation(); doGenerateInviteLink(m.email); }} disabled={loading}
+    style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)',
+    background: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+    {loading ? '…' : '🔑 Reset Password'}
+    </button>
+  )}
+
   <button onClick={(e) => { e.stopPropagation(); doToggleSuspend(m); }}
   style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)',
   background: 'none', cursor: 'pointer', color: m.status === 'suspended' ? '#22c55e' : '#f59e0b' }}>
@@ -1746,7 +1833,7 @@ function NewSubscriptionModal({ onClose, onCreated, performer }: {
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
-type MainTab = 'tenants' | 'invoices' | 'plans' | 'events';
+type MainTab = 'tenants' | 'invoices' | 'plans' | 'events' | 'members';
 
 export default function TenantManagementPage() {
  const { user, isSaasMasterAdmin } = useAuth();
@@ -1758,6 +1845,8 @@ export default function TenantManagementPage() {
  const [subs, setSubs] = useState<TenantSubscription[]>([]);
  const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
  const [allEvents, setAllEvents] = useState<SubscriptionEvent[]>([]);
+ const [allPlatformUsers, setAllPlatformUsers] = useState<UserProfile[]>([]);
+  const [globalMemberships, setGlobalMemberships] = useState<import('@/lib/tenantMemberService').TenantMember[]>([]);
  const [search, setSearch] = useState('');
  const [statusF, setStatusF] = useState<SubscriptionStatus | 'all'>('all');
  const [planF, setPlanF] = useState<PlanId | 'all'>('all');
@@ -1826,6 +1915,7 @@ export default function TenantManagementPage() {
  useEffect(() => { load(); }, [load]);
  useEffect(() => {
  if (mainTab === 'invoices') getAllInvoices().then(setAllInvoices);
+ if (mainTab === 'members') { getAllUsers().then(setAllPlatformUsers); import('@/lib/tenantMemberService').then(m => m.getAllGlobalMemberships().then(setGlobalMemberships)); }
  }, [mainTab]);
 
  // Auto-open tenant modal when navigated from /platform/users with ?open=tenantId
@@ -1841,6 +1931,7 @@ export default function TenantManagementPage() {
     { id: 'tenants', label: 'Tenants', icon: '🏢' },
     { id: 'invoices', label: 'All Invoices', icon: '🧾' },
     { id: 'plans', label: 'Subscription Plans', icon: '📋' },
+    { id: 'members', label: 'All Members', icon: '👥' },
     { id: 'events', label: 'Global Audit', icon: '📜' },
   ];
 
@@ -1878,7 +1969,7 @@ export default function TenantManagementPage() {
  if (selected) {
  return (
  <div className="flex flex-col absolute inset-0 overflow-y-auto bg-canvas z-0">
- <div className="page animate-fade-in" style={{ maxWidth: 1200, margin: '0 auto', paddingBottom: 60 }}>
+ <div className="page animate-fade-in" style={{ width: '100%', padding: '0 24px', paddingBottom: 60 }}>
  <TenantDetailModal
  sub={selected} performer={performer}
  onClose={() => setSelected(null)}
@@ -1942,6 +2033,11 @@ export default function TenantManagementPage() {
  ))}
  </select>
  <span style={{ fontSize: 12, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>{filtered.length} tenant{filtered.length !== 1 ? 's' : ''}</span>
+ <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
+   <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}>
+     + Add Tenant
+   </button>
+ </div>
  </div>
  {loading ? (
  <div style={{ textAlign: 'center', padding: 60, color: 'var(--text-tertiary)' }}>Loading…</div>
@@ -2190,6 +2286,60 @@ export default function TenantManagementPage() {
  </div>
  ))}
  </div>
+ )}
+
+ {/* ── ALL MEMBERS ── */}
+ {mainTab === 'members' && (
+   <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-0 overflow-hidden">
+     <div style={{ padding: '16px 20px', fontWeight: 800, fontSize: 15, borderBottom: '1px solid var(--border)', background: 'var(--bg-canvas)' }}>
+       👥 All Platform Users ({allPlatformUsers.length})
+     </div>
+     <div className="overflow-x-auto w-full">
+       <table className="w-full text-left border-collapse min-w-[800px]">
+         <thead>
+           <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-tertiary)', background: 'var(--bg-surface)' }}>
+             <th style={{ padding: '14px 20px', fontWeight: 800 }}>User</th>
+             <th style={{ padding: '14px 20px', fontWeight: 800 }}>Status</th>
+             <th style={{ padding: '14px 20px', fontWeight: 800 }}>Role</th>
+             <th style={{ padding: '14px 20px', fontWeight: 800 }}>Created</th>
+             <th style={{ padding: '14px 20px', fontWeight: 800 }}>Last Login</th>
+             <th style={{ padding: '14px 20px', fontWeight: 800 }}>Tenants</th>
+           </tr>
+         </thead>
+         <tbody className="divide-y divide-[var(--border)]">
+           {allPlatformUsers.length === 0 ? (
+             <tr>
+               <td colSpan={6} style={{ textAlign: 'center', padding: '60px', color: 'var(--text-tertiary)' }}>No users found.</td>
+             </tr>
+           ) : allPlatformUsers.map(user => (
+             <tr key={user.uid} className="hover:bg-[var(--bg-canvas)] transition-colors">
+               <td style={{ padding: '12px 20px' }}>
+                 <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>{user.displayName || user.email}</div>
+                 <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{user.email}</div>
+               </td>
+               <td style={{ padding: '12px 20px' }}>
+                 <Chip label={user.status} status={user.status} />
+               </td>
+               <td style={{ padding: '12px 20px', fontSize: 13, color: 'var(--text-secondary)' }}>
+                 {ROLE_LABELS[user.role as keyof typeof ROLE_LABELS] || user.role}
+               </td>
+               <td style={{ padding: '12px 20px', fontSize: 12, color: 'var(--text-secondary)' }}>
+                 {new Date(user.createdAt).toLocaleDateString()}
+               </td>
+               <td style={{ padding: '12px 20px', fontSize: 12, color: 'var(--text-secondary)' }}>
+                 {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Never logged in'}
+               </td>
+               <td style={{ padding: '12px 20px' }}>
+                 <span style={{ fontSize: 12, padding: '4px 8px', background: 'var(--bg-overlay)', borderRadius: 12, fontWeight: 700 }}>
+                   {user.tenantIds?.length ?? 0}
+                 </span>
+               </td>
+             </tr>
+           ))}
+         </tbody>
+       </table>
+     </div>
+   </div>
  )}
  </main>
  </div>

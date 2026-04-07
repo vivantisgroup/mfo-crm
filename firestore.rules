@@ -79,10 +79,18 @@ service cloud.firestore {
       );
     }
 
+    function getTenantMemberRole(tenantId) {
+      return exists(/databases/$(database)/documents/tenants/$(tenantId)/members/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/tenants/$(tenantId)/members/$(request.auth.uid)).data.get('role', '')
+        : '';
+    }
+
     function isTenantAdmin(tenantId) {
-      return isSignedIn()
-        && userRole() in ['saas_master_admin', 'tenant_admin']
-        && (userTenantIds().hasAny([tenantId]) || userRole() == 'saas_master_admin');
+      return isSignedIn() && (
+        userRole() == 'saas_master_admin'
+        || (userTenantIds().hasAny([tenantId]) && userRole() == 'tenant_admin')
+        || getTenantMemberRole(tenantId) == 'tenant_admin'
+      );
     }
 
     function canManageMembers(tenantId) {
@@ -127,6 +135,11 @@ service cloud.firestore {
       allow read, create, update, delete: if isSignedIn();
     }
 
+    match /{path=**}/members/{uid} {
+      // Allow SaaS Master Admin to perform global collectionGroup queries on all memberships
+      allow read: if isSaasMasterAdmin();
+    }
+
     // ─── Users ────────────────────────────────────────────────────────────────
     match /users/{uid} {
       allow read: if isSignedIn() && (
@@ -142,13 +155,16 @@ service cloud.firestore {
         isSaasMasterAdmin()
         || (userRole() == 'tenant_admin' && resource.data.get('tenantIds', []).hasAny(userTenantIds()))
         || isSalesRole()
+        || request.auth.token.email == resource.data.get('email', '')
       );
       // Allow create if signed in as own uid, master admin, setup mode, or tenant admin.
       // Tenant admins may not create new master admins.
       allow create: if (isSignedIn() && request.auth.uid == uid)
         || isSaasMasterAdmin()
         || isSetupMode()
-        || (userRole() == 'tenant_admin' && request.resource.data.get('role', '') != 'saas_master_admin');
+        || (request.resource.data.get('lastAddedTenantId', '') != '' 
+            && isTenantAdmin(request.resource.data.get('lastAddedTenantId', ''))
+            && request.resource.data.get('role', '') != 'saas_master_admin');
       allow update: if isSetupMode() || (isSignedIn() && (
         // Self may update non-sensitive fields. May also remove tenantIds (but not add), and nullify primary tenantId.
         (request.auth.uid == uid
@@ -160,9 +176,20 @@ service cloud.firestore {
         )
         || isSaasMasterAdmin()
         // Tenant admins may manage members (role/status/tenantIds changes for others)
-        || (userRole() == 'tenant_admin' && request.auth.uid != uid)
+        || (request.auth.uid != uid 
+            && request.resource.data.get('lastAddedTenantId', '') != '' 
+            && isTenantAdmin(request.resource.data.get('lastAddedTenantId', ''))
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'status']))
+        // Note: rule bypasses role updates by Tenant Admins here, but updateMemberRole adds lastAddedTenantId. 
+        // Wait, updateMemberRole ALSO modifies 'role'! So we must allow it:
+        || (request.auth.uid != uid 
+            && request.resource.data.get('lastAddedTenantId', '') != '' 
+            && isTenantAdmin(request.resource.data.get('lastAddedTenantId', ''))
+            && request.resource.data.get('role', '') != 'saas_master_admin')
       ));
-      allow delete: if isSaasMasterAdmin() || (isSignedIn() && isSetupMode());
+      allow delete: if isSaasMasterAdmin() || (isSignedIn() && isSetupMode())
+        // Allow tenant admins to delete orphaned user profiles (API fallback when Admin SDK is unavailable)
+        || (userRole() == 'tenant_admin' && resource.data.get('tenantIds', []).hasAny(userTenantIds()));
 
       // ── Per-user notifications (in-app alerts) ─────────────────────────────
       match /notifications/{notifId} {
@@ -197,12 +224,15 @@ service cloud.firestore {
       match /members/{uid} {
         allow read: if isSignedIn() && (
           request.auth.uid == uid
+          || request.auth.token.email == resource.data.get('email', '')
           || canManageMembers(tenantId)
-          // Sales roles may read member lists for assignment
+          || belongsToTenant(tenantId) // allow ANY member to read the tenant directory for Task assignee avatars
           || (isSalesRole() && belongsToTenant(tenantId))
         );
-        allow create, update: if canManageMembers(tenantId) || isSetupMode();
-        allow delete: if canManageMembers(tenantId) || request.auth.uid == uid || (isSignedIn() && isSetupMode());
+        allow create, update: if canManageMembers(tenantId) || isSetupMode()
+          || (isSignedIn() && request.auth.uid == uid && request.auth.token.email == request.resource.data.get('email', ''));
+        allow delete: if canManageMembers(tenantId) || request.auth.uid == uid || (isSignedIn() && isSetupMode())
+          || (isSignedIn() && request.auth.token.email == resource.data.get('email', ''));
       }
 
       // ── Email templates (per-tenant overrides) ─────────────────────────────
@@ -362,6 +392,13 @@ service cloud.firestore {
       allow delete:         if isSaasMasterAdmin();
     }
 
+    // ─── Unified Communications Hub ──────────────────────────────────────────
+    match /communications/{commId} {
+      allow read:           if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete:         if isSaasMasterAdmin();
+    }
+
     // ─── Tenant-level Opportunities (in-tenant CRM) ───────────────────────────
     match /opportunities/{oppId} {
       allow read: if isSignedIn() && (
@@ -473,7 +510,7 @@ service cloud.firestore {
     function isTenantMember(tenantId) {
       return isSignedIn() && (
         isSaasMasterAdmin()
-        || userTenantIds().hasAny([tenantId])
+        || belongsToTenant(tenantId)
       );
     }
 
