@@ -73,7 +73,7 @@ export async function DELETE(
     const userRef = adminDb.collection('users').doc(targetUid);
     const userSnap = await userRef.get();
     const tenantIds: string[] = userSnap.data()?.tenantIds ?? [];
-    const isLastTenant = tenantIds.length === 1 && tenantIds[0] === tenantId;
+    const isLastTenant = tenantIds.length === 0 || (tenantIds.length === 1 && tenantIds[0] === tenantId);
 
     // 3. Prepare an explicit atomic batch on the server
     const batch = adminDb.batch();
