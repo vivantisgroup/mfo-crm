@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import { Search } from 'lucide-react';
 import { SERVICE_REQUESTS, FAMILIES } from '@/lib/mockData';
 import { StatusBadge } from '@/components/StatusBadge';
 import { formatRelativeDate, getServiceIcon } from '@/lib/utils';
@@ -66,9 +67,9 @@ export default function ConciergePage() {
  <select key={f.label} value={f.value} onChange={e => f.set(e.target.value)}
  style={{
  padding: '9px 12px', borderRadius: 'var(--radius-md)',
- background: f.value !== 'All' ? 'var(--brand-900)' : 'var(--bg-elevated)',
+ background: f.value !== 'All' ? 'var(--brand-500)' : 'var(--bg-elevated)',
  border: `1px solid ${f.value !== 'All' ? 'var(--brand-500)' : 'var(--border)'}`,
- color: f.value !== 'All' ? 'var(--brand-400)' : 'var(--text-primary)',
+ color: f.value !== 'All' ? '#ffffff' : 'var(--text-primary)',
  fontWeight: f.value !== 'All' ? 700 : 400, fontSize: 13, cursor: 'pointer',
  }}>
  {f.options.map(o => (

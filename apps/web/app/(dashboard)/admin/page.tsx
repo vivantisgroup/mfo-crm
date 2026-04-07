@@ -2097,6 +2097,15 @@ function DataExplorerSection() {
   const [collectionName, setCollectionName] = useState('users');
   const [queryResults, setQueryResults] = useState<any[]>([]);
   const [queryError, setQueryError] = useState('');
+  
+  // CRUD & Explorer
+  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
+  const [isEditingRecord, setIsEditingRecord] = useState<boolean>(false);
+  const [editJsonStr, setEditJsonStr] = useState<string>('');
+  const [executingCrud, setExecutingCrud] = useState<boolean>(false);
+  const [depReport, setDepReport] = useState<any>(null);
+  const [explorerSearch, setExplorerSearch] = useState('');
+
 
   // Consistency
   const [consistencyReport, setConsistencyReport] = useState<any>(null);
@@ -2109,6 +2118,9 @@ function DataExplorerSection() {
     setLoading(true);
     setQueryError('');
     setQueryResults([]);
+    setSelectedRecordId(null);
+    setIsEditingRecord(false);
+    setDepReport(null);
     try {
       const { getAuth } = await import('firebase/auth');
       const token = await getAuth().currentUser?.getIdToken();
@@ -2128,7 +2140,96 @@ function DataExplorerSection() {
     }
   };
 
-  const handleExport = async () => {
+  const handleInspect = async (recordId: string) => {
+    setExecutingCrud(true);
+    setDepReport(null);
+    try {
+      const { getAuth } = await import('firebase/auth');
+      const token = await getAuth().currentUser?.getIdToken();
+      if (!token) throw new Error('Unauthorized');
+      const res = await fetch('/api/admin/db/modify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: 'INSPECT', collectionName, recordId, tenantId: tenant?.id })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setDepReport(data.dependencies);
+    } catch (err: any) {
+      setQueryError(err.message);
+    } finally {
+      setExecutingCrud(false);
+    }
+  };
+
+  const handleSaveRecord = async (recordId: string) => {
+    setExecutingCrud(true);
+    setQueryError('');
+    try {
+      const parsedData = JSON.parse(editJsonStr);
+      const { getAuth } = await import('firebase/auth');
+      const token = await getAuth().currentUser?.getIdToken();
+      
+      const res = await fetch('/api/admin/db/modify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: 'UPDATE', collectionName, recordId, payload: parsedData, tenantId: tenant?.id })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      
+      // Update local array
+      setQueryResults(prev => prev.map(p => p.id === recordId ? { ...parsedData, id: recordId } : p));
+      setIsEditingRecord(false);
+    } catch (err: any) {
+      setQueryError('Update failed: ' + err.message);
+    } finally {
+      setExecutingCrud(false);
+    }
+  };
+
+  const handleDeleteRecord = async (recordId: string) => {
+    if (!confirm('WARNING: Deleting this record will force remove it. Integrity relations have been checked?')) return;
+    setExecutingCrud(true);
+    try {
+      const { getAuth } = await import('firebase/auth');
+      const token = await getAuth().currentUser?.getIdToken();
+      const res = await fetch('/api/admin/db/modify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: 'DELETE', collectionName, recordId, tenantId: tenant?.id })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      
+      setQueryResults(prev => prev.filter(p => p.id !== recordId));
+      if (selectedRecordId === recordId) {
+        setSelectedRecordId(null);
+        setIsEditingRecord(false);
+      }
+    } catch (err: any) {
+      setQueryError('Delete failed: ' + err.message);
+    } finally {
+      setExecutingCrud(false);
+    }
+  };
+
+
+  const flattenObject = (obj: any, prefix = ''): Record<string, any> => {
+    if (!obj || typeof obj !== 'object') return {};
+    return Object.keys(obj).reduce((acc: Record<string, any>, k: string) => {
+      const pre = prefix.length ? prefix + '_' : '';
+      const val = obj[k];
+      if (val !== null && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date)) {
+        Object.assign(acc, flattenObject(val, pre + k));
+      } else {
+        acc[pre + k] = Array.isArray(val) ? JSON.stringify(val) : val;
+      }
+      return acc;
+    }, {});
+  };
+
+  const handleExport = async (format: 'json' | 'csv') => {
     setLoading(true);
     setExportError('');
     try {
@@ -2143,13 +2244,51 @@ function DataExplorerSection() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       
-      const blob = new Blob([JSON.stringify({ meta: data.meta, backup: data.backup }, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `mfo-export-${tenant?.id || 'platform'}-${new Date().toISOString().slice(0,10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
+      let baseFilename = `mfo-export-${tenant?.id || 'platform'}-${new Date().toISOString().slice(0,10)}`;
+
+      if (format === 'csv') {
+        if (data.backup) {
+          const collections = Object.keys(data.backup);
+          
+          collections.forEach((col, idx) => {
+             setTimeout(() => {
+                const rows: Record<string, any>[] = [];
+                for (const doc of (data.backup[col] as any[])) {
+                  rows.push(flattenObject(doc));
+                }
+                if (rows.length === 0) return;
+                
+                const headers = Array.from(new Set(rows.flatMap(r => Object.keys(r))));
+                const sortedHeaders = headers.sort();
+                
+                let csvContent = sortedHeaders.map(h => `"${h}"`).join(',') + '\n';
+                for (const row of rows) {
+                  csvContent += sortedHeaders.map(h => {
+                     let val = row[h];
+                     if (val === null || val === undefined) return '""';
+                     if (typeof val === 'string') return `"${val.replace(/"/g, '""')}"`;
+                     return `"${val}"`;
+                  }).join(',') + '\n';
+                }
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${baseFilename}-${col}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+             }, idx * 250);
+          });
+        }
+      } else {
+        const blob = new Blob([JSON.stringify({ meta: data.meta, backup: data.backup }, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${baseFilename}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
     } catch (err: any) {
       setExportError(err.message);
     } finally {
@@ -2194,8 +2333,8 @@ function DataExplorerSection() {
           onClick={() => setActiveTab('query')}
           className={`flex flex-col gap-2 items-center justify-center p-6 border border-dashed transition-colors cursor-pointer ${activeTab==='query' ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-indigo-200 bg-indigo-50/30 hover:bg-indigo-50 dark:hover:bg-indigo-900/20'}`}>
           <Search className="text-indigo-600 mb-2" size={24} />
-          <h3 className="font-bold text-sm text-indigo-900 dark:text-indigo-300">Query & Search</h3>
-          <p className="text-xs text-center text-indigo-700/70 dark:text-indigo-400">Execute complex queries across tables</p>
+          <h3 className="font-bold text-sm text-indigo-900 dark:text-indigo-300">Explorer</h3>
+          <p className="text-xs text-center text-indigo-700/70 dark:text-indigo-400">Query, edit, investigate references</p>
         </Card>
         <Card 
           onClick={() => setActiveTab('export')}
@@ -2216,7 +2355,7 @@ function DataExplorerSection() {
       <Card className="border border-border p-0 overflow-hidden">
         {/* QUERY TAB */}
         {activeTab === 'query' && (
-          <div>
+          <div className="flex flex-col">
              <div className="p-4 border-b border-border bg-surface flex justify-between items-center bg-elevated/30">
                 <div className="flex items-center gap-3">
                    <select 
@@ -2234,22 +2373,154 @@ function DataExplorerSection() {
                 </div>
                 <Badge color="zinc">Read-Only View</Badge>
              </div>
-             <div className="p-4 bg-surface max-h-[400px] overflow-y-auto custom-scrollbar relative">
-                {queryError && <p className="text-red-500 text-sm mb-4">{queryError}</p>}
+             
+             <div className="flex h-[600px] bg-surface relative">
+                {queryError && <div className="absolute top-0 left-0 w-full p-2 bg-red-50 text-red-500 text-xs z-10 border-b border-red-100">{queryError}</div>}
+                
                 {queryResults.length === 0 && !loading && !queryError ? (
-                   <div className="py-12 text-center text-tertiary">
+                   <div className="w-full flex-1 flex flex-col items-center justify-center text-center text-tertiary shadow-inner">
                      <Database size={32} className="mx-auto mb-3 opacity-40" />
                      <p className="text-sm font-semibold tracking-wide">No Results</p>
                      <p className="text-xs mt-1">Run a query to populate the table.</p>
                    </div>
                 ) : (
-                   <div className="flex flex-col gap-2">
-                     {queryResults.map(r => (
-                        <div key={r.id} className="bg-elevated border border-border rounded-lg p-3 text-xs font-mono overflow-x-auto">
-                           {JSON.stringify(r, null, 2)}
-                        </div>
-                     ))}
-                   </div>
+                   <Grid numItemsMd={3} className="w-full h-full gap-0">
+                     {/* Master List */}
+                     <Col numColSpanMd={1} className="h-full border-r border-border flex flex-col bg-elevated/20 transition-all shadow-inner">
+                       <div className="p-3 border-b border-border">
+                         <div className="flex items-center gap-2 bg-surface border border-border rounded-md px-3 py-2">
+                            <Search size={14} className="text-tertiary" />
+                            <input 
+                               type="text" 
+                               placeholder="Filter records..." 
+                               className="bg-transparent border-none outline-none text-xs w-full font-mono text-primary focus:ring-0"
+                               value={explorerSearch}
+                               onChange={e => setExplorerSearch(e.target.value)}
+                            />
+                         </div>
+                       </div>
+                       <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
+                          {queryResults.filter(r => explorerSearch === '' || JSON.stringify(r).toLowerCase().includes(explorerSearch.toLowerCase())).map(r => {
+                            const isSelected = selectedRecordId === r.id;
+                            
+                            // Try to find a display name
+                            const displayName = r.name || r.email || r.title || r.id;
+                            
+                            return (
+                              <button
+                                key={r.id}
+                                onClick={() => {
+                                  setSelectedRecordId(r.id);
+                                  setIsEditingRecord(false);
+                                  setDepReport(null);
+                                }}
+                                className={`w-full text-left px-3 py-2.5 rounded-md text-xs font-mono transition-all border ${
+                                  isSelected 
+                                    ? 'bg-indigo-50 border-indigo-200 text-indigo-900 shadow-sm dark:bg-indigo-900/40 dark:text-indigo-100' 
+                                    : 'border-transparent text-secondary hover:bg-surface hover:border-border'
+                                }`}
+                              >
+                                <div className="font-bold truncate">{displayName}</div>
+                                {displayName !== r.id && <div className="text-[10px] text-tertiary truncate mt-1">ID: {r.id}</div>}
+                              </button>
+                            );
+                          })}
+                          {queryResults.filter(r => explorerSearch === '' || JSON.stringify(r).toLowerCase().includes(explorerSearch.toLowerCase())).length === 0 && explorerSearch !== '' && (
+                            <div className="text-center text-tertiary text-xs py-4">No matching records found.</div>
+                          )}
+                       </div>
+                     </Col>
+                     
+                     {/* Detail View */}
+                     <Col numColSpanMd={2} className="h-full flex flex-col overflow-hidden bg-surface relative shadow-inner">
+                       {selectedRecordId ? (
+                         (() => {
+                           const record = queryResults.find(r => r.id === selectedRecordId);
+                           if (!record) return null;
+                           
+                           return (
+                             <div className="flex flex-col h-full animate-fade-in">
+                               <div className="p-4 flex items-center justify-between border-b border-border bg-elevated/30">
+                                 <div>
+                                   <div className="text-[10px] uppercase font-bold text-tertiary tracking-widest">{collectionName}</div>
+                                   <div className="font-mono text-sm font-bold text-indigo-600 mt-0.5">{record.id}</div>
+                                 </div>
+                                 <div className="flex items-center gap-2">
+                                   {!isEditingRecord ? (
+                                     <>
+                                       <Button size="xs" variant="secondary" onClick={() => handleInspect(record.id)} loading={executingCrud}>Dependencies</Button>
+                                       <Button size="xs" variant="secondary" onClick={() => { 
+                                         setIsEditingRecord(true); 
+                                         const { id, _sync, ...editable } = record; 
+                                         setEditJsonStr(JSON.stringify(editable, null, 2)); 
+                                       }}>Edit Record</Button>
+                                       <Button size="xs" color="rose" onClick={() => handleDeleteRecord(record.id)} loading={executingCrud}>Delete</Button>
+                                     </>
+                                   ) : (
+                                     <>
+                                       <Button size="xs" variant="secondary" onClick={() => setIsEditingRecord(false)}>Cancel</Button>
+                                       <Button size="xs" color="indigo" onClick={() => handleSaveRecord(record.id)} loading={executingCrud}>Save Changes</Button>
+                                     </>
+                                   )}
+                                 </div>
+                               </div>
+                               
+                               <div className="flex-1 overflow-y-auto custom-scrollbar p-0 flex flex-col bg-surface relative">
+                                 {depReport && depReport.recordId === record.id && (
+                                   <div className="m-4 p-4 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 rounded-lg text-amber-800 shadow-sm animate-fade-in">
+                                      <div className="font-bold mb-2 flex items-center gap-2">
+                                        <DatabaseBackup size={16} /> Dependency Report
+                                      </div>
+                                      {depReport.references.length === 0 ? <p className="text-sm">No dangling references found.</p> : (
+                                        <ul className="list-disc pl-4 mt-2 space-y-1 text-xs">
+                                          {depReport.references.map((dr: any, idx: number) => (
+                                             <li key={idx}>Coll: <b className="font-mono">{dr.collection}</b>, ID: <b className="font-mono">{dr.id}</b> {dr.description && `(${dr.description})`}</li>
+                                          ))}
+                                        </ul>
+                                      )}
+                                   </div>
+                                 )}
+                                 
+                                 {isEditingRecord ? (
+                                   <div className="flex flex-col flex-1 p-4">
+                                     <div className="flex justify-between items-center mb-2">
+                                       <label className="text-[11px] font-bold uppercase tracking-wider text-tertiary">Edit JSON Payload</label>
+                                       <span className="text-[10px] text-tertiary opacity-70">Strict JSON formatting required</span>
+                                     </div>
+                                     <textarea
+                                       className="flex-1 w-full bg-slate-50 dark:bg-slate-900 border border-border shadow-inner rounded-md p-4 text-primary focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 font-mono text-xs custom-scrollbar resize-none"
+                                       value={editJsonStr}
+                                       onChange={e => setEditJsonStr(e.target.value)}
+                                       spellCheck={false}
+                                     />
+                                   </div>
+                                 ) : (
+                                   <div className="p-4">
+                                     <div className="bg-slate-50 dark:bg-slate-900 border border-border rounded-md p-4 overflow-x-auto text-xs font-mono text-primary custom-scrollbar shadow-inner relative group">
+                                       <button 
+                                         className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-slate-800 border border-border p-1.5 rounded-md text-tertiary hover:text-primary shadow-sm z-10"
+                                         onClick={() => navigator.clipboard.writeText(JSON.stringify(record, null, 2))}
+                                         title="Copy JSON"
+                                       >
+                                         <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                       </button>
+                                       <pre>{JSON.stringify(record, null, 2)}</pre>
+                                     </div>
+                                   </div>
+                                 )}
+                               </div>
+                             </div>
+                           );
+                         })()
+                       ) : (
+                         <div className="h-full flex flex-col items-center justify-center text-tertiary animate-fade-in bg-slate-50/50 dark:bg-slate-900/50">
+                           <Database size={48} strokeWidth={1} className="mx-auto mb-4 opacity-20 text-indigo-500" />
+                           <p className="text-base font-semibold text-secondary">Select a Record</p>
+                           <p className="text-xs mt-1">Choose an item from the master list to view details.</p>
+                         </div>
+                       )}
+                     </Col>
+                   </Grid>
                 )}
              </div>
           </div>
@@ -2258,12 +2529,17 @@ function DataExplorerSection() {
         {/* EXPORT TAB */}
         {activeTab === 'export' && (
           <div className="p-8 text-center text-tertiary flex flex-col items-center">
-            <h3 className="text-emerald-600 font-bold text-lg mb-2">JSON Export Protocol</h3>
+            <h3 className="text-emerald-600 font-bold text-lg mb-2">Export Protocol</h3>
             <p className="text-sm mb-6 max-w-md mx-auto">This will fetch all platform structures attached to your environment to construct a localized backup file.</p>
             {exportError && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 rounded-md text-sm w-full max-w-md">{exportError}</div>}
-            <Button color="emerald" onClick={handleExport} loading={loading}>
-              Download JSON Database
-            </Button>
+            <div className="flex gap-4">
+              <Button color="emerald" onClick={() => handleExport('json')} loading={loading}>
+                Download JSON Database
+              </Button>
+              <Button color="indigo" onClick={() => handleExport('csv')} loading={loading}>
+                Download CSV Database
+              </Button>
+            </div>
           </div>
         )}
 
@@ -2299,11 +2575,41 @@ function DataExplorerSection() {
               </div>
             )}
             
-            {consistencyReport?.errors?.length > 0 && (
-               <div className="mt-6 p-4 rounded-lg border border-red-200 bg-red-50 text-red-700 text-sm">
-                 <ul className="list-disc pl-4 space-y-1">
-                   {consistencyReport.errors.map((err: string, i: number) => <li key={i}>{err}</li>)}
-                 </ul>
+            {consistencyReport && (
+               <div className="mt-6 p-4 rounded-lg bg-surface border border-border">
+                 <h4 className="font-bold text-sm mb-3">Scan Details</h4>
+                 <div className="space-y-4 text-xs font-mono">
+                   {consistencyReport.scanSteps && consistencyReport.scanSteps.length > 0 && (
+                     <div>
+                       <strong className="text-secondary">Scanned Objects:</strong>
+                       <ul className="list-disc pl-4 text-tertiary mt-1">
+                         {consistencyReport.scanSteps.map((s: string, i: number) => <li key={i}>{s}</li>)}
+                       </ul>
+                     </div>
+                   )}
+                   
+                   {consistencyReport.warnings && consistencyReport.warnings.length > 0 && (
+                     <div>
+                       <strong className="text-amber-500">Warnings:</strong>
+                       <ul className="list-disc pl-4 text-amber-600 mt-1">
+                         {consistencyReport.warnings.map((w: string, i: number) => <li key={i}>{w}</li>)}
+                       </ul>
+                     </div>
+                   )}
+                   
+                   {consistencyReport.errors && consistencyReport.errors.length > 0 && (
+                     <div>
+                       <strong className="text-red-500">Integrity Errors Found:</strong>
+                       <ul className="list-disc pl-4 text-red-600 mt-1">
+                         {consistencyReport.errors.map((err: string, i: number) => <li key={i}>{err}</li>)}
+                       </ul>
+                     </div>
+                   )}
+                   
+                   {consistencyReport.errors?.length === 0 && consistencyReport.warnings?.length === 0 && (
+                     <div className="text-emerald-500">No inconsistencies found. Relationships are intact.</div>
+                   )}
+                 </div>
                </div>
             )}
           </div>
@@ -2327,10 +2633,10 @@ export default function AdminPage() {
   });
 
   return (
-    <div className="flex flex-col h-[calc(100vh-60px)] animate-fade-in relative w-full p-4 md:p-6">
-      <div className="flex gap-6 h-full">
+    <div className="absolute inset-0 flex flex-col animate-fade-in w-full bg-[var(--bg-background)] overflow-hidden">
+      <div className="flex h-full w-full">
         {/* Action Board (Doc 2 / Sidebar) */}
-        <div className="w-[300px] flex flex-col shrink-0 bg-surface border border-border shadow-sm rounded-xl overflow-hidden relative">
+        <div className="w-[300px] flex flex-col shrink-0 bg-[var(--bg-canvas)] border-r border-[var(--border)] overflow-hidden relative">
           <div className="p-4 border-b border-border bg-elevated/50 flex items-center gap-3">
              <div className="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center">
                <Settings2 size={16} strokeWidth={2.5} />
@@ -2364,8 +2670,8 @@ export default function AdminPage() {
         </div>
 
         {/* Central View */}
-        <div className="flex-1 bg-surface border border-border shadow-sm rounded-xl flex flex-col overflow-y-auto relative custom-scrollbar">
-          <div className="p-8 md:p-10">
+        <div className="flex-1 bg-[var(--bg-surface)] flex flex-col overflow-y-auto relative custom-scrollbar">
+          <div className="p-8 md:p-10 w-full">
             {activeTab === 'platform'       && <PlatformSection />}
             {activeTab === 'database'       && <DatabaseSection />}
             {activeTab === 'data_explorer'  && <DataExplorerSection />}

@@ -263,7 +263,7 @@ export default function SettingsPage() {
   ];
 
   return (
-    <div className="flex-1 bg-[var(--bg-background)] relative flex flex-col h-full overflow-hidden">
+    <div className="absolute inset-0 flex flex-col animate-fade-in w-full bg-[var(--bg-background)] overflow-hidden">
       <div className="flex flex-col md:flex-row h-full relative text-left">
         {/* Left Side Navigation Pane */}
         <div className="w-full md:w-[260px] lg:w-[300px] bg-[var(--bg-canvas)] border-b md:border-b-0 md:border-r border-[var(--border)] flex flex-col shrink-0 py-6 px-4">
@@ -284,7 +284,7 @@ export default function SettingsPage() {
 
         {/* Right Content Pane */}
         <div className="flex-1 overflow-y-auto bg-[var(--bg-surface)] p-6 md:p-10 relative">
-           <div className="max-w-4xl mx-auto">
+           <div className="max-w-5xl">
              <div className="mb-8">
                <h1 className="text-2xl font-black text-[var(--text-primary)] tracking-tight">
                  {navItems.find(n => n.id === activeTab)?.label}

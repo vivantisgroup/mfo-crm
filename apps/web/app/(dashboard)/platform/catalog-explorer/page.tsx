@@ -487,7 +487,7 @@ export default function CatalogExplorerPage() {
   const { isSaasMasterAdmin, tenant, user } = useAuth();
   const [tab, setTab] = useState<'explorer' | 'consistency'>('explorer');
 
-  const isAuthorized = isSaasMasterAdmin || user?.role === 'firm_admin';
+  const isAuthorized = isSaasMasterAdmin || (user as any)?.role === 'firm_admin';
 
   if (!isAuthorized) {
     return (

@@ -328,6 +328,8 @@ export interface Task {
   familyName: string;
   linkedContactId?: string;
   linkedOrgId?: string;
+  linkedRecordType?: 'ticket' | 'task' | 'lead' | 'service_request' | 'opportunity' | 'crm';
+  linkedRecordId?: string;
   title: string;
   description?: string;
   status: TaskStatus;

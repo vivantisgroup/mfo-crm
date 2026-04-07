@@ -53,7 +53,7 @@ export default function FamilyDetailPage() {
   }, [family, router, setTitle]);
 
   return (
-    <div className="page animate-fade-in" style={{ maxWidth: 1400, margin: '0 auto' }}>
+    <div className="page animate-fade-in" style={{ width: '100%', padding: '0 24px', paddingBottom: 60 }}>
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 16, gap: 12 }}>
         <button className="btn btn-secondary btn-sm">Edit Client</button>
         <button className="btn btn-primary btn-sm">Generate Report</button>

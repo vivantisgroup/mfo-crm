@@ -126,6 +126,7 @@ export default function DocumentsPage() {
                   <td>
                     <TagManager 
                       tags={doc.tags || []} 
+                      tenantId={doc.tenantId || 'system'}
                       onChange={(ts) => handleUpdateTags(doc.id, ts)} 
                     />
                   </td>

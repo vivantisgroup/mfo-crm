@@ -224,6 +224,8 @@ function CreateContactDrawer({ tenantId, onClose, onCreate }: {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
+import { usePageTitle } from '@/lib/PageTitleContext';
+
 export default function ContactsPage() {
  const router = useRouter();
  const [contacts, setContacts] = useState<Contact[]>([]);
@@ -232,6 +234,8 @@ export default function ContactsPage() {
  const [roleFilter, setRoleFilter] = useState('All');
  const [showCreate, setShowCreate] = useState(false);
  const [tenantId, setTenantId] = useState('');
+
+ usePageTitle('Contacts');
 
  useEffect(() => {
  try {
@@ -265,8 +269,45 @@ export default function ContactsPage() {
  }, [contacts, search, roleFilter]);
 
  return (
- <div className="page-wrapper animate-fade-in w-full px-4 lg:px-8">
- 
+ <div className="page-wrapper animate-fade-in w-full px-4 lg:px-8 bg-slate-50/50 min-h-screen md:pb-12">
+   
+   <header className="mb-8 pt-6">
+     <div className="flex justify-between items-start mb-6">
+       <div>
+         <h1 className="text-3xl font-extrabold tracking-tight mb-1 text-slate-900 border-none pb-0">
+           Contacts
+         </h1>
+         <p className="text-sm text-slate-500">Manage individuals, advisors, and team members connected to entities.</p>
+       </div>
+       <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+         <Plus size={16} className="mr-1.5" />
+         New Contact
+       </button>
+     </div>
+
+     <div className="flex gap-4 items-center">
+       <div className="header-search flex-1 max-w-md">
+         <Search size={16} className="text-tertiary" />
+         <input 
+           type="text" 
+           value={search} 
+           onChange={e => setSearch(e.target.value)} 
+           placeholder="Search contacts..." 
+           className="flex-1 bg-transparent border-none outline-none text-sm" 
+         />
+       </div>
+       <select 
+         value={roleFilter} 
+         onChange={e => setRoleFilter(e.target.value)}
+         className="input text-sm font-medium py-2 w-auto"
+       >
+         <option value="All">All Roles</option>
+         {ROLES.map(r => (
+           <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>
+         ))}
+       </select>
+     </div>
+   </header>
 
  {loading ? (
  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -276,7 +317,7 @@ export default function ContactsPage() {
  </div>
  ) : filtered.length === 0 ? (
  <div className="card text-center py-20 bg-slate-50 border-dashed">
- <div className="text-6xl mb-4 opacity-50">👤</div>
+ <User size={48} className="mx-auto mb-4 opacity-20 text-slate-800" />
  <h3 className="text-macro mb-2" style={{ fontSize: 20 }}>
  {contacts.length === 0 ? 'No contacts registered yet.' : 'No people match your filters.'}
  </h3>

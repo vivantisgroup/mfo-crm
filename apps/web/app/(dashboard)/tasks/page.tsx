@@ -112,8 +112,8 @@ function AssigneeChip({ task }: { task: Task }) {
 }
 
 function TimeTracker({ task }: { task: Task }) {
-  const { activeClockTaskId, clockElapsedSec, startClock, stopClock, getTaskTime } = useTaskQueue();
-  const isActive = activeClockTaskId === task.id;
+  const { activeClockItem, clockElapsedSec, startClock, stopClock, getTaskTime } = useTaskQueue();
+  const isActive = activeClockItem?.id === task.id;
   const totalMin = getTaskTime(task.id);
 
   const formatElapsed = (s: number) => {
@@ -143,7 +143,7 @@ function TimeTracker({ task }: { task: Task }) {
         </button>
       ) : (
         <button
-          onClick={(e) => { e.stopPropagation(); startClock(task.id); }}
+          onClick={(e) => { e.stopPropagation(); startClock({ id: task.id, type: 'task', name: task.title }); }}
           title="Start time tracking"
           style={{
             fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99,
@@ -750,9 +750,9 @@ function ListView({ tasks: allTasks, onSelectTask }: { tasks: Task[]; onSelectTa
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
               padding: '6px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600,
-              background: showFilters ? 'var(--brand-900)' : 'var(--bg-elevated)',
-              border: `1px solid ${showFilters ? 'var(--brand-500)44' : 'var(--border)'}`,
-              color: showFilters ? 'var(--brand-400)' : 'var(--text-secondary)',
+              background: showFilters ? 'var(--brand-500)' : 'var(--bg-elevated)',
+              border: `1px solid ${showFilters ? 'var(--brand-500)' : 'var(--border)'}`,
+              color: showFilters ? '#ffffff' : 'var(--text-secondary)',
               transition: 'all 0.15s',
             }}
           >
@@ -1167,8 +1167,6 @@ function TaskDetailView({ task, onClose }: { task: Task; onClose: () => void }) 
           <CommunicationPanel 
             familyId={task.familyId} 
             familyName={task.familyName} 
-            linkedRecordType="ticket" 
-            linkedRecordId={task.id} 
           />
         </div>
       </div>
@@ -1187,6 +1185,7 @@ export default function TasksPage() {
 
   const [view,           setView]           = useState<ViewMode>('board');
   const [selectedTask,   setSelectedTask]   = useState<Task | null>(null);
+  const handleCloseTask = useCallback(() => setSelectedTask(null), []);
   const [search,         setSearch]         = useState('');
   const [familyFilter,   setFamilyFilter]   = useState('All');
   const [queueFilter,    setQueueFilter]    = useState('All');
@@ -1196,13 +1195,24 @@ export default function TasksPage() {
   const filtered = useMemo(() => {
     return tasks.filter(t => {
       const q  = search === '' || t.title.toLowerCase().includes(search.toLowerCase()) || (t.description ?? '').toLowerCase().includes(search.toLowerCase());
-      const fq = familyFilter === 'All'   || t.familyName === familyFilter;
+      
+      let fq = true;
+      if (familyFilter !== 'All') {
+        if (isPlatform) {
+          if (familyFilter === 'Organizations') fq = !!t.linkedOrgId;
+          else if (familyFilter === 'Contacts') fq = !!t.linkedContactId;
+          else if (familyFilter === 'Tickets') fq = t.linkedRecordType === 'ticket';
+        } else {
+          fq = t.familyName === familyFilter;
+        }
+      }
+
       const qq = queueFilter  === 'All'   || t.queueId    === queueFilter;
       const pq = priorityFilter === 'All' || t.priority   === priorityFilter;
       return q && fq && qq && pq;
     });
     // Note: ListView sorts itself; other views sort by priority
-  }, [tasks, search, familyFilter, queueFilter, priorityFilter]);
+  }, [tasks, search, familyFilter, queueFilter, priorityFilter, isPlatform]);
 
   const filteredSorted = useMemo(() =>
     [...filtered].sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]),
@@ -1231,8 +1241,8 @@ export default function TasksPage() {
     return (
       <LiveModeGate emptyState={<TasksEmptyState />} hasLiveData={tasks.length > 0}>
         <div className="flex flex-col absolute inset-0 overflow-y-auto bg-canvas z-0">
-          <div className="page animate-fade-in" style={{ maxWidth: 1440, margin: '0 auto', paddingBottom: 60 }}>
-          <TaskDetailView task={selectedTask} onClose={() => setSelectedTask(null)} />
+          <div className="page animate-fade-in" style={{ width: '100%', padding: '0 24px', paddingBottom: 60 }}>
+          <TaskDetailView task={selectedTask} onClose={handleCloseTask} />
         </div>
       </div>
       </LiveModeGate>
@@ -1265,7 +1275,13 @@ export default function TasksPage() {
             />
           </div>
           {[
-            { value: familyFilter,   onChange: setFamilyFilter,   opts: ['All', ...families],                  label: isPlatform ? 'All Entities' : 'All Families',  lbl: (v: string) => v },
+            { 
+              value: familyFilter,   
+              onChange: setFamilyFilter,   
+              opts: isPlatform ? ['All', 'Organizations', 'Contacts', 'Tickets'] : ['All', ...families],                  
+              label: isPlatform ? 'All Entities' : 'All Families',  
+              lbl: (v: string) => v 
+            },
             { value: queueFilter,    onChange: setQueueFilter,    opts: ['All', ...queues.map(q => q.id)],     label: 'All Queues',    lbl: (v: string) => queues.find(q => q.id === v)?.name ?? v },
             { value: priorityFilter, onChange: setPriorityFilter, opts: ['All', 'urgent', 'high', 'normal', 'low'], label: 'All Priorities', lbl: (v: string) => v },
           ].map((f, i) => (

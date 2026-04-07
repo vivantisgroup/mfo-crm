@@ -29,6 +29,9 @@ function getAdminApp(): any {
   const admin = require('firebase-admin');
   if (admin.apps.length > 0) {
     _app = admin.apps[0];
+    // If an app is already initialized, it must have been initialized with credentials previously.
+    // Set this to true so we don't return false for hasAdminWriteAccess() across HMR cycles.
+    _hasCredentials = true;
     return _app;
   }
 

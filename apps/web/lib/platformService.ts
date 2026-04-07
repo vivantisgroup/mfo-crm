@@ -553,12 +553,20 @@ export async function ensureUserProfile(
 
   // ── Case 1: Profile already exists at real UID ─────────────────────────────
   if (existing) {
-    // Profile is already at the correct UID.
-    // Do NOT call findProvisionedProfile() when tenantIds is empty — that triggers a
-    // Firestore LIST query on the `users` collection which is blocked for non-admins
-    // and causes a permission-denied crash on first login.
-    // A profile with tenantIds:[] is the expected state for a newly admin-created user
-    // who hasn't been assigned to a tenant yet — the "no workspace" UI handles this.
+    // Self-healing: if the user's profile is empty/stranded (which happened if the initial migration batch failed),
+    // we safely attempt to re-find and migrate the provisioned profile. 
+    // This previously crashed before the firestore.rules were updated, but is now permitted by the email list rule.
+    if (!existing.tenantIds || existing.tenantIds.length === 0) {
+      try {
+        const provisioned = await findProvisionedProfile();
+        if (provisioned) {
+          return await migrateProfile(provisioned.data, provisioned.doc.ref);
+        }
+      } catch (err) {
+        console.warn('[ensureUserProfile] Failed to recover stranded provisioned profile:', err);
+      }
+    }
+
     await touchLastLogin(firebaseUser.uid);
     return { ...existing, lastLoginAt: nowISO() };
   }

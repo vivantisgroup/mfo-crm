@@ -118,7 +118,7 @@ export default function ContactClientPage() {
   const regularTasks = myTasks.filter(t => t.taskTypeId !== 'support' && !t.queueId?.includes('support'));
 
   return (
-    <div className="page animate-fade-in" style={{ maxWidth: 1100, margin: '0 auto' }}>
+    <div className="page animate-fade-in" style={{ width: '100%', padding: '0 24px', paddingBottom: 60 }}>
       {/* Tabs */}
       <div style={{ marginBottom: 24, paddingBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)' }}>
         <SecondaryDock 

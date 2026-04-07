@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { FAMILIES, BALANCE_SHEETS } from '@/lib/mockData';
+import { BALANCE_SHEETS } from '@/lib/mockData';
 import { StatCard } from '@/components/StatCard';
 import { StatusBadge } from '@/components/StatusBadge';
 import { formatCurrency, getInitials, getRiskColor, formatDate } from '@/lib/utils';
@@ -20,10 +20,12 @@ export default function FamilyDetailPage() {
   const params   = useParams();
   const router   = useRouter();
   const familyId = params.id as string;
-  const family   = FAMILIES.find(f => f.id === familyId);
   const bs       = BALANCE_SHEETS.find(b => b.familyId === familyId);
+  
   const [activeTab, setActiveTab] = useState('overview');
   const [tenantId, setTenantId]   = useState('');
+  const [family, setFamily] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     try {
@@ -32,15 +34,14 @@ export default function FamilyDetailPage() {
     } catch { /* ignore */ }
   }, []);
 
-  if (!family) {
-    return (
-      <div className="empty-state">
-        <div className="empty-state-icon">⚠️</div>
-        <div className="empty-state-title">Family Not Found</div>
-        <button className="btn btn-secondary mt-4" onClick={() => router.push('/families')}>← Back to Families</button>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (!tenantId || !familyId) return;
+    const unsub = onSnapshot(doc(db, 'tenants', tenantId, 'organizations', familyId), snap => {
+      if(snap.exists()) setFamily({ id: snap.id, ...snap.data() });
+      setLoading(false);
+    });
+    return unsub;
+  }, [tenantId, familyId]);
 
   const { setTitle } = usePageTitle();
   useEffect(() => {
@@ -52,10 +53,24 @@ export default function FamilyDetailPage() {
     }
   }, [family, router, setTitle]);
 
+  if (loading) {
+    return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-tertiary)' }}>Loading Family Group...</div>;
+  }
+
+  if (!family) {
+    return (
+      <div className="empty-state">
+        <div className="empty-state-icon">⚠️</div>
+        <div className="empty-state-title">Family Group Not Found</div>
+        <button className="btn btn-secondary mt-4" onClick={() => router.push('/families')}>← Back to Families</button>
+      </div>
+    );
+  }
+
   return (
-    <div className="page animate-fade-in" style={{ maxWidth: 1400, margin: '0 auto' }}>
+    <div className="page animate-fade-in" style={{ width: '100%', padding: '0 24px', paddingBottom: 60 }}>
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 16, gap: 12 }}>
-        <button className="btn btn-secondary btn-sm">Edit Family</button>
+        <button className="btn btn-secondary btn-sm" onClick={() => router.push(`/relationships/organizations/${family.id}`)}>View Base Entity</button>
         <button className="btn btn-primary btn-sm">Generate Report</button>
       </div>
 
@@ -82,9 +97,9 @@ export default function FamilyDetailPage() {
           <div className="grid-3-1">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
               <div className="grid-2">
-                <StatCard label="Total AUM" value={formatCurrency(family.totalAum, family.currency, true)} />
-                <StatCard label="Risk Profile" value={family.riskProfile.toUpperCase()} 
-                  icon={<span style={{ color: getRiskColor(family.riskProfile) }}>●</span>} 
+                <StatCard label="Total AUM" value={formatCurrency(family.aum || 0, family.currency || 'USD', true)} />
+                <StatCard label="Risk Profile" value={(family.riskProfile || 'moderate').toUpperCase()} 
+                  icon={<span style={{ color: getRiskColor(family.riskProfile || 'moderate') }}>●</span>} 
                 />
               </div>
               <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6">
@@ -104,18 +119,18 @@ export default function FamilyDetailPage() {
               <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <div>
                   <div className="text-xs text-tertiary fw-600 mb-1">RELATIONSHIP MANAGER</div>
-                  <div className="text-sm fw-500">{family.assignedRmName}</div>
+                  <div className="text-sm fw-500">{family.assignedRmName || 'Unassigned'}</div>
                 </div>
                 <div>
                   <div className="text-xs text-tertiary fw-600 mb-1">COMPLIANCE STATUS</div>
                   <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                    <StatusBadge status={family.kycStatus} label={`KYC: ${family.kycStatus}`} />
-                    <StatusBadge status={family.amlStatus} label={`AML: ${family.amlStatus}`} />
+                    <StatusBadge status={family.kycStatus || 'pending'} label={`KYC: ${family.kycStatus || 'pending'}`} />
+                    <StatusBadge status={family.amlStatus || 'pending'} label={`AML: ${family.amlStatus || 'pending'}`} />
                   </div>
                 </div>
                 <div>
                   <div className="text-xs text-tertiary fw-600 mb-1">LAST ACTIVITY</div>
-                  <div className="text-sm">{formatDate(family.lastActivityAt)}</div>
+                  <div className="text-sm">{family.lastActivityAt ? formatDate(family.lastActivityAt) : 'No recent activity'}</div>
                 </div>
               </div>
             </div>
@@ -123,60 +138,49 @@ export default function FamilyDetailPage() {
         )}
 
         {activeTab === 'members' && (
-          <div className="grid-3">
-            {family.members.map(m => (
-              <div key={m.id} className="card">
-                <div className="card-body" style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-                  <div className="avatar" style={{ width: 48, height: 48, fontSize: 16 }}>
-                    {getInitials(`${m.firstName} ${m.lastName}`)}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div className="text-sm fw-600">{m.firstName} {m.lastName}</div>
-                      {m.pepFlag && <span className="badge badge-warning">PEP</span>}
-                    </div>
-                    <div className="text-xs text-secondary mt-1">{m.roleInFamily} · Gen {m.generation}</div>
-                    <div className="mt-4" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {m.email && <div className="text-xs text-secondary flex items-center gap-2"><span>✉</span> {m.email}</div>}
-                      <div className="text-xs text-secondary flex items-center gap-2"><span>🛂</span> {m.nationality?.join(', ')}</div>
-                      <div className="text-xs mt-2"><StatusBadge status={m.kycStatus} label={`KYC: ${m.kycStatus}`} /></div>
-                    </div>
-                  </div>
+          <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 0 }}>
+            <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 14 }}>
+              Contacts in this Family Group
+            </div>
+            {!family.linkedContactNames?.length ? (
+              <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-tertiary)' }}>
+                <span style={{ fontSize: 32 }}>👥</span>
+                <div style={{ marginTop: 8 }}>No members linked to this family yet.</div>
+              </div>
+            ) : family.linkedContactNames.map((n: string, i: number) => (
+              <div key={i} style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700 }}>
+                  {n[0]?.toUpperCase()}
                 </div>
+                <span style={{ fontWeight: 600, fontSize: 13 }}>{n}</span>
               </div>
             ))}
           </div>
         )}
 
         {activeTab === 'entities' && (
-          <div className="table-wrap card">
-            <table>
-              <thead>
-                <tr>
-                  <th>Entity Name</th>
-                  <th>Type</th>
-                  <th>Jurisdiction</th>
-                  <th>Status</th>
-                  <th className="td-right">Total Value</th>
-                </tr>
-              </thead>
-            <tbody>
-              {family.entities.map(e => (
-                <tr key={e.id}>
-                  <td className="fw-500">{e.name}</td>
-                  <td><span className="badge badge-neutral" style={{ textTransform: 'capitalize' }}>{e.entityType.replace('_', ' ')}</span></td>
-                  <td className="text-secondary">{e.jurisdiction}</td>
-                  <td><StatusBadge status={e.status} /></td>
-                  <td className="td-right fw-500">{e.totalValue ? formatCurrency(e.totalValue, e.currency) : '-'}</td>
-                </tr>
-              ))}
-            </tbody>
-            </table>
+          <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 0 }}>
+            <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 14 }}>
+              Connected Entities
+            </div>
+            {!family.linkedOrgNames?.length ? (
+              <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-tertiary)' }}>
+                <span style={{ fontSize: 32 }}>🏢</span>
+                <div style={{ marginTop: 8 }}>No corporate entities linked yet.</div>
+              </div>
+            ) : family.linkedOrgNames.map((n: string, i: number) => (
+              <div key={i} style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700 }}>
+                  {n[0]?.toUpperCase()}
+                </div>
+                <span style={{ fontWeight: 600, fontSize: 13 }}>{n}</span>
+              </div>
+            ))}
           </div>
         )}
 
         {activeTab === 'network' && tenantId && (
-          <ContactRelationshipGraph tenantId={tenantId} familyId={familyId} />
+          <ContactRelationshipGraph tenantId={tenantId} focusOrgId={familyId} />
         )}
         {activeTab === 'network' && !tenantId && (
           <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-tertiary)' }}>Loading graph…</div>
@@ -190,7 +194,7 @@ export default function FamilyDetailPage() {
 
         {activeTab === 'advisory' && (
           <InvestmentAdvisory 
-            family={family} 
+            family={{...family, totalAum: family.aum}} 
             balanceSheet={bs}
           />
         )}

@@ -128,7 +128,7 @@ export function DashboardTab({ orgs, opps, activities, pipelineStages = DEFAULT_
              <div style={{ textAlign:'center', color:'var(--text-tertiary)', fontSize:13, marginTop:20 }}>No classified wins.</div>
           ) : (
              <div className="mt-4">
-                <BarList data={industryData} color="indigo" valueFormatter={(v) => fmtMoney(v)} />
+                <BarList data={industryData} color="indigo" valueFormatter={(v: any) => fmtMoney(v)} />
              </div>
           )}
         </div>
@@ -180,7 +180,7 @@ export function PipelineTab({
   orgs, opps, subs = [], onOppClick, onCreateOpp, onUpdateOpp, performer, filterOrgId, onReturn,
   pipelineStages = DEFAULT_PIPELINE_STAGES, onUpdatePipelineStages,
 }: {
-  orgs: PlatformOrg[]; opps: Opportunity[]; subs?: TenantSubscription[];
+  orgs: PlatformOrg[]; opps: Opportunity[]; subs?: any[];
   onOppClick?:(o:Opportunity)=>void;
   onCreateOpp:(o:Opportunity)=>void;
   onUpdateOpp?:(o:Opportunity)=>void;
@@ -446,7 +446,7 @@ export function PipelineTab({
           <div style={{ fontWeight:700, fontSize:12, color:'#ef4444', marginBottom:10 }}>❌ Closed Lost</div>
           <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
             {filtered.filter(o=>o.stage==='closed_lost').map(opp=>(
-              <div key={opp.id} onClick={()=>onOppClick(opp)} style={{ display:'flex', justifyContent:'space-between', padding:'10px 14px', background:'var(--bg-elevated)', borderRadius:8, cursor:'pointer', border:'1px solid #ef444422' }}>
+              <div key={opp.id} onClick={()=>onOppClick?.(opp)} style={{ display:'flex', justifyContent:'space-between', padding:'10px 14px', background:'var(--bg-elevated)', borderRadius:8, cursor:'pointer', border:'1px solid #ef444422' }}>
                 <div><div style={{ fontWeight:600, fontSize:13 }}>{opp.orgName} — {opp.title}</div><div style={{ fontSize:11, color:'var(--text-tertiary)' }}>{opp.lostReason}</div></div>
                 <div style={{ fontSize:13, fontWeight:700, color:'var(--text-tertiary)' }}>{fmtMoney(opp.valueUsd)}</div>
               </div>
@@ -555,62 +555,15 @@ export function ActivitiesTab({
         <button className="btn btn-primary btn-sm" onClick={()=>{setShowNew(v=>!v);setEditingId(null);setForm(initialForm);}}>{showNew?'✕ Cancel':'+ Log Activity'}</button>
       </div>
 
-      {(showNew || editingId) && (
-        <form onSubmit={editingId ? handleEditAction : handleCreate} style={{ padding:'20px 22px', background:'var(--bg-elevated)', borderRadius:12, border:'1px solid var(--border)', marginBottom:20 }}>
-          <div style={{ fontWeight:700, fontSize:14, marginBottom:16 }}>📅 {editingId ? 'Edit Activity' : 'Log Activity'}</div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-            <div>
-              <FieldLabel>Organization *</FieldLabel>
-              <select required className="input" style={{ width:'100%' }} value={form.orgId} onChange={e=>setForm(p=>({...p,orgId:e.target.value}))}>
-                <option value="">Select org…</option>
-                {orgs.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <FieldLabel>Type</FieldLabel>
-              <select className="input" style={{ width:'100%' }} value={form.type} onChange={e=>setForm(p=>({...p,type:e.target.value as ActivityType}))}>
-                {ACTIVITY_TYPES.map(t=><option key={t} value={t}>{ACTIVITY_ICONS[t]} {ACTIVITY_LABELS[t]}</option>)}
-              </select>
-            </div>
-            <div>
-              <FieldLabel>Direction</FieldLabel>
-              <select className="input" style={{ width:'100%' }} value={form.direction} onChange={e=>setForm(p=>({...p,direction:e.target.value as any}))}>
-                <option value="outbound">Outbound</option>
-                <option value="inbound">Inbound</option>
-                <option value="internal">Internal</option>
-              </select>
-            </div>
-            <div>
-              <FieldLabel>Date &amp; Time</FieldLabel>
-              <input type="datetime-local" className="input" style={{ width:'100%' }} value={form.scheduledAt} onChange={e=>setForm(p=>({...p,scheduledAt:e.target.value}))} />
-            </div>
-            <div style={{ gridColumn:'1/-1' }}>
-              <FieldLabel>Subject *</FieldLabel>
-              <input required className="input" style={{ width:'100%' }} value={form.subject} onChange={e=>setForm(p=>({...p,subject:e.target.value}))} placeholder="e.g. Discovery call with CEO" />
-            </div>
-            <div style={{ gridColumn:'1/-1' }}>
-              <FieldLabel>Notes / Summary</FieldLabel>
-              <textarea className="input" rows={3} style={{ width:'100%', fontFamily:'inherit', fontSize:13 }} value={form.body} onChange={e=>setForm(p=>({...p,body:e.target.value}))} />
-            </div>
-            <div style={{ gridColumn:'1/-1' }}>
-              <FieldLabel>Outcome</FieldLabel>
-              <input className="input" style={{ width:'100%' }} value={form.outcome} onChange={e=>setForm(p=>({...p,outcome:e.target.value}))} placeholder="e.g. Follow-up scheduled, No answer, Positive" />
-            </div>
-          </div>
-          <div style={{ display:'flex', gap:10, marginTop:14 }}>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={()=>{setShowNew(false); setEditingId(null); setForm(initialForm);}}>Cancel</button>
-            <button type="submit" className="btn btn-primary btn-sm" disabled={saving||!form.orgId||!form.subject}>{saving?'…':(editingId?'✅ Save Changes':'✅ Log')}</button>
-          </div>
-        </form>
-      )}
-
-      {filtered.length===0 ? (
-        <div style={{ textAlign:'center', padding:'40px 20px', border:'1px dashed var(--border)', borderRadius:12, color:'var(--text-tertiary)' }}>No activities found.</div>
-      ) : (
-        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-          {filtered.map(a=>{
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        {/* Master Column */}
+        <div className="lg:col-span-1" style={{ display:'flex', flexDirection:'column', gap:10, maxHeight: 'calc(100vh - 200px)', overflowY: 'auto', paddingRight: 4 }}>
+          {filtered.length===0 ? (
+            <div style={{ textAlign:'center', padding:'40px 20px', border:'1px dashed var(--border)', borderRadius:12, color:'var(--text-tertiary)' }}>No activities found.</div>
+          ) : filtered.map(a=>{
              const initials = (a.performedByName || 'U').split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase();
              const avatarColor = `hsl(${((a.performedByName?.length || 0) * 40) % 360}, 65%, 45%)`;
+             const isSelected = editingId === a.id;
 
              return (
                <div 
@@ -618,53 +571,100 @@ export function ActivitiesTab({
                  onClick={() => {
                     setEditingId(a.id); setShowNew(false);
                     setForm({ orgId:a.orgId, type:a.type, direction:a.direction, subject:a.subject, body:a.body, outcome:a.outcome||'', scheduledAt:new Date(a.scheduledAt).toISOString().slice(0,16) });
-                    window.scrollTo({top:0, behavior:'smooth'});
                  }}
-                 style={{ padding:'16px 20px', background:'var(--bg-elevated)', borderRadius:12, border:'1px solid var(--border)', cursor:'pointer', transition:'all 0.2s', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}
+                 style={{ padding:'14px 16px', background:'var(--bg-elevated)', borderRadius:12, border: isSelected ? '2px solid var(--brand-500)' : '1px solid var(--border)', cursor:'pointer', transition:'all 0.2s', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}
                  className="hover-lift"
-                 onMouseEnter={e=>e.currentTarget.style.borderColor='var(--brand-300)'}
-                 onMouseLeave={e=>e.currentTarget.style.borderColor='var(--border)'}
                >
-                 <div style={{ display:'flex', gap:14, alignItems:'flex-start', marginBottom: 12 }}>
+                 <div style={{ display:'flex', gap:12, alignItems:'flex-start' }}>
                     <div style={{ position:'relative', flexShrink:0 }}>
-                       <div style={{ width: 42, height: 42, borderRadius: '50%', background: avatarColor, color: 'white', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800, fontSize:15, letterSpacing: '0.05em', boxShadow:'inset 0 0 0 1px rgba(0,0,0,0.1)' }}>
+                       <div style={{ width: 36, height: 36, borderRadius: '50%', background: avatarColor, color: 'white', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800, fontSize:13, letterSpacing: '0.05em', boxShadow:'inset 0 0 0 1px rgba(0,0,0,0.1)' }}>
                          {initials}
                        </div>
-                       <div style={{ position:'absolute', bottom:-2, right:-4, background:'var(--bg-elevated)', borderRadius:'50%', padding:2, fontSize:12, boxShadow:'0 0 0 2px var(--bg-elevated)' }}>
+                       <div style={{ position:'absolute', bottom:-2, right:-4, background:'var(--bg-elevated)', borderRadius:'50%', padding:2, fontSize:10, boxShadow:'0 0 0 2px var(--bg-elevated)' }}>
                          {ACTIVITY_ICONS[a.type]}
                        </div>
                     </div>
                     
-                    <div style={{ flex:1 }}>
-                       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
-                         <div>
-                            <div style={{ fontWeight:800, fontSize:13, color:'var(--text-primary)', display:'flex', alignItems:'center', gap:6 }}>
-                               {a.performedByName}
-                               <span style={{ fontSize:11, color:'var(--text-tertiary)', fontWeight:500 }}>logged an activity</span>
-                            </div>
-                            <div style={{ fontSize:12, color:'var(--text-secondary)', marginTop: 2, display:'flex', alignItems:'center', gap:6 }}>
-                               {a.orgName} <span style={{ color:'var(--border-strong)' }}>|</span> <Chip label={a.direction} color={a.direction==='inbound'?'#22c55e':a.direction==='outbound'?'#6366f1':'#94a3b8'} />
-                            </div>
-                         </div>
-                         <div style={{ fontSize:11, color:'var(--text-tertiary)', fontWeight:600 }}>
-                            {fmtDate(a.scheduledAt)}
-                         </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                       <div style={{ fontWeight:700, fontSize:13, color:'var(--text-primary)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', marginBottom: 2 }}>
+                         {a.subject}
+                       </div>
+                       <div style={{ fontSize:12, color:'var(--text-secondary)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', marginBottom: 4 }}>
+                         {a.orgName}
+                       </div>
+                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                         <Chip label={a.direction} color={a.direction==='inbound'?'#22c55e':a.direction==='outbound'?'#6366f1':'#94a3b8'} />
+                         <span style={{ fontSize:11, color:'var(--text-tertiary)', fontWeight:600 }}>
+                           {fmtDate(a.scheduledAt)}
+                         </span>
                        </div>
                     </div>
-                 </div>
-
-                 <div style={{ marginLeft: 56 }}>
-                    <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--text-primary)', marginBottom: 4 }}>
-                       {a.subject}
-                    </div>
-                    {a.body && <div style={{ fontSize:13, color:'var(--text-secondary)', lineHeight:1.6, whiteSpace: 'pre-wrap', background:'var(--bg-canvas)', padding:'10px 14px', borderRadius:8, border:'1px solid var(--border)', marginTop:8 }}>{a.body}</div>}
-                    {a.outcome && <div style={{ fontSize:12, marginTop:10, padding:'6px 12px', background:'#f59e0b15', color:'#d97706', fontWeight:700, borderRadius:8, display:'inline-block', border:'1px solid #f59e0b33' }}>💬 {a.outcome}</div>}
                  </div>
                </div>
              );
           })}
         </div>
-      )}
+
+        {/* Detail Column */}
+        <div className="lg:col-span-2" style={{ position: 'sticky', top: 20 }}>
+          {(showNew || editingId) ? (
+            <form onSubmit={editingId ? handleEditAction : handleCreate} style={{ padding:'24px', background:'var(--bg-elevated)', borderRadius:12, border:'1px solid var(--border)' }}>
+              <div style={{ fontWeight:800, fontSize:16, marginBottom:20, display: 'flex', alignItems: 'center', gap: 8 }}>
+                {ACTIVITY_ICONS[form.type]} {editingId ? 'Edit Activity Details' : 'Log New Activity'}
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+                <div>
+                  <FieldLabel>Organization *</FieldLabel>
+                  <select required className="input" style={{ width:'100%' }} value={form.orgId} onChange={e=>setForm(p=>({...p,orgId:e.target.value}))}>
+                    <option value="">Select org…</option>
+                    {orgs.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <FieldLabel>Type</FieldLabel>
+                  <select className="input" style={{ width:'100%' }} value={form.type} onChange={e=>setForm(p=>({...p,type:e.target.value as ActivityType}))}>
+                    {ACTIVITY_TYPES.map(t=><option key={t} value={t}>{ACTIVITY_ICONS[t]} {ACTIVITY_LABELS[t]}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <FieldLabel>Direction</FieldLabel>
+                  <select className="input" style={{ width:'100%' }} value={form.direction} onChange={e=>setForm(p=>({...p,direction:e.target.value as any}))}>
+                    <option value="outbound">Outbound</option>
+                    <option value="inbound">Inbound</option>
+                    <option value="internal">Internal</option>
+                  </select>
+                </div>
+                <div>
+                  <FieldLabel>Date &amp; Time</FieldLabel>
+                  <input type="datetime-local" className="input" style={{ width:'100%' }} value={form.scheduledAt} onChange={e=>setForm(p=>({...p,scheduledAt:e.target.value}))} />
+                </div>
+                <div style={{ gridColumn:'1/-1' }}>
+                  <FieldLabel>Subject *</FieldLabel>
+                  <input required className="input" style={{ width:'100%', fontSize: 15, fontWeight: 600 }} value={form.subject} onChange={e=>setForm(p=>({...p,subject:e.target.value}))} placeholder="e.g. Discovery call with CEO" />
+                </div>
+                <div style={{ gridColumn:'1/-1' }}>
+                  <FieldLabel>Notes / Summary</FieldLabel>
+                  <textarea className="input" rows={6} style={{ width:'100%', fontFamily:'inherit', fontSize:14, lineHeight: 1.6 }} value={form.body} onChange={e=>setForm(p=>({...p,body:e.target.value}))} placeholder="Log conversation details, meeting minutes, or action items here..." />
+                </div>
+                <div style={{ gridColumn:'1/-1' }}>
+                  <FieldLabel>Outcome</FieldLabel>
+                  <input className="input" style={{ width:'100%' }} value={form.outcome} onChange={e=>setForm(p=>({...p,outcome:e.target.value}))} placeholder="e.g. Follow-up scheduled, No answer, Positive" />
+                </div>
+              </div>
+              <div style={{ display:'flex', gap:10, marginTop:24, justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+                <button type="button" className="btn btn-ghost" onClick={()=>{setShowNew(false); setEditingId(null); setForm(initialForm);}}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={saving||!form.orgId||!form.subject}>{saving?'Saving…':(editingId?'💾 Save Changes':'✅ Log Activity')}</button>
+              </div>
+            </form>
+          ) : (
+            <div style={{ padding: '80px 20px', textAlign: 'center', background: 'var(--bg-elevated)', borderRadius: 12, border: '1px dashed var(--border)' }}>
+              <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.8 }}>📋</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>No Activity Selected</div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 300, margin: '0 auto' }}>Select an activity from the sequence to view and edit details, or click "+ Log Activity" to create a new one.</div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

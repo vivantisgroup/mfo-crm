@@ -384,35 +384,6 @@ export default function AnalyticsPage() {
         onTabChange={(id) => setTab(id as AnalyticsTab)}
       />
       <main className="flex-1 flex flex-col min-h-0 relative animate-fade-in px-4 lg:px-6 pt-6 pb-12 overflow-y-auto w-full">
-        {/* Tabs */}
-        <div
-          style={{
-            display: "flex",
-            gap: 0,
-            borderBottom: "1px solid var(--border)",
-            marginBottom: 28,
-          }}
-        >
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              style={{
-                padding: "10px 18px",
-                fontSize: 13,
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                fontWeight: tab === t.id ? 700 : 500,
-                borderBottom: `2px solid ${tab === t.id ? "var(--brand-500)" : "transparent"}`,
-                color:
-                  tab === t.id ? "var(--brand-500)" : "var(--text-secondary)",
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
 
         {/* ── OVERVIEW TAB ──────────────────────────────────────────────────────── */}
         {tab === "overview" && (

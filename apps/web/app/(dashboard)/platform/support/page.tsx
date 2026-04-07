@@ -36,6 +36,22 @@ const TEAM_COLORS: Record<TicketTeam, string> = {
   support: '#22d3ee', engineering: '#6366f1', operations: '#f59e0b', compliance: '#22c55e'
 };
 
+function formatTicketId(id: string, tenantName?: string) {
+  // If it's already a generated user-friendly ID (e.g. SUP-1234)
+  if (id.includes('-') && id.length < 15) return '# ' + id;
+  
+  // Otherwise, it's a legacy Firestore UUID. Mask it into a friendly # TKT-XXXXX format deterministically.
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+     hash = ((hash << 5) - hash) + id.charCodeAt(i);
+     hash = hash & hash;
+  }
+  const code = Math.abs(hash % 90000) + 10000; // 5 digit number
+  const prefix = tenantName ? tenantName.replace(/[^a-zA-Z]/g, '').substring(0, 3).toUpperCase() : 'SUP';
+  
+  return `# ${prefix}-${code}`;
+}
+
 function StatusBadge({ status }: { status: TicketStatus }) {
   const color = STATUS_COLORS[status];
   const label = status.replace('_', ' ');
@@ -66,12 +82,12 @@ function TicketDetailView({ ticket, employees, onBack, onEdit }: { ticket: Ticke
     setTitle('Support Center', '', [
       { label: 'Support Center', onClick: onBack },
       { label: 'All Tickets', onClick: onBack },
-      { label: ticket.id }
+      { label: formatTicketId(ticket.id, ticket.tenantName) }
     ]);
     return () => {
       setTitle('Support Center', '', []);
     };
-  }, [ticket.id, onBack, setTitle]);
+  }, [ticket.id, ticket.tenantName, onBack, setTitle]);
 
   return (
     <div className="animate-fade-in" style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
@@ -86,7 +102,7 @@ function TicketDetailView({ ticket, employees, onBack, onEdit }: { ticket: Ticke
              {/* Left Column: Title & Controls */}
              <div style={{ flex: '0 0 340px', display: 'flex', flexDirection: 'column' }}>
                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                 <div style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 700 }}>{ticket.id}</div>
+                 <div style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 700 }}>{formatTicketId(ticket.id, ticket.tenantName)}</div>
                  <div style={{ display: 'flex', gap: 8 }}>
                     <button className="btn btn-outline btn-sm" onClick={onEdit}>Edit Ticket</button>
                     {ticket.status !== 'resolved' ? (
@@ -179,8 +195,6 @@ function TicketDetailView({ ticket, employees, onBack, onEdit }: { ticket: Ticke
           <CommunicationPanel
             familyId={ticket.tenantName}
             familyName={ticket.tenantName}
-            linkedRecordType="ticket"
-            linkedRecordId={ticket.id}
           />
         </div>
       </div>
@@ -321,7 +335,7 @@ export default function SupportPage() {
 
   if (showForm) {
      return (
-       <div className="animate-fade-in" style={{ maxWidth: 1400, margin: '0 auto', paddingBottom: 100 }}>
+       <div className="animate-fade-in" style={{ width: '100%', paddingBottom: 100 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
              <button onClick={() => setShowForm(false)} className="btn btn-ghost btn-sm">← Back</button>
              <h2 style={{ fontSize: 24, fontWeight: 800 }}>{formMode === 'new' ? 'Provision New Ticket' : 'Edit Ticket Details'}</h2>
@@ -448,7 +462,7 @@ export default function SupportPage() {
 
   return (
     <div className="flex-1 overflow-y-auto px-4 lg:px-8 py-6 w-full animate-fade-in relative bg-slate-50/50">
-      <div style={{ maxWidth: 1400, margin: '0 auto', width: '100%' }}>
+      <div style={{ width: '100%', height: '100%' }}>
       <header style={{ marginBottom: 32 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
@@ -565,7 +579,9 @@ export default function SupportPage() {
                     className="hover-lift"
                   >
                     <td style={{ padding: '16px 16px', verticalAlign: 'top' }}>
-                      <div style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>{ticket.id}</div>
+                      <div style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 800, color: 'var(--brand-500)', letterSpacing: '0.04em' }}>
+                         {formatTicketId(ticket.id, ticket.tenantName)}
+                      </div>
                       <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: PRIORITY_COLORS[ticket.priority] }}>
                         {PRIORITY_ICONS[ticket.priority]} {ticket.priority.toUpperCase()}
                       </div>

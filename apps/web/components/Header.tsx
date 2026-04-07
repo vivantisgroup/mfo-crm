@@ -182,9 +182,9 @@ export function TenantSwitcher() {
               onClick={async () => { setOpen(false); if (t.id !== tenant.id) { await switchTenant(t.id); window.location.assign('/dashboard'); } }}
               style={{
                 display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                background: t.id === tenant.id ? 'var(--brand-900)' : 'transparent',
+                background: t.id === tenant.id ? 'var(--brand-500)' : 'transparent',
                 border: 'none', padding: '7px 10px', borderRadius: 4, cursor: 'pointer',
-                color: t.id === tenant.id ? 'var(--brand-400)' : 'var(--text-secondary)',
+                color: t.id === tenant.id ? '#ffffff' : 'var(--text-secondary)',
                 textAlign: 'left', transition: 'background 0.15s', fontSize: 12,
               }}
             >

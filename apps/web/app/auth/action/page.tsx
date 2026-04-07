@@ -293,6 +293,20 @@ function AuthActionContent() {
   const router       = useRouter();
   const mode         = searchParams.get('mode') ?? '';
   const oobCode      = searchParams.get('oobCode') ?? '';
+  const continueUrl  = searchParams.get('continueUrl');
+
+  useEffect(() => {
+    // If testing locally but following an email link routed to production Firebase handler:
+    if (continueUrl && continueUrl.startsWith('http://localhost:')) {
+      if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
+        const targetUrl = new URL(continueUrl);
+        searchParams.forEach((val, key) => {
+          if (key !== 'continueUrl') targetUrl.searchParams.set(key, val);
+        });
+        window.location.replace(targetUrl.toString());
+      }
+    }
+  }, [continueUrl, searchParams]);
 
   if (!oobCode || !mode) {
     return (

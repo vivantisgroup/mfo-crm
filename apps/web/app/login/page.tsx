@@ -381,7 +381,9 @@ function LoginContent() {
     setLoading(true);
     setError('');
     try {
-      await sendPasswordResetEmail(auth, trimmedEmail);
+      await sendPasswordResetEmail(auth, trimmedEmail, {
+        url: window.location.origin + '/auth/action'
+      });
       setResetSent(true);
     } catch (err: any) {
       setError(friendlyAuthError(err.code ?? err.message));

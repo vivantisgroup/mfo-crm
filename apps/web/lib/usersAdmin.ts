@@ -19,6 +19,8 @@ export async function adminCreateFirebaseUser(
   isNew?:       boolean;
   error?:       string;
   tempPassword?: string;
+  inviteLink?:  string;
+  emailSent?:   boolean;
 }> {
   try {
     const res = await fetch('/api/admin/users', {
@@ -37,6 +39,8 @@ export async function adminCreateFirebaseUser(
       userRecord:   { uid: data.uid, email: data.email, displayName: data.displayName },
       isNew:        data.isNew,
       tempPassword: data.tempPassword,
+      inviteLink:   data.inviteLink,
+      emailSent:    data.emailSent,
     };
   } catch (error: any) {
     console.error('[adminCreateFirebaseUser]', error);
@@ -49,7 +53,7 @@ export async function adminCreateFirebaseUser(
 export async function adminGeneratePasswordResetLink(
   email:    string,
   idToken:  string,
-): Promise<{ success: boolean; link?: string; error?: string }> {
+): Promise<{ success: boolean; inviteLink?: string; emailSent?: boolean; error?: string }> {
   try {
     const res = await fetch('/api/admin/users', {
       method:  'PUT',
@@ -62,9 +66,38 @@ export async function adminGeneratePasswordResetLink(
       return { success: false, error: data.error ?? `Server error ${res.status}` };
     }
 
-    return { success: true };
+    return { 
+      success: true, 
+      inviteLink: data.inviteLink,
+      emailSent: data.emailSent
+    };
   } catch (error: any) {
     console.error('[adminGeneratePasswordResetLink]', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// ─── Destroy user ─────────────────────────────────────────────────────────────
+
+export async function adminDestroyFirebaseUser(
+  targetUid: string,
+  idToken:   string,
+): Promise<{ success: boolean; method?: string; error?: string }> {
+  try {
+    const res = await fetch('/api/admin/users', {
+      method:  'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ idToken, targetUid }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      return { success: false, error: data.error ?? `Server error ${res.status}` };
+    }
+
+    return { success: true, method: data.method };
+  } catch (error: any) {
+    console.error('[adminDestroyFirebaseUser]', error);
     return { success: false, error: error.message };
   }
 }

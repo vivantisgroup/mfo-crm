@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { doc, onSnapshot, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Users, User, Building2, Ticket, CheckSquare, Briefcase } from 'lucide-react';
+import { ArrowLeft, Users, User, Building2, Ticket, CheckSquare, Briefcase, Landmark, FileText, BadgeDollarSign, Scale, Lock, ShieldCheck, Map, Search as SearchIcon, Umbrella, Ruler, Handshake, Heart, Sprout, Pin, Building, LayoutDashboard, Share2, MessageSquare, ClipboardList, Send } from 'lucide-react';
 import { ContactRelationshipGraph } from '@/components/ContactRelationshipGraph';
 import { SecondaryDock } from '@/components/SecondaryDock';
 import { useTaskQueue } from '@/lib/TaskQueueContext';
@@ -18,6 +18,8 @@ interface Organization {
   linkedFamilyNames: string[];
   linkedContactIds:  string[];
   linkedContactNames:string[];
+  linkedOrgIds?:     string[];
+  linkedOrgNames?:   string[];
   status?:           string;
   notes?:            string;
 }
@@ -33,13 +35,67 @@ interface Activity {
   linkedRecordType?:string;
 }
 
-const TYPE_ICONS: Record<string, string> = {
-  trust: '🔒', llc: '🏢', corporation: '🌐', foundation: '🌱',
-  holding: '🏦', fund: '📊', bank: '🏦', law_firm: '⚖️', accounting_firm: '🧾', other: '🏢',
+const TYPE_LABELS: Record<string, string> = {
+  family_group: 'Grupo Familiar',
+  financial_institution: 'Instituição Financeira',
+  accountant: 'Contador',
+  tax_consultant: 'Consultor Tributário',
+  lawyer: 'Advogado',
+  trustee: 'Trustee',
+  fiduciary_admin: 'Administrador Fiduciário',
+  offshore_admin: 'Administrador Offshore',
+  corporate_provider: 'Provedor Corporativo',
+  auditor: 'Auditor',
+  insurance_company: 'Seguradora',
+  insurance_consultant: 'Consultor de Seguros',
+  real_estate_admin: 'Administrador Imobiliário',
+  appraiser: 'Avaliador',
+  governance_consultant: 'Consultor de Governança',
+  philanthropic_consultant: 'Consultor Filantrópico',
+  foundation: 'Fundação',
+  other: 'Outros'
 };
+
 const TYPE_COLORS: Record<string, string> = {
-  trust: '#8b5cf6', llc: '#06b6d4', corporation: '#6366f1', foundation: '#10b981',
-  holding: '#f59e0b', fund: '#ec4899', bank: '#3b82f6', law_firm: '#f59e0b', other: 'var(--text-tertiary)',
+  family_group: '#6366f1',
+  financial_institution: '#3b82f6',
+  accountant: '#10b981',
+  tax_consultant: '#14b8a6',
+  lawyer: '#f59e0b',
+  trustee: '#8b5cf6',
+  fiduciary_admin: '#d946ef',
+  offshore_admin: '#06b6d4',
+  corporate_provider: '#64748b',
+  auditor: '#71717a',
+  insurance_company: '#e11d48',
+  insurance_consultant: '#ec4899',
+  real_estate_admin: '#f97316',
+  appraiser: '#eab308',
+  governance_consultant: '#0ea5e9',
+  philanthropic_consultant: '#84cc16',
+  foundation: '#10b981',
+  other: '#64748b',
+};
+
+const TYPE_ICONS: Record<string, any> = {
+  family_group: Users, 
+  financial_institution: Landmark, 
+  accountant: FileText, 
+  tax_consultant: BadgeDollarSign, 
+  lawyer: Scale,
+  trustee: Lock, 
+  fiduciary_admin: ShieldCheck, 
+  offshore_admin: Map, 
+  corporate_provider: Building2, 
+  auditor: SearchIcon,
+  insurance_company: Umbrella, 
+  insurance_consultant: Umbrella, 
+  real_estate_admin: Building, 
+  appraiser: Ruler,
+  governance_consultant: Handshake, 
+  philanthropic_consultant: Heart, 
+  foundation: Sprout, 
+  other: Pin,
 };
 
 const RECORD_TYPE_TAGS: Record<string, { label: string, color: string }> = {
@@ -96,7 +152,6 @@ export default function OrgClientPage() {
   );
 
   const color = TYPE_COLORS[org.type] ?? 'var(--text-tertiary)';
-  const icon  = TYPE_ICONS[org.type] ?? '🏢';
 
   const isClockRunningHere = activeClockItem?.id === org.id;
 
@@ -105,18 +160,19 @@ export default function OrgClientPage() {
   const regularTasks = myTasks.filter(t => t.taskTypeId !== 'support' && !t.queueId?.includes('support'));
 
   return (
-    <div className="page animate-fade-in" style={{ maxWidth: 1100, margin: '0 auto' }}>
+    <div className="page animate-fade-in" style={{ width: '100%', padding: '0 24px', paddingBottom: 60 }}>
       {/* Tabs */}
       <div style={{ marginBottom: 24, paddingBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)' }}>
         <SecondaryDock 
           tabs={[
-            { id: 'overview', label: 'Overview', icon: '📋' },
-            { id: 'members', label: 'Members', icon: '👥' },
-            { id: 'relationships', label: 'Relationships', icon: '🔗' },
-            { id: 'communications', label: 'Comms', icon: '💬' },
-            { id: 'tasks', label: 'Tasks', icon: '✓' },
-            { id: 'tickets', label: 'Tickets', icon: '🎟' },
-            { id: 'leads', label: 'Leads', icon: '💼' }
+            { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+            { id: 'members', label: 'Members', icon: Users },
+            { id: 'connected_entities', label: 'Connected Entities', icon: Building2 },
+            { id: 'relationships', label: 'Network Graph', icon: Share2 },
+            { id: 'communications', label: 'Comms', icon: MessageSquare },
+            { id: 'tasks', label: 'Tasks', icon: ClipboardList },
+            { id: 'tickets', label: 'Tickets', icon: Ticket },
+            { id: 'leads', label: 'Leads', icon: Briefcase }
           ]}
           activeTab={activeTab}
           onTabChange={setActiveTab}
@@ -137,7 +193,7 @@ export default function OrgClientPage() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Type</div>
-              <div style={{ fontSize: 13, fontWeight: 500 }}>{org.type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</div>
+              <div style={{ fontSize: 13, fontWeight: 500 }}>{TYPE_LABELS[org.type] || org.type}</div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Jurisdiction</div>
@@ -172,6 +228,28 @@ export default function OrgClientPage() {
               <div>No contacts linked to this organization yet.</div>
             </div>
           ) : org.linkedContactNames.map((n, i) => (
+            <div key={i} style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700 }}>
+                {n[0]?.toUpperCase()}
+              </div>
+              <span style={{ fontWeight: 600, fontSize: 13 }}>{n}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activeTab === 'connected_entities' && (
+        <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 0 }}>
+          <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>Connected Organizations & Service Providers</span>
+            <button className="btn btn-secondary btn-sm" style={{ padding: '4px 10px', fontSize: 12 }}>+ Add Connection</button>
+          </div>
+          {!org.linkedOrgNames?.length ? (
+            <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-tertiary)' }}>
+              <Building2 size={32} style={{ margin: '0 auto 8px auto', opacity: 0.4 }} />
+              <div>No connected entities or service providers yet.</div>
+            </div>
+          ) : org.linkedOrgNames.map((n, i) => (
             <div key={i} style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700 }}>
                 {n[0]?.toUpperCase()}

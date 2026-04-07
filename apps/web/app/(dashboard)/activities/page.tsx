@@ -210,7 +210,7 @@ export default function ActivitiesPage() {
           </h1>
           <p className="page-subtitle" style={{ marginTop: 6 }}>
             All interactions — emails, calls, meetings, notes
-            {!loading && <span style={{ marginLeft: 8, padding: '2px 8px', background: 'var(--brand-900)', color: 'var(--brand-300)', borderRadius: 12, fontSize: 11, fontWeight: 700 }}>{activities.length} total</span>}
+            {!loading && <span style={{ marginLeft: 8, padding: '2px 8px', background: 'var(--brand-500)', color: '#ffffff', borderRadius: 12, fontSize: 11, fontWeight: 700 }}>{activities.length} total</span>}
           </p>
         </div>
         <button className="btn btn-primary" style={{ gap: 8, display: 'flex', alignItems: 'center' }} onClick={() => setShowCreate(true)}>

@@ -35,10 +35,10 @@ function Modal({ onClose, children, width = 760 }: { onClose: () => void; childr
  );
 }
 
-function Msg({ text }: { text: string }) {
+function Msg({ text }: { text: React.ReactNode }) {
  if (!text) return null;
- const ok = text.startsWith('✅');
- return <div style={{ padding: '10px 14px', borderRadius: 8, fontSize: 13, background: ok ? '#22c55e15' : '#ef444415', color: ok ? '#22c55e' : '#ef4444', marginBottom: 12 }}>{text}</div>;
+ const ok = typeof text === 'string' ? text.startsWith('✅') : true;
+ return <div style={{ padding: '10px 14px', borderRadius: 8, fontSize: 13, background: ok ? '#22c55e15' : '#ef444415', color: ok ? '#22c55e' : '#ef4444', marginBottom: 12, wordBreak: 'break-word' }}>{text}</div>;
 }
 
 const GROUP_COLORS = ['#6366f1','#22c55e','#f59e0b','#ef4444','#0ea5e9','#a78bfa','#ec4899','#14b8a6'];
@@ -353,7 +353,7 @@ export default function TenantUsersPage() {
  const [joinedF, setJoinedF] = useState<'all' | '7d' | '30d' | '90d'>('all');
  const [sortF, setSortF] = useState<'az' | 'za' | 'newest' | 'oldest'>('az');
  const [showAdv, setShowAdv] = useState(false);
- const [msg, setMsg] = useState('');
+ const [msg, setMsg] = useState<React.ReactNode>('');
 
  // Read ?role= URL param on mount (set by Roles page click-through)
  useEffect(() => {
@@ -374,13 +374,13 @@ export default function TenantUsersPage() {
  if (!tenantId) return;
  setLoading(true);
  try {
- const [m, inv, g, u] = await Promise.all([
+ const [m, inv, g] = await Promise.all([
  getTenantMembers(tenantId),
  getInvitationsForTenant(tenantId),
  getTenantGroups(tenantId),
- getAllUsers(),
  ]);
- setMembers(m); setInvitations(inv); setGroups(g); setAllUsers(u);
+ setMembers(m); setInvitations(inv); setGroups(g);
+ try { setAllUsers(await getAllUsers()); } catch { setAllUsers([]); }
  } catch {}
  finally { setLoading(false); }
  }, [tenantId]);
@@ -397,8 +397,8 @@ export default function TenantUsersPage() {
  if (cutoff && new Date(m.joinedAt) < cutoff) return false;
  return true;
  });
- if (sortF === 'az') list = [...list].sort((a, b) => a.displayName.localeCompare(b.displayName));
- if (sortF === 'za') list = [...list].sort((a, b) => b.displayName.localeCompare(a.displayName));
+ if (sortF === 'az') list = [...list].sort((a, b) => (a.displayName || a.email || '').localeCompare(b.displayName || b.email || ''));
+ if (sortF === 'za') list = [...list].sort((a, b) => (b.displayName || b.email || '').localeCompare(a.displayName || a.email || ''));
  if (sortF === 'newest') list = [...list].sort((a, b) => new Date(b.joinedAt).getTime() - new Date(a.joinedAt).getTime());
  if (sortF === 'oldest') list = [...list].sort((a, b) => new Date(a.joinedAt).getTime() - new Date(b.joinedAt).getTime());
  return list;
@@ -457,31 +457,45 @@ export default function TenantUsersPage() {
  await addMemberToTenant(tenantId, tenantName, newProfile, memberRole, performer);
 
  // Send welcome email with temp password
- let successMsg = `✅ User ${input} created and added to ${tenantName}.`;
- if (sendInvite && result.tempPassword) {
- try {
- const emailRes = await fetch('/api/email/send-welcome', {
- method: 'POST',
- headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify({
- idToken,
- to: input,
- displayName: input.split('@')[0],
- tempPassword: result.tempPassword,
- tenantName,
- }),
- });
- const emailData = await emailRes.json();
- if (emailData.sent) {
- successMsg += ' Welcome email with temporary password sent.';
- } else if (emailData.warning) {
- successMsg += ` ⚠️ Email not sent (SMTP not configured). Temp password: ${result.tempPassword}`;
- }
- } catch {
- successMsg += ` ⚠️ Email failed. Temp password: ${result.tempPassword}`;
- }
+ let successMsg: React.ReactNode = `✅ User ${input} created and added to ${tenantName}.`;
+
+ if (result.inviteLink) {
+   successMsg = (
+     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+       <div>✅ <strong>User {input} created successfully.</strong></div>
+       <div style={{ color: 'var(--text-primary)', marginTop: 4 }}>
+         <strong>Action required:</strong> Share this secure enrollment link with the user so they can set their password.
+       </div>
+       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 2 }}>
+         <input type="text" readOnly value={result.inviteLink} style={{ flex: 1, padding: '8px 12px', fontSize: 13, background: 'var(--bg-elevated)', border: '1px solid var(--brand-500)', borderRadius: 6, color: 'var(--brand-500)', fontFamily: 'monospace' }} onClick={e => (e.target as HTMLInputElement).select()} />
+         <button className="btn btn-primary btn-sm" onClick={() => navigator.clipboard.writeText(result.inviteLink!)}>Copy Link</button>
+       </div>
+     </div>
+   );
+ } else if (sendInvite && result.tempPassword && !result.emailSent) {
+   try {
+     const emailRes = await fetch('/api/email/send-welcome', {
+       method: 'POST',
+       headers: { 'Content-Type': 'application/json' },
+       body: JSON.stringify({
+         idToken,
+         to: input,
+         displayName: input.split('@')[0],
+         tempPassword: result.tempPassword,
+         tenantName,
+       }),
+     });
+     const emailData = await emailRes.json();
+     if (emailData.sent) {
+       successMsg = `✅ User ${input} created. Welcome email with temporary password sent.`;
+     } else if (emailData.warning) {
+       successMsg = `⚠️ Email not sent (SMTP not configured). Temp password: ${result.tempPassword}`;
+     }
+   } catch {
+     successMsg = `⚠️ Email failed. Temp password: ${result.tempPassword}`;
+   }
  } else if (!sendInvite && result.tempPassword) {
- successMsg += ` Temp password: ${result.tempPassword}`;
+   successMsg = `User added. Temp password: ${result.tempPassword} (Email not sent)`;
  }
 
  setMsg(successMsg);
@@ -526,6 +540,62 @@ export default function TenantUsersPage() {
  });
  }
 
+ async function doGenerateInviteLink(email: string) {
+   setLoading(true); setMsg(null);
+   try {
+     const { getAuth } = await import('firebase/auth');
+     const { firebaseApp } = await import('@mfo-crm/config');
+     const auth = getAuth(firebaseApp);
+     const idToken = await new Promise<string | null>((resolve) => {
+       if (auth.currentUser) auth.currentUser.getIdToken(true).then(resolve).catch(() => resolve(null));
+       else {
+         const unsub = auth.onAuthStateChanged(u => {
+           unsub();
+           if (u) u.getIdToken(true).then(resolve).catch(() => resolve(null));
+           else resolve(null);
+         });
+       }
+     });
+
+     if (!idToken) throw new Error('Session expired');
+
+     const { adminGeneratePasswordResetLink } = await import('@/lib/usersAdmin');
+     const res = await adminGeneratePasswordResetLink(email, idToken);
+
+     if (!res.success) throw new Error(res.error);
+
+     setMsg(
+       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+         <div>✅ <strong>Password Reset / Invitation Triggered for {email}</strong></div>
+         {res.emailSent && <div style={{ color: '#22c55e', marginTop: 4 }}>📧 Password reset email dispatched.</div>}
+         {res.inviteLink && (
+           <>
+             <div style={{ color: 'var(--text-primary)', marginTop: 4 }}>
+               <strong>Action required:</strong> Share this secure enrollment link with the user so they can set their password.
+             </div>
+             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 2 }}>
+               <input type="text" readOnly value={res.inviteLink} style={{ flex: 1, padding: '8px 12px', fontSize: 13, background: 'var(--bg-elevated)', border: '1px solid var(--brand-500)', borderRadius: 6, color: 'var(--brand-500)', fontFamily: 'monospace' }} onClick={e => (e.target as HTMLInputElement).select()} />
+               <button className="btn btn-primary btn-sm" onClick={() => navigator.clipboard.writeText(res.inviteLink as string)}>Copy Link</button>
+             </div>
+           </>
+         )}
+         {!res.inviteLink && res.emailSent && (
+           <div style={{ color: 'var(--text-secondary)', marginTop: 4, fontSize: 12 }}>
+             Note: Because the Admin SDK is not configured in this environment, the raw link cannot be displayed here. Instead, a native platform email has been automatically generated.
+           </div>
+         )}
+       </div>
+     );
+   } catch (e: any) {
+     setMsg(
+       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+         <div>❌ Failed to process request: {e.message}</div>
+       </div>
+     );
+   } finally {
+     setLoading(false);
+   }
+ }
  const TABS: { id: Tab; label: string }[] = [
  { id: 'members', label: `👤 Members (${members.length})` },
  { id: 'groups', label: `👥 Groups (${groups.length})` },
@@ -617,7 +687,7 @@ export default function TenantUsersPage() {
  </select>
  <button
  onClick={() => setShowAdv(v => !v)}
- style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', background: showAdv ? 'var(--brand-900)' : 'var(--bg-canvas)', color: showAdv ? 'var(--brand-400)' : 'var(--text-secondary)', cursor: 'pointer', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}
+ style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', background: showAdv ? 'var(--brand-500)' : 'var(--bg-canvas)', color: showAdv ? '#ffffff' : 'var(--text-secondary)', cursor: 'pointer', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}
  >
  {showAdv ? '▲' : '▼'} Advanced
  </button>
@@ -702,6 +772,15 @@ export default function TenantUsersPage() {
  <td>
  <div style={{ display: 'flex', gap: 4 }}>
  <button onClick={() => setShowPerms(m)} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--brand-500)44', background: 'none', cursor: 'pointer', color: 'var(--brand-400)', fontWeight: 600 }}>🔐 Perms</button>
+ {m.status === 'invited' ? (
+   <button onClick={() => doGenerateInviteLink(m.email)} disabled={loading} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--brand-500)44', background: 'none', cursor: 'pointer', color: 'var(--brand-400)', fontWeight: 600 }}>
+     {loading ? '…' : '📧 Link'}
+   </button>
+ ) : (
+   <button onClick={() => doGenerateInviteLink(m.email)} disabled={loading} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontWeight: 600 }}>
+     {loading ? '…' : '🔑 Reset'}
+   </button>
+ )}
  <button onClick={() => doSuspend(m)} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: m.status === 'suspended' ? '#22c55e' : '#f59e0b' }}>
  {m.status === 'suspended' ? '↩' : '⏸'}
  </button>

@@ -95,7 +95,7 @@ const DEFAULT_BRANDING: TenantBranding = {
 };
 
 function loadGoogleFont(font: FontFamily) {
-  if (font === 'Geist') return;
+  if ((font as string) === 'Geist') return;
   const id = `gf-${font.replace(/\s+/g, '-').toLowerCase()}`;
   if (document.getElementById(id)) return;
   const el = document.createElement('link');

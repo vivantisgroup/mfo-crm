@@ -6,6 +6,7 @@ import { X, Plus, Hash, Loader2 } from 'lucide-react';
 
 interface TagManagerProps {
   tags: string[];
+  tenantId: string;
   onChange?: (tags: string[]) => void;
   readOnly?: boolean;
 }
@@ -18,7 +19,7 @@ export const COLOR_MAP: Record<string, string> = {
   pink: '#ec4899', rose: '#f43f5e',
 };
 
-export function TagManager({ tags, onChange, readOnly }: TagManagerProps) {
+export function TagManager({ tags, tenantId, onChange, readOnly }: TagManagerProps) {
   const [input, setInput] = useState('');
   const [globalTags, setGlobalTags] = useState<Tag[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -28,8 +29,8 @@ export function TagManager({ tags, onChange, readOnly }: TagManagerProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    getAllTags().then(setGlobalTags);
-  }, []);
+    getAllTags(tenantId).then(setGlobalTags);
+  }, [tenantId]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -63,7 +64,7 @@ export function TagManager({ tags, onChange, readOnly }: TagManagerProps) {
     setIsLoading(true);
     try {
       // Create new tag dynamically globally
-      const newGlobal = await createTag(newName, 'slate'); // default to 'slate' 
+      const newGlobal = await createTag(newName, 'slate', tenantId); // default to 'slate' 
       setGlobalTags(prev => [...prev, newGlobal]);
       
       if (!tags.includes(newName)) {

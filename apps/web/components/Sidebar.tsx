@@ -60,51 +60,60 @@ const PLATFORM_NAV: { section: string; items: { href: string; icon: LucideIcon; 
   {
     section: 'Platform',
     items: [
-      { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-      { href: '/communications', icon: MessageSquare, label: 'Communications' },
-      { href: '/reports',   icon: BarChart2,         label: 'Reports' },
+      { href: '/dashboard',      icon: LayoutDashboard, label: 'Dashboard' },
+      { href: '/communications', icon: MessageSquare,   label: 'Communications' },
+      { href: '/reports',        icon: BarChart2,       label: 'Reports' },
     ],
   },
   {
     section: 'Operations',
     items: [
-      { href: '/platform/tenants',  icon: Building2,  label: 'Tenants' },
-      { href: '/platform/crm',      icon: Target,      label: 'CRM' },
-      { href: '/platform/support',  icon: Ticket,      label: 'Support' },
-      { href: '/platform/finance',  icon: Landmark,    label: 'Finance' },
-      { href: '/platform/hr',       icon: Users,       label: 'HR' },
-      { href: '/platform/tags',     icon: Tag,         label: 'Tags' },
+      { href: '/platform/tenants', icon: Building2, label: 'Tenants' },
+      { href: '/platform/users',   icon: UserCog,   label: 'Users' },
+      { href: '/platform/crm',     icon: Target,    label: 'CRM' },
+      { href: '/platform/support', icon: Ticket,    label: 'Support' },
+      { href: '/platform/finance', icon: Landmark,  label: 'Finance' },
+      { href: '/platform/hr',      icon: Users,     label: 'HR' },
+      { href: '/platform/tags',    icon: Tag,       label: 'Tags' },
     ],
   },
   {
     section: 'Intelligence',
     items: [
       { href: '/platform/analytics', icon: LineChart, label: 'Analytics' },
-      { href: '/copilot',            icon: Bot,        label: 'Co-Pilot' },
+      { href: '/copilot',            icon: Bot,       label: 'Co-Pilot' },
     ],
   },
   {
     section: 'Compliance',
     items: [
       { href: '/platform/audit', icon: ShieldCheck, label: 'Compliance' },
-      { href: '/platform/roles', icon: ShieldCheck,  label: 'Roles' },
+      { href: '/platform/roles', icon: ShieldCheck, label: 'Roles' },
+    ],
+  },
+  {
+    section: 'Administração',
+    items: [
+      { href: '/admin',             icon: Settings2, label: 'Configurações' },
+      { href: '/platform/billing',  icon: Receipt,   label: 'Receitas' },
+      { href: '/platform/renewals', icon: RotateCcw, label: 'Renovações' },
+      { href: '/platform/plans',    icon: CreditCard, label: 'Assinaturas' },
     ],
   },
   {
     section: 'Engineering',
     items: [
-      { href: '/admin',                     icon: Settings2, label: 'Settings' },
-      { 
-        href: '/platform/metadata',       
-        icon: Database,  
+      {
+        href: '/platform/metadata',
+        icon: Database,
         label: 'Metadata',
         subItems: [
           { href: '/platform/db-settings',      label: 'DB Settings' },
           { href: '/platform/catalog-explorer', label: 'Catalog' },
-        ]
+        ],
       },
-      { href: '/platform/infrastructure',   icon: Server,    label: 'Infra' },
-      { href: '/platform/backups',          icon: HardDrive, label: 'Backups' },
+      { href: '/platform/infrastructure', icon: Server,    label: 'Infra' },
+      { href: '/platform/backups',        icon: HardDrive, label: 'Backups' },
     ],
   },
 ];
