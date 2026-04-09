@@ -12,7 +12,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { collection, query, where, getDocs, addDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/AuthContext';
-import { ExternalLink, RefreshCw, Plus, Search, MessageSquare, Mail, PhoneCall, Paperclip, Loader2 } from 'lucide-react';
+import { ExternalLink, RefreshCw, Plus, Search, MessageSquare, Mail, PhoneCall, Paperclip, Loader2, Handshake, FileText, MessageSquareOff } from 'lucide-react';
 import { uploadMultipleAttachments } from '@/lib/attachmentService';
 import { useRouter } from 'next/navigation';
 import { ReadingPane } from '@/app/(dashboard)/inbox/components/ReadingPane';
@@ -47,12 +47,12 @@ interface CommunicationPanelProps {
   systemTags?:      any[];
 }
 
-const TYPE_META: Record<string, { icon: string; color: string; label: string }> = {
-  email:    { icon: '✉️',  color: '#6366f1', label: 'Email' },
-  chat:     { icon: '💬',  color: '#6264A7', label: 'Chat' },
-  note:     { icon: '📝',  color: '#8b5cf6', label: 'Note' },
-  call:     { icon: '📞',  color: '#10b981', label: 'Call' },
-  meeting:  { icon: '🤝',  color: '#f59e0b', label: 'Meeting' },
+const TYPE_META: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
+  email:    { icon: <Mail size={13} />,          color: '#6366f1', label: 'Email' },
+  chat:     { icon: <MessageSquare size={13} />, color: '#6264A7', label: 'Chat' },
+  note:     { icon: <FileText size={13} />,      color: '#8b5cf6', label: 'Note' },
+  call:     { icon: <PhoneCall size={13} />,     color: '#10b981', label: 'Call' },
+  meeting:  { icon: <Handshake size={13} />,     color: '#f59e0b', label: 'Meeting' },
 };
 
 export function CommunicationPanel({ familyId, familyName, contactId, orgId, systemTags = [] }: CommunicationPanelProps) {
@@ -141,7 +141,7 @@ export function CommunicationPanel({ familyId, familyName, contactId, orgId, sys
      
      // Fallbacks to generic icons based on type
      if (type === 'email') return <Mail size={13} className="text-[var(--text-tertiary)]" />;
-     return <span>{TYPE_META[type || 'note']?.icon || '📝'}</span>;
+     return TYPE_META[type || 'note']?.icon || <FileText size={13} />;
   };
 
   return (
@@ -189,8 +189,8 @@ export function CommunicationPanel({ familyId, familyName, contactId, orgId, sys
               <div key={i} style={{ height: 68, margin: '8px 12px', borderRadius: 8, background: 'var(--bg-elevated)', animation: 'pulse 1.5s infinite' }} />
             ))
           ) : filteredTimeline.length === 0 ? (
-            <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--text-tertiary)' }}>
-              <div style={{ fontSize: 28, marginBottom: 8 }}>🔇</div>
+            <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--text-tertiary)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <MessageSquareOff size={28} className="mb-2 opacity-50" />
               <div style={{ fontSize: 12, fontWeight: 600 }}>No communications linked yet</div>
             </div>
           ) : filteredTimeline.map(t => {
@@ -401,6 +401,7 @@ export function CommunicationPanel({ familyId, familyName, contactId, orgId, sys
                  thread={{
                     id: selected.id,
                     gmailThreadId: selected.thread_id || selected.provider_message_id || selected.id,
+                    provider: selected.provider,
                     subject: selected.subject || '',
                     fromEmail: selected.from || '',
                     fromName: selected.from || '',

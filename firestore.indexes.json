@@ -13,6 +13,20 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "communications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "timestamp",
+          "order": "DESCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []

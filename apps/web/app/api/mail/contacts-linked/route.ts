@@ -20,13 +20,14 @@ export async function GET(req: NextRequest) {
     const uid      = searchParams.get('uid');
     const idToken  = searchParams.get('idToken');
     const email    = searchParams.get('email');
+    const tenantId = searchParams.get('tenantId');
 
-    if (!uid || !idToken || !email) {
-      return NextResponse.json({ error: 'uid, idToken, and email are required' }, { status: 400 });
+    if (!uid || !idToken || !email || !tenantId) {
+      return NextResponse.json({ error: 'uid, idToken, tenantId, and email are required' }, { status: 400 });
     }
 
     // Fetch all email_logs for this user
-    const logs = await fsList(idToken, `users/${uid}/email_logs`, 200);
+    const logs = await fsList(idToken, `tenants/${tenantId}/members/${uid}/email_logs`, 200);
 
     // Filter to those where the contact email appears
     const matched = logs

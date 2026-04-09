@@ -69,6 +69,7 @@ export async function GET(req: NextRequest) {
   const nonce    = store.get('ms_oauth_nonce')?.value;
   const returnTo = store.get('ms_return_to')?.value ?? '/settings?tab=messaging';
   const savedRedirectUri = store.get('ms_redirect_uri')?.value;
+  const targetTenantId   = store.get('oauth_tenant_id')?.value;
 
   const APP_URL = url.origin ?? FALLBACK_APP_URL;
 
@@ -76,6 +77,7 @@ export async function GET(req: NextRequest) {
   store.delete('ms_pkce_verifier');
   store.delete('ms_oauth_nonce');
   store.delete('ms_return_to');
+  store.delete('oauth_tenant_id');
 
   if (errParm) {
     return NextResponse.redirect(`${APP_URL}${returnTo}&oauth_error=${encodeURIComponent(errParm)}`);
@@ -98,8 +100,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(`${APP_URL}${returnTo}&oauth_error=invalid_state_payload`);
   }
 
-  if (!uid) {
-    return NextResponse.redirect(`${APP_URL}${returnTo}&oauth_error=not_authenticated`);
+  if (!uid || !targetTenantId) {
+    return NextResponse.redirect(`${APP_URL}${returnTo}&oauth_error=not_authenticated_or_no_tenant`);
   }
 
   // Resolve credentials dynamically (Firestore → env vars)
@@ -190,7 +192,7 @@ export async function GET(req: NextRequest) {
   // ── Attempt 1: Admin SDK ───────────────────────────────────────────────────────
   try {
     const adminDb = getAdminFirestore();
-    await adminDb.doc(`users/${uid}/integrations/microsoft`).set(record, { merge: true });
+    await adminDb.doc(`tenants/${targetTenantId}/members/${uid}/integrations/microsoft`).set(record, { merge: true });
     writeSuccess = true;
     console.log('[microsoft/callback] Tokens persisted via Admin SDK for uid:', uid);
   } catch (adminErr: any) {
@@ -207,7 +209,7 @@ export async function GET(req: NextRequest) {
       const { forceReinitializeAdmin } = await import('@/lib/firebaseAdmin');
       await forceReinitializeAdmin();
       const adminDb2 = getAdminFirestore();
-      await adminDb2.doc(`users/${uid}/integrations/microsoft`).set(record, { merge: true });
+      await adminDb2.doc(`tenants/${targetTenantId}/members/${uid}/integrations/microsoft`).set(record, { merge: true });
       writeSuccess = true;
       console.log('[microsoft/callback] Tokens persisted via Admin SDK (after reInit) for uid:', uid);
     } catch (reInitErr: any) {

@@ -75,7 +75,7 @@ export interface SubscriptionPlan {
 
 export const SUBSCRIPTION_PLANS: Record<PlanId, SubscriptionPlan> = {
   trial: {
-    id: 'trial', name: 'Trial', description: '14-day full-feature evaluation', icon: '🧪',
+    id: 'trial', name: 'Trial', description: '14-day full-feature evaluation', icon: 'FlaskConical',
     color: '#f59e0b',
     baseMonthly: 0, baseAnnual: 0, pricePerSeat: 0, pricePerSeatAnnual: 0, aumFeeBps: 0,
     maxSeats: 5, maxAumUsd: 50_000_000, trialDays: 14,
@@ -85,7 +85,7 @@ export const SUBSCRIPTION_PLANS: Record<PlanId, SubscriptionPlan> = {
   },
   starter: {
     id: 'starter', name: 'Starter', description: 'For boutique family offices under $100M',
-    icon: '🌱', color: '#22d3ee',
+    icon: 'Sprout', color: '#22d3ee',
     baseMonthly: 299, baseAnnual: 2_990,
     pricePerSeat: 49, pricePerSeatAnnual: 490,
     aumFeeBps: 2,  // 2 bps/yr on AUM
@@ -104,7 +104,7 @@ export const SUBSCRIPTION_PLANS: Record<PlanId, SubscriptionPlan> = {
   },
   standard: {
     id: 'standard', name: 'Standard', description: 'For growing MFOs up to $500M AUM',
-    icon: '⭐', color: '#818cf8',
+    icon: 'Star', color: '#818cf8',
     baseMonthly: 799, baseAnnual: 7_990,
     pricePerSeat: 79, pricePerSeatAnnual: 790,
     aumFeeBps: 3,
@@ -125,7 +125,7 @@ export const SUBSCRIPTION_PLANS: Record<PlanId, SubscriptionPlan> = {
   },
   professional: {
     id: 'professional', name: 'Professional', description: 'For established MFOs up to $2B AUM',
-    icon: '💎', color: '#a78bfa',
+    icon: 'Gem', color: '#a78bfa',
     baseMonthly: 1_999, baseAnnual: 19_990,
     pricePerSeat: 99, pricePerSeatAnnual: 990,
     aumFeeBps: 2,   // discounted at this tier
@@ -149,7 +149,7 @@ export const SUBSCRIPTION_PLANS: Record<PlanId, SubscriptionPlan> = {
   },
   enterprise: {
     id: 'enterprise', name: 'Enterprise', description: 'Unlimited scale, custom pricing',
-    icon: '🏛️', color: '#6366f1',
+    icon: 'Building2', color: '#6366f1',
     baseMonthly: 0, baseAnnual: 0,   // custom
     pricePerSeat: 0, pricePerSeatAnnual: 0,
     aumFeeBps: 1,

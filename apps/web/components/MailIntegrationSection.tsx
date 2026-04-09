@@ -75,7 +75,7 @@ interface ProviderCardProps {
 }
 
 function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
-  const { user }           = useAuth();
+  const { user, tenant }   = useAuth();
   const meta               = PROVIDER_META[provider];
   const isConnected        = record?.status === 'connected';
   const hasRecord          = !!record;
@@ -112,7 +112,7 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
         const res = await fetch('/api/oauth/google/prepare', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ idToken, uid: user.uid, returnTo: '/settings?tab=mail' }),
+          body:    JSON.stringify({ idToken, uid: user.uid, tenantId: tenant?.id, returnTo: '/settings?tab=mail' }),
         });
         if (!res.ok) throw new Error(`Prepare failed: ${res.status}`);
         const { authUrl } = await res.json();
@@ -126,7 +126,8 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
         const idToken = await (await import('firebase/auth')).getAuth().currentUser?.getIdToken();
         const returnTo = encodeURIComponent('/settings?tab=mail');
         const idTokenParam = idToken ? `&idToken=${encodeURIComponent(idToken)}` : '';
-        window.location.href = `/api/oauth/microsoft/start?returnTo=${returnTo}${idTokenParam}`;
+        const tenantParam = tenant?.id ? `&tenantId=${encodeURIComponent(tenant.id)}` : '';
+        window.location.href = `/api/oauth/microsoft/start?returnTo=${returnTo}${idTokenParam}${tenantParam}`;
       } catch (e: any) {
         alert(`Could not start Microsoft OAuth: ${e.message}`);
       }
@@ -141,7 +142,8 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
       const { getAuth } = await import('firebase/auth');
       const idToken = await getAuth().currentUser?.getIdToken();
       if (!idToken) throw new Error('Not authenticated — please refresh the page.');
-      const result = await testMailConnection(provider, user.uid, idToken);
+      if (!tenant?.id) throw new Error('No active tenant context.');
+      const result = await testMailConnection(tenant.id, provider, user.uid, idToken);
       // Classify error for better UX
       if (!result.ok && result.details) {
         const d = result.details.toLowerCase();
@@ -168,7 +170,8 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
       const { getAuth } = await import('firebase/auth');
       const idToken = await getAuth().currentUser?.getIdToken();
       if (!idToken) throw new Error('Not authenticated — please refresh the page.');
-      const result = await triggerManualSync(user.uid, provider, idToken);
+      if (!tenant?.id) throw new Error('No active tenant context.');
+      const result = await triggerManualSync(tenant.id, user.uid, provider, idToken);
       setSyncMsg(`✅ Synced ${result.newEmails} new email${result.newEmails !== 1 ? 's' : ''}${
         result.newActivities ? ` · ${result.newActivities} CRM activities created` : ''
       }`);
@@ -197,7 +200,8 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
     }
     setDisconnecting(true);
     try {
-      await disconnectMailProvider(user.uid, provider, user.name ?? '');
+      if (!tenant?.id) throw new Error('No active tenant context.');
+      await disconnectMailProvider(tenant.id, user.uid, provider, user.name ?? '');
       onRefresh();
     } finally {
       setDisconnecting(false);
@@ -208,7 +212,8 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
     if (!user?.uid || !hasRecord) return;
     setSavingSettings(true);
     try {
-      await updateSyncSettings(user.uid, provider, {
+      if (!tenant?.id) return;
+      await updateSyncSettings(tenant.id, user.uid, provider, {
         syncDirection: syncDir,
         autoLogToCrm:  autoLog,
         syncWindowDays: syncDays,
@@ -411,14 +416,16 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
 
 // ─── Email Log Table ──────────────────────────────────────────────────────────
 
-function EmailLogPanel({ uid }: { uid: string }) {
+function EmailLogPanel({ uid, tenantId }: { uid: string, tenantId: string }) {
   const [logs,    setLogs]    = useState<EmailLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [loggingId, setLoggingId] = useState<string | null>(null);
 
   useEffect(() => {
-    getRecentEmailLogs(uid, 20).then(l => { setLogs(l); setLoading(false); });
-  }, [uid]);
+    if (tenantId) {
+      getRecentEmailLogs(tenantId, uid, 20).then(l => { setLogs(l); setLoading(false); });
+    }
+  }, [uid, tenantId]);
 
   if (loading) return <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '12px 0' }}>Loading email log…</div>;
   if (!logs.length) return (
@@ -481,7 +488,7 @@ function EmailLogPanel({ uid }: { uid: string }) {
                   if (fam) {
                     setLoggingId(log.id);
                     import('@/lib/emailIntegrationService').then(m =>
-                      m.logEmailToCrm(uid, log, [{ id: `fam-${fam.toLowerCase().replace(/\s/g, '-')}`, name: fam }])
+                      m.logEmailToCrm(tenantId, uid, log, [{ id: `fam-${fam.toLowerCase().replace(/\s/g, '-')}`, name: fam }])
                         .then(() => {
                           setLogs(prev => prev.map(l => l.id === log.id ? { ...l, loggedToCrm: true } : l));
                         })
@@ -503,7 +510,7 @@ function EmailLogPanel({ uid }: { uid: string }) {
 // ─── Main Export ──────────────────────────────────────────────────────────────
 
 export function MailIntegrationSection() {
-  const { user }       = useAuth();
+  const { user, tenant } = useAuth();
   const searchParams   = useSearchParams();
 
   const [connections, setConnections] = useState<Partial<Record<MailProvider, MailConnectionRecord>>>({});
@@ -515,12 +522,12 @@ export function MailIntegrationSection() {
   const oauthError   = searchParams?.get('oauth_error');
 
   const loadConnections = useCallback(async () => {
-    if (!user?.uid) return;
+    if (!user?.uid || !tenant?.id) return;
     setLoading(true);
-    const all = await getAllMailConnections(user.uid);
+    const all = await getAllMailConnections(tenant.id, user.uid);
     setConnections(all);
     setLoading(false);
-  }, [user?.uid]);
+  }, [user?.uid, tenant?.id]);
 
   useEffect(() => {
     loadConnections();
@@ -606,8 +613,8 @@ export function MailIntegrationSection() {
       )}
 
       {/* Email log tab */}
-      {activeTab === 'log' && user?.uid && (
-        <EmailLogPanel uid={user.uid} />
+      {activeTab === 'log' && user?.uid && tenant?.id && (
+        <EmailLogPanel uid={user.uid} tenantId={tenant.id} />
       )}
     </div>
   );

@@ -108,6 +108,37 @@ export default function CalendarPage() {
   const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   // Handlers
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleManualSync = async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!user || !firebaseUser || !activeProvider) return;
+      setIsSyncing(true);
+      try {
+        const activeTenant = JSON.parse(localStorage.getItem('mfo_active_tenant') || '{}');
+        const res = await fetch('/api/mail/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+             uid: user.uid, 
+             idToken: await firebaseUser.getIdToken(), 
+             tenantId: activeTenant.id, 
+             provider: activeProvider 
+          })
+        });
+        if (!res.ok) {
+           const text = await res.text();
+           throw new Error(`Sync failed: ${text}`);
+        }
+        mutate();
+      } catch (err: any) {
+        console.error('Manual sync error:', err);
+        alert(err.message || 'Error occurred during sync');
+      } finally {
+        setIsSyncing(false);
+      }
+  };
+
   const handleDayClick = (day: Date) => {
       setComposerDate(day);
       setEventToEdit(null);
@@ -143,49 +174,74 @@ export default function CalendarPage() {
         <div className="px-6 mb-8 flex flex-col gap-4">
           <Text className="text-xs font-bold uppercase tracking-wider text-slate-400">Integrations</Text>
           
+          {connectionStatus?.microsoft && (
           <Card 
             className={`p-3 cursor-pointer border-l-4 transition-all ${activeProvider === 'microsoft' ? 'border-l-blue-500 bg-blue-50/50' : 'border-l-transparent hover:bg-slate-50'}`} 
-            onClick={() => connectionStatus?.microsoft && setActiveProvider('microsoft')}
+            onClick={() => setActiveProvider('microsoft')}
           >
              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                   <div className="w-6 h-6 rounded bg-blue-100 flex items-center justify-center text-xs">🟦</div>
-                   <div>
-                      <div className="text-sm font-semibold text-slate-800">Microsoft 365</div>
-                      {connectionStatus?.microsoft ? (
-                         <div className="flex items-center gap-1 mt-0.5">
-                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]"></div>
-                            <span className="text-[10px] text-emerald-600 font-medium">Synced</span>
-                         </div>
-                      ) : (
-                         <span className="text-[10px] text-slate-400">Disconnected</span>
-                      )}
+                <div className="flex items-center gap-2 w-full">
+                   <div className="w-6 h-6 rounded bg-blue-100 flex items-center justify-center text-xs shrink-0">🟦</div>
+                   <div className="flex-1 flex items-center justify-between">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-800">Microsoft 365</div>
+                        <div className="flex items-center gap-1 mt-0.5">
+                           <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]"></div>
+                           <span className="text-[10px] text-emerald-600 font-medium whitespace-nowrap">Synced</span>
+                        </div>
+                      </div>
+                      
+                      <button 
+                         onClick={handleManualSync} 
+                         disabled={isSyncing}
+                         className="p-1.5 rounded-md hover:bg-blue-100 text-blue-500 transition-colors"
+                         title="Manual Sync"
+                      >
+                         <RefreshCcw size={14} className={isSyncing && activeProvider === 'microsoft' ? 'animate-spin' : ''} />
+                      </button>
                    </div>
                 </div>
              </div>
           </Card>
+          )}
 
+          {connectionStatus?.google && (
           <Card 
             className={`p-3 cursor-pointer border-l-4 transition-all ${activeProvider === 'google' ? 'border-l-red-500 bg-red-50/50' : 'border-l-transparent hover:bg-slate-50'}`}
-            onClick={() => connectionStatus?.google && setActiveProvider('google')}
+            onClick={() => setActiveProvider('google')}
           >
              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                   <div className="w-6 h-6 rounded bg-red-100 flex items-center justify-center text-xs">🔴</div>
-                   <div>
-                      <div className="text-sm font-semibold text-slate-800">Google Workspace</div>
-                      {connectionStatus?.google ? (
-                         <div className="flex items-center gap-1 mt-0.5">
-                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]"></div>
-                            <span className="text-[10px] text-emerald-600 font-medium">Synced</span>
-                         </div>
-                      ) : (
-                         <span className="text-[10px] text-slate-400">Disconnected</span>
-                      )}
+                <div className="flex items-center gap-2 w-full">
+                   <div className="w-6 h-6 rounded bg-red-100 flex items-center justify-center text-xs shrink-0">🔴</div>
+                   <div className="flex-1 flex items-center justify-between">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-800">Google Workspace</div>
+                        <div className="flex items-center gap-1 mt-0.5">
+                           <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]"></div>
+                           <span className="text-[10px] text-emerald-600 font-medium whitespace-nowrap">Synced</span>
+                        </div>
+                      </div>
+
+                      <button 
+                         onClick={handleManualSync} 
+                         disabled={isSyncing}
+                         className="p-1.5 rounded-md hover:bg-red-100 text-red-500 transition-colors"
+                         title="Manual Sync"
+                      >
+                         <RefreshCcw size={14} className={isSyncing && activeProvider === 'google' ? 'animate-spin' : ''} />
+                      </button>
                    </div>
                 </div>
              </div>
           </Card>
+          )}
+
+          {!connectionStatus?.microsoft && !connectionStatus?.google && connectionStatus !== null && (
+             <div className="text-xs text-slate-400 flex flex-col gap-2 mt-2 p-3 bg-slate-50 rounded border border-slate-100 text-center">
+                <AlertCircle size={16} className="mx-auto opacity-50" />
+                No active integrations tests passed.
+             </div>
+          )}
         </div>
 
         {/* Legend */}

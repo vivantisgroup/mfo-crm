@@ -115,12 +115,12 @@ export async function POST(req: NextRequest) {
       replyToMessageId, attachments
     } = await req.json();
 
-    if (!uid || !idToken || !to || !subject || !body) {
-      return NextResponse.json({ error: 'uid, idToken, to, subject, body required' }, { status: 400 });
+    if (!uid || !idToken || !tenantId || !to || !subject || !body) {
+      return NextResponse.json({ error: 'uid, idToken, tenantId, to, subject, body required' }, { status: 400 });
     }
 
     // 1. Get user's Gmail address (sender)
-    const accessToken = await getValidGoogleToken(uid, idToken);
+    const accessToken = await getValidGoogleToken(tenantId, uid, idToken);
 
     const profileRes = await fetch(`${GMAIL}/users/me/profile`, {
       headers: { Authorization: `Bearer ${accessToken}` },

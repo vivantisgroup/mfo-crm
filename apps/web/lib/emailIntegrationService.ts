@@ -85,33 +85,37 @@ export interface SyncResult {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function integrationRef(uid: string, provider: MailProvider) {
-  return doc(db, 'users', uid, 'integrations', provider);
+function integrationRef(tenantId: string, uid: string, provider: MailProvider) {
+  return doc(db, 'tenants', tenantId, 'members', uid, 'integrations', provider);
 }
 
-function emailLogsRef(uid: string) {
-  return collection(db, 'users', uid, 'email_logs');
+function emailLogsRef(tenantId: string, uid: string) {
+  return collection(db, 'tenants', tenantId, 'members', uid, 'email_logs');
 }
 
 // ─── Reads ────────────────────────────────────────────────────────────────────
 
 /** Load one provider's connection record. Returns null if never connected. */
 export async function getMailConnection(
+  tenantId: string,
   uid:      string,
   provider: MailProvider,
 ): Promise<MailConnectionRecord | null> {
-  const snap = await getDoc(integrationRef(uid, provider));
+  if (!tenantId) return null;
+  const snap = await getDoc(integrationRef(tenantId, uid, provider));
   if (!snap.exists()) return null;
   return snap.data() as MailConnectionRecord;
 }
 
-/** Load all provider records for a user. */
-export async function getAllMailConnections(uid: string): Promise<Partial<Record<MailProvider, MailConnectionRecord>>> {
+/** Load all provider records for a user inside a tenant. */
+export async function getAllMailConnections(tenantId: string, uid: string): Promise<Partial<Record<MailProvider, MailConnectionRecord>>> {
   const providers: MailProvider[] = ['microsoft', 'google'];
   const result: Partial<Record<MailProvider, MailConnectionRecord>> = {};
+  if (!tenantId) return result;
+  
   await Promise.all(
     providers.map(async p => {
-      const rec = await getMailConnection(uid, p);
+      const rec = await getMailConnection(tenantId, uid, p);
       if (rec) result[p] = rec;
     })
   );
@@ -120,10 +124,12 @@ export async function getAllMailConnections(uid: string): Promise<Partial<Record
 
 /** Get recent email log entries for this user. */
 export async function getRecentEmailLogs(
-  uid:   string,
-  count: number = 20,
+  tenantId: string,
+  uid:      string,
+  count:    number = 20,
 ): Promise<EmailLogEntry[]> {
-  const q = query(emailLogsRef(uid), orderBy('receivedAt', 'desc'), limit(count));
+  if (!tenantId) return [];
+  const q = query(emailLogsRef(tenantId, uid), orderBy('receivedAt', 'desc'), limit(count));
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ id: d.id, ...d.data() } as EmailLogEntry));
 }
@@ -137,11 +143,12 @@ export async function getRecentEmailLogs(
  */
 export function buildOAuthStartUrl(
   provider: MailProvider,
+  tenantId: string,
   returnTo: string = '/settings?section=mail',
   uid?: string,
 ): string {
   const base = typeof window !== 'undefined' ? window.location.origin : '';
-  const params = new URLSearchParams({ returnTo });
+  const params = new URLSearchParams({ returnTo, tenantId });
   if (uid) params.set('uid', uid);
   return `${base}/api/oauth/${provider}/start?${params}`;
 }
@@ -153,10 +160,12 @@ export function buildOAuthStartUrl(
  * Writes the initial connection record to Firestore.
  */
 export async function saveMailConnection(
-  uid:    string,
-  record: Omit<MailConnectionRecord, 'connectedAt'>,
+  tenantId: string,
+  uid:      string,
+  record:   Omit<MailConnectionRecord, 'connectedAt'>,
 ): Promise<void> {
-  await setDoc(integrationRef(uid, record.provider), {
+  if (!tenantId) return;
+  await setDoc(integrationRef(tenantId, uid, record.provider), {
     ...record,
     connectedAt: new Date().toISOString(),
   }, { merge: true });
@@ -164,17 +173,19 @@ export async function saveMailConnection(
 
 /** Update only the sync settings for an existing connection. */
 export async function updateSyncSettings(
+  tenantId: string,
   uid:      string,
   provider: MailProvider,
   patch: Pick<MailConnectionRecord, 'syncDirection' | 'autoLogToCrm' | 'syncWindowDays'>,
 ): Promise<void> {
-  await updateDoc(integrationRef(uid, provider), {
+  if (!tenantId) return;
+  await updateDoc(integrationRef(tenantId, uid, provider), {
     syncDirection:  patch.syncDirection,
     autoLogToCrm:   patch.autoLogToCrm,
     syncWindowDays: patch.syncWindowDays,
   });
   logAction({
-    tenantId: uid, userId: uid, userName: '',
+    tenantId, userId: uid, userName: '',
     action: 'MAIL_SYNC_SETTINGS_UPDATED',
     resourceId: provider, resourceType: 'mail_integration',
     resourceName: `Sync settings updated for ${provider}`, status: 'success',
@@ -186,10 +197,12 @@ export async function updateSyncSettings(
  * Removes the Firestore record (tokens are already revoked server-side via /api/oauth/:provider/revoke).
  */
 export async function disconnectMailProvider(
+  tenantId: string,
   uid:      string,
   provider: MailProvider,
   actorName: string,
 ): Promise<void> {
+  if (!tenantId) return;
   // Call server-side revoke endpoint first (fire and forget — with strict 4s timeout)
   try {
     await Promise.race([
@@ -198,10 +211,10 @@ export async function disconnectMailProvider(
     ]);
   } catch { /* best-effort */ }
 
-  await deleteDoc(integrationRef(uid, provider));
+  await deleteDoc(integrationRef(tenantId, uid, provider));
 
   logAction({
-    tenantId: uid, userId: uid, userName: actorName,
+    tenantId, userId: uid, userName: actorName,
     action: 'MAIL_DISCONNECTED',
     resourceId: provider, resourceType: 'mail_integration',
     resourceName: `${provider} mail integration disconnected`, status: 'success',
@@ -213,18 +226,17 @@ export async function disconnectMailProvider(
  * Returns a SyncResult summary.
  */
 export async function triggerManualSync(
+  tenantId: string,
   uid:      string,
   provider: MailProvider,
   idToken:  string,
 ): Promise<SyncResult> {
-  const tenant = typeof localStorage !== 'undefined'
-    ? JSON.parse(localStorage.getItem('mfo_active_tenant') ?? '{}')
-    : {};
+  if (!tenantId) throw new Error("tenantId is required for sync");
 
   const res = await fetch('/api/mail/sync', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ uid, idToken, provider, tenantId: tenant?.id }),
+    body: JSON.stringify({ uid, idToken, provider, tenantId }),
   });
 
   if (!res.ok) {
@@ -236,7 +248,7 @@ export async function triggerManualSync(
 
   // Persist last sync time in Firestore (client SDK write is fine here)
   try {
-    await updateDoc(integrationRef(uid, provider), {
+    await updateDoc(integrationRef(tenantId, uid, provider), {
       lastSyncAt: result.lastSyncAt,
       lastSyncResult: result.errors.length > 0 ? 'error' : 'ok',
       emailsSynced: result.newEmails,
@@ -250,16 +262,18 @@ export async function triggerManualSync(
  * Log a single email to the CRM activity feed manually (from email log view).
  */
 export async function logEmailToCrm(
-    uid:    string,
-    entry:  EmailLogEntry,
-    records: Array<{ id: string, name: string }>
+    tenantId: string,
+    uid:      string,
+    entry:    EmailLogEntry,
+    records:  Array<{ id: string, name: string }>
   ): Promise<string[]> {
     const activityIds: string[] = [];
+    if (!tenantId) return [];
     
     // 1. Post an activity for each selected CRM record
     for (const record of records) {
       const activityRef = await addDoc(collection(db, 'activities'), {
-        tenantId: '',        // filled server-side
+        tenantId,
         familyId: record.id,
         familyName: record.name,
         type: 'email',
@@ -280,7 +294,7 @@ export async function logEmailToCrm(
     // 2. Update the source email log document with the linked records
     if (entry.id) {
        try {
-         const logRef = doc(db, 'users', uid, 'email_logs', entry.id);
+         const logRef = doc(db, 'tenants', tenantId, 'members', uid, 'email_logs', entry.id);
          await updateDoc(logRef, {
             linkedRecordIds: records.map(r => r.id),
             linkedRecordNames: records.map(r => r.name),
@@ -304,6 +318,7 @@ export interface ConnectionTestResult {
 }
 
 export async function testMailConnection(
+  tenantId: string,
   provider: MailProvider,
   uid:      string,
   idToken:  string,
@@ -313,7 +328,7 @@ export async function testMailConnection(
     const res = await fetch('/api/mail/test', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ provider, uid, idToken }),
+      body:    JSON.stringify({ provider, uid, idToken, tenantId }),
     });
     const data = await res.json().catch(() => ({}));
     return {

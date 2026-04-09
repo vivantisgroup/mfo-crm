@@ -1,14 +1,19 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { doc, onSnapshot, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, onSnapshot, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Users, User, Building2, Ticket, CheckSquare, Briefcase, Landmark, FileText, BadgeDollarSign, Scale, Lock, ShieldCheck, Map, Search as SearchIcon, Umbrella, Ruler, Handshake, Heart, Sprout, Pin, Building, LayoutDashboard, Share2, MessageSquare, ClipboardList, Send } from 'lucide-react';
+import { ArrowLeft, Users, User, Building2, Ticket, CheckSquare, Briefcase, Landmark, FileText, BadgeDollarSign, Scale, Lock, ShieldCheck, Map, Search as SearchIcon, Umbrella, Ruler, Handshake, Heart, Sprout, Pin, Building, LayoutDashboard, Share2, MessageSquare, ClipboardList, Send, Folder } from 'lucide-react';
 import { ContactRelationshipGraph } from '@/components/ContactRelationshipGraph';
 import { SecondaryDock } from '@/components/SecondaryDock';
+import { DocumentVault } from '@/components/DocumentVault';
 import { useTaskQueue } from '@/lib/TaskQueueContext';
 import { usePageTitle } from '@/lib/PageTitleContext';
+import { addDoc, serverTimestamp } from 'firebase/firestore';
+import { useAuth } from '@/lib/AuthContext';
+import { uploadAttachment } from '@/lib/attachmentService';
+import { ProfileBanner } from '@/components/ProfileBanner';
 
 interface Organization {
   id:                string;
@@ -22,6 +27,8 @@ interface Organization {
   linkedOrgNames?:   string[];
   status?:           string;
   notes?:            string;
+  avatarUrl?:        string;
+  bannerUrl?:        string;
 }
 
 interface Activity {
@@ -98,21 +105,24 @@ const TYPE_ICONS: Record<string, any> = {
   other: Pin,
 };
 
-const RECORD_TYPE_TAGS: Record<string, { label: string, color: string }> = {
-  'ticket': { label: '🎟 Ticket', color: '#f59e0b' },
-  'task': { label: '✓ Task', color: '#10b981' },
-  'lead': { label: '💼 Lead', color: '#3b82f6' },
-  'opportunity': { label: '💼 Opp', color: '#6366f1' },
-  'service_request': { label: '🛎 Request', color: '#ec4899' },
-};
+import { CommunicationPanel } from '@/components/CommunicationPanel';
 
 export default function OrgClientPage() {
   const { id }   = useParams<{ id: string }>();
   const router   = useRouter();
   const [org,        setOrg]        = useState<Organization | null>(null);
-  const [activities, setActivities] = useState<Activity[]>([]);
   const [activeTab,  setActiveTab]  = useState('overview');
   const [tenantId,   setTenantId]   = useState('');
+  const [hiddenTabs, setHiddenTabs] = useState<string[]>([]);
+  const [showTaskModal, setShowTaskModal] = useState<'task'|'support'|null>(null);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskDesc, setNewTaskDesc] = useState('');
+  const [showLinkModal, setShowLinkModal] = useState<'contact'|'organization'|null>(null);
+  const [availableContacts, setAvailableContacts] = useState<any[]>([]);
+  const [availableOrgs, setAvailableOrgs] = useState<any[]>([]);
+  const [linkSelectedId, setLinkSelectedId] = useState('');
+  
+  const { user } = useAuth();
 
   const { setTitle, setCrumbOverrides } = usePageTitle();
   const { tasks, activeClockItem, startClock } = useTaskQueue();
@@ -127,16 +137,22 @@ export default function OrgClientPage() {
   useEffect(() => {
     if (!tenantId || !id) return;
     const ref = doc(db, 'tenants', tenantId, 'organizations', id);
-    return onSnapshot(ref, snap => {
+    const unsub1 = onSnapshot(ref, snap => {
       if (snap.exists()) setOrg({ id: snap.id, ...snap.data() } as Organization);
     });
-  }, [tenantId, id]);
+    
+    // Fetch settings to hide specific tabs dynamically
+    const settingsRef = doc(db, 'tenants', tenantId, 'settings', 'org_profile');
+    const unsub2 = onSnapshot(settingsRef, snap => {
+       if (snap.exists() && snap.data().hiddenTabs) {
+          setHiddenTabs(snap.data().hiddenTabs);
+       } else {
+          setHiddenTabs([]);
+       }
+    });
 
-  useEffect(() => {
-    if (!tenantId || !id || activeTab !== 'communications') return;
-    const q = query(collection(db, 'tenants', tenantId, 'activities'), where('linkedOrgId', '==', id));
-    getDocs(q).then(snap => setActivities(snap.docs.map(d => ({ id: d.id, ...d.data() } as Activity))));
-  }, [tenantId, id, activeTab]);
+    return () => { unsub1(); unsub2(); };
+  }, [tenantId, id]);
 
   useEffect(() => {
     if (org && setCrumbOverrides) {
@@ -144,6 +160,65 @@ export default function OrgClientPage() {
       setCrumbOverrides({ [id]: org.name });
     }
   }, [org, id, setTitle, setCrumbOverrides]);
+
+  useEffect(() => {
+    if (!tenantId || !showLinkModal) return;
+    if (showLinkModal === 'contact' && availableContacts.length === 0) {
+      getDocs(collection(db, 'tenants', tenantId, 'contacts')).then(snap => {
+         setAvailableContacts(snap.docs.map(d => ({ id: d.id, ...d.data() as any })).sort((a,b)=>((a.firstName || a.name || '').localeCompare(b.firstName || b.name || ''))));
+      });
+    }
+    if (showLinkModal === 'organization' && availableOrgs.length === 0) {
+      getDocs(collection(db, 'tenants', tenantId, 'organizations')).then(snap => {
+         setAvailableOrgs(snap.docs.map(d => ({ id: d.id, ...d.data() as any })).sort((a,b)=>((a.name || '').localeCompare(b.name || ''))));
+      });
+    }
+  }, [showLinkModal, tenantId, availableContacts.length, availableOrgs.length]);
+
+  const commitLink = async () => {
+    if (!linkSelectedId || !tenantId || !id || !org) return;
+    try {
+      const orgRef = doc(db, 'tenants', tenantId, 'organizations', id);
+      
+      if (showLinkModal === 'contact') {
+         const c = availableContacts.find(x => x.id === linkSelectedId);
+         if (!c) return;
+         if ((org.linkedContactIds || []).includes(c.id)) { alert('Contact already linked'); return; }
+         const cRef = doc(db, 'tenants', tenantId, 'contacts', c.id);
+         const cName = `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.name || 'Unknown Contact';
+         
+         await updateDoc(orgRef, {
+            linkedContactIds: [...(org.linkedContactIds || []), c.id],
+            linkedContactNames: [...(org.linkedContactNames || []), cName]
+         });
+         await updateDoc(cRef, {
+            linkedOrgIds: [...(c.linkedOrgIds || []), org.id],
+            linkedOrgNames: [...(c.linkedOrgNames || []), org.name]
+         });
+      } else {
+         const o = availableOrgs.find(x => x.id === linkSelectedId);
+         if (!o) return;
+         if ((org.linkedOrgIds || []).includes(o.id)) { alert('Organization already connected'); return; }
+         const oRef = doc(db, 'tenants', tenantId, 'organizations', o.id);
+         
+         await updateDoc(orgRef, {
+            linkedOrgIds:  [...(org.linkedOrgIds || []), o.id],
+            linkedOrgNames: [...(org.linkedOrgNames || []), o.name]
+         });
+         await updateDoc(oRef, {
+            linkedOrgIds: [...(o.linkedOrgIds || []), org.id],
+            linkedOrgNames: [...(o.linkedOrgNames || []), org.name]
+         });
+      }
+      setShowLinkModal(null);
+      setLinkSelectedId('');
+    } catch (e) {
+      console.error(e);
+      alert('Failed to establish connection.');
+    }
+  };
+
+
 
   if (!org) return (
     <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-tertiary)' }}>
@@ -159,8 +234,59 @@ export default function OrgClientPage() {
   const supportTickets = myTasks.filter(t => t.taskTypeId === 'support' || t.queueId?.includes('support'));
   const regularTasks = myTasks.filter(t => t.taskTypeId !== 'support' && !t.queueId?.includes('support'));
 
+  const handleAvatarUpload = async (file: File) => {
+    if (!tenantId || !id) return;
+    const { url } = await uploadAttachment(tenantId, file);
+    await updateDoc(doc(db, 'tenants', tenantId, 'organizations', id), { avatarUrl: url });
+  };
+
+  const handleBannerUpload = async (file: File) => {
+    if (!tenantId || !id) return;
+    const { url } = await uploadAttachment(tenantId, file);
+    await updateDoc(doc(db, 'tenants', tenantId, 'organizations', id), { bannerUrl: url });
+  };
+
   return (
     <div className="page animate-fade-in" style={{ width: '100%', padding: '0 24px', paddingBottom: 60 }}>
+      {/* LinkedIn-Style Entity Header */}
+      <ProfileBanner 
+        title={org.name}
+        subtitle={TYPE_LABELS[org.type] || org.type}
+        avatarUrl={org.avatarUrl || (org as any).logoUrl}
+        bannerUrl={org.bannerUrl}
+        onAvatarUpload={handleAvatarUpload}
+        onBannerUpload={handleBannerUpload}
+      />
+      
+      {/* Secondary Ribbon Action Details */}
+      <div className="flex items-center justify-between bg-white border border-slate-200 rounded-xl px-5 py-3 mb-6 shadow-sm">
+        <div className="flex items-center gap-6 overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Type:</span>
+            <span className="text-xs font-semibold text-slate-700">{TYPE_LABELS[org.type] || org.type}</span>
+          </div>
+          <div className="h-4 w-px bg-slate-200 shrink-0" />
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status:</span>
+            <span className={`text-xs font-semibold ${org.status === 'active' ? 'text-emerald-600' : 'text-slate-600'} capitalize`}>{org.status || 'active'}</span>
+          </div>
+          <div className="h-4 w-px bg-slate-200 shrink-0" />
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Members:</span>
+            <span className="text-xs font-semibold text-slate-700">{org.linkedContactIds?.length ?? 0}</span>
+          </div>
+        </div>
+        
+        <button 
+          onClick={() => isClockRunningHere ? null : startClock({ id: org.id, type: 'org', name: org.name, title: `Collaborating with ${org.name}` })}
+          disabled={isClockRunningHere}
+          className={`shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ml-4 ${isClockRunningHere ? 'bg-indigo-100 text-indigo-500 cursor-not-allowed border border-indigo-200' : 'bg-slate-50 border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-300 hover:bg-white shadow-sm'}`}
+        >
+          <div className={isClockRunningHere ? 'animate-pulse' : ''}>⏱️</div>
+          {isClockRunningHere ? 'Recording Time...' : 'Start Timer'}
+        </button>
+      </div>
+
       {/* Tabs */}
       <div style={{ marginBottom: 24, paddingBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)' }}>
         <SecondaryDock 
@@ -169,58 +295,35 @@ export default function OrgClientPage() {
             { id: 'members', label: 'Members', icon: Users },
             { id: 'connected_entities', label: 'Connected Entities', icon: Building2 },
             { id: 'relationships', label: 'Network Graph', icon: Share2 },
+            { id: 'files', label: 'Files', icon: Folder },
             { id: 'communications', label: 'Comms', icon: MessageSquare },
             { id: 'tasks', label: 'Tasks', icon: ClipboardList },
             { id: 'tickets', label: 'Tickets', icon: Ticket },
-            { id: 'leads', label: 'Leads', icon: Briefcase }
-          ]}
+            { id: 'leads', label: 'Leads (Pipeline)', icon: Briefcase }
+          ].filter(t => !hiddenTabs.includes(t.id))}
           activeTab={activeTab}
           onTabChange={setActiveTab}
         />
-        
-        <button 
-          onClick={() => isClockRunningHere ? null : startClock({ id: org.id, type: 'org', name: org.name, title: `Collaborating with ${org.name}` })}
-          disabled={isClockRunningHere}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ml-4 ${isClockRunningHere ? 'bg-indigo-100 text-indigo-500 cursor-not-allowed border border-indigo-200' : 'bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-indigo-600 hover:border-indigo-300 shadow-sm'}`}
-        >
-          <div className={isClockRunningHere ? 'animate-pulse' : ''}>⏱️</div>
-          {isClockRunningHere ? 'Recording Time...' : 'Start Timer'}
-        </button>
       </div>
 
       {activeTab === 'overview' && (
         <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 24 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Type</div>
-              <div style={{ fontSize: 13, fontWeight: 500 }}>{TYPE_LABELS[org.type] || org.type}</div>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Jurisdiction</div>
-              <div style={{ fontSize: 13, fontWeight: 500 }}>{org.jurisdiction || '—'}</div>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Status</div>
-              <div style={{ fontSize: 13, fontWeight: 500 }}>{org.status || 'active'}</div>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Members</div>
-              <div style={{ fontSize: 13, fontWeight: 500 }}>{org.linkedContactIds?.length ?? 0}</div>
-            </div>
-          </div>
-          {org.notes && (
-            <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+          {org.notes ? (
+            <div>
               <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 6 }}>Notes</div>
               <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0 }}>{org.notes}</p>
             </div>
+          ) : (
+             <div className="text-center text-sm text-slate-400 py-10">No specific notes available for this organization.</div>
           )}
         </div>
       )}
 
       {activeTab === 'members' && (
         <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 0 }}>
-          <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 14 }}>
-            Contacts in this Organization
+          <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>Contacts in this Organization</span>
+            <button className="btn btn-secondary btn-sm" onClick={() => setShowLinkModal('contact')} style={{ padding: '4px 10px', fontSize: 12 }}>+ Link Contact</button>
           </div>
           {!org.linkedContactNames?.length ? (
             <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-tertiary)' }}>
@@ -242,7 +345,7 @@ export default function OrgClientPage() {
         <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 0 }}>
           <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>Connected Organizations & Service Providers</span>
-            <button className="btn btn-secondary btn-sm" style={{ padding: '4px 10px', fontSize: 12 }}>+ Add Connection</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => setShowLinkModal('organization')} style={{ padding: '4px 10px', fontSize: 12 }}>+ Add Connection</button>
           </div>
           {!org.linkedOrgNames?.length ? (
             <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-tertiary)' }}>
@@ -265,45 +368,22 @@ export default function OrgClientPage() {
       )}
 
       {activeTab === 'communications' && (
-        <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 0 }}>
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 14 }}>
-            Communications Feed
-          </div>
-          {activities.length === 0 ? (
-            <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-tertiary)' }}>
-              <div style={{ fontSize: 32, marginBottom: 8 }}>💬</div>
-              <div>No activities linked to this organization yet.</div>
-            </div>
-          ) : activities.map(a => {
-             const rt = a.linkedRecordType ? RECORD_TYPE_TAGS[a.linkedRecordType] : null;
+        <div style={{ height: '600px' }}>
+           <CommunicationPanel orgId={id} />
+        </div>
+      )}
 
-             return (
-               <div key={a.id} style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                 <span style={{ fontSize: 18 }}>{a.type === 'email' ? '✉️' : a.type === 'call' ? '📞' : a.type === 'meeting' ? '🤝' : '📝'}</span>
-                 <div style={{ flex: 1 }}>
-                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                     <div style={{ fontWeight: 600, fontSize: 13 }}>{a.subject}</div>
-                     {rt && (
-                       <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: `${rt.color}15`, color: rt.color, fontWeight: 700 }}>
-                         {rt.label}
-                       </span>
-                     )}
-                   </div>
-                   {a.snippet && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{a.snippet}</div>}
-                   <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
-                     {a.fromName || a.fromEmail} · {a.createdAt ? new Date(a.createdAt).toLocaleDateString() : ''}
-                   </div>
-                 </div>
-               </div>
-             );
-          })}
+      {activeTab === 'files' && (
+        <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card overflow-hidden h-[600px] flex flex-col" style={{ padding: 0 }}>
+           <DocumentVault />
         </div>
       )}
 
       {activeTab === 'tasks' && (
         <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 0 }}>
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 14 }}>
-            Actionable Tasks
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>Actionable Tasks</span>
+            <button className="btn btn-secondary btn-sm" onClick={() => setShowTaskModal('task')} style={{ padding: '4px 10px', fontSize: 12 }}>+ Add Task</button>
           </div>
           {regularTasks.length === 0 ? (
             <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-tertiary)' }}>
@@ -321,8 +401,9 @@ export default function OrgClientPage() {
 
       {activeTab === 'tickets' && (
         <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 0 }}>
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 14 }}>
-            Support Tickets & Requests
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>Support Tickets & Requests</span>
+            <button className="btn btn-secondary btn-sm" onClick={() => setShowTaskModal('support')} style={{ padding: '4px 10px', fontSize: 12 }}>+ Open Ticket</button>
           </div>
           {supportTickets.length === 0 ? (
             <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-tertiary)' }}>
@@ -341,15 +422,110 @@ export default function OrgClientPage() {
       {activeTab === 'leads' && (
         <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 0 }}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 14 }}>
-            Pipeline & Opportunities
+            Pipeline & Opportunities (Legacy View)
           </div>
-          {/* Mock empty state for leads since proposals rely on families mostly */}
           <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-tertiary)' }}>
              <Briefcase size={32} strokeWidth={1} style={{ margin: '0 auto 8px auto', opacity: 0.4 }} />
-             <div>No active leads or proposals found matching this organization.</div>
+             <div>This tab is preserved for specific verticals tracking explicit pipeline states within the Org. Use the global Deals module for kanban pipelines.</div>
           </div>
         </div>
       )}
+
+      {/* Task Creation Modal */}
+      {showTaskModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg border border-slate-200 overflow-hidden">
+             <div className="p-4 border-b border-slate-100 font-bold text-slate-800">
+                {showTaskModal === 'task' ? 'Create New Task' : 'Open Support Ticket'}
+             </div>
+             <div className="p-6 space-y-4">
+                <div>
+                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Title</label>
+                   <input autoFocus className="input w-full" value={newTaskTitle} onChange={e=>setNewTaskTitle(e.target.value)} placeholder="e.g., Review compliance documents..." />
+                </div>
+                <div>
+                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Description / Notes</label>
+                   <textarea rows={3} className="input w-full" value={newTaskDesc} onChange={e=>setNewTaskDesc(e.target.value)} placeholder="..." />
+                </div>
+             </div>
+             <div className="p-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50">
+                <button className="btn btn-ghost" onClick={() => setShowTaskModal(null)}>Cancel</button>
+                <button className="btn btn-primary" disabled={!newTaskTitle.trim()} onClick={async () => {
+                   if (!newTaskTitle.trim() || !tenantId) return;
+                   try {
+                     await addDoc(collection(db, 'tenants', tenantId, 'tasks'), {
+                        familyId: '', familyName: '',
+                        linkedOrgId: id,
+                        title: newTaskTitle,
+                        description: newTaskDesc,
+                        status: 'open',
+                        priority: 'normal',
+                        source: 'manual',
+                        tags: [],
+                        taskTypeId: showTaskModal === 'support' ? 'support' : 'other',
+                        queueId: showTaskModal === 'support' ? 'support_tier_1' : '',
+                        createdAt: new Date().toISOString()
+                     });
+                     setShowTaskModal(null);
+                     setNewTaskTitle('');
+                     setNewTaskDesc('');
+                   } catch (err) {
+                     console.error('Failed to create task/ticket', err);
+                     alert('Action failed.');
+                   }
+                }}>
+                   {showTaskModal === 'task' ? 'Create Task' : 'Submit Ticket'}
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Link Entity Modal */}
+      {showLinkModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md border border-slate-200 overflow-hidden">
+             <div className="p-4 border-b border-slate-100 font-bold text-slate-800 flex items-center gap-2">
+                {showLinkModal === 'contact' ? <User size={18} className="text-emerald-500" /> : <Building2 size={18} className="text-indigo-500" />}
+                {showLinkModal === 'contact' ? 'Link Existing Contact' : 'Connect Organization'}
+             </div>
+             <div className="p-6 space-y-4">
+                <div>
+                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                     Select {showLinkModal === 'contact' ? 'Contact' : 'Organization'}
+                   </label>
+                   <select 
+                     className="input w-full" 
+                     value={linkSelectedId} 
+                     onChange={e => setLinkSelectedId(e.target.value)}
+                   >
+                     <option value="">-- Choose from database --</option>
+                     {showLinkModal === 'contact' ? (
+                       availableContacts.map(c => (
+                         <option key={c.id} value={c.id} disabled={(org.linkedContactIds || []).includes(c.id)}>
+                           {`${c.firstName || ''} ${c.lastName || ''}`.trim() || c.name || 'Unknown'} {(org.linkedContactIds || []).includes(c.id) ? '(Already Linked)' : ''}
+                         </option>
+                       ))
+                     ) : (
+                       availableOrgs.map(o => (
+                         <option key={o.id} value={o.id} disabled={o.id === org.id || (org.linkedOrgIds || []).includes(o.id)}>
+                           {o.name || 'Unknown'} {o.id === org.id ? '(This Org)' : (org.linkedOrgIds || []).includes(o.id) ? '(Already Linked)' : ''}
+                         </option>
+                       ))
+                     )}
+                   </select>
+                </div>
+             </div>
+             <div className="p-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50">
+                <button className="btn btn-ghost" onClick={() => setShowLinkModal(null)}>Cancel</button>
+                <button className="btn btn-primary" disabled={!linkSelectedId} onClick={commitLink}>
+                   Establish Link
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

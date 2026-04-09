@@ -14,9 +14,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { getGoogleOAuthConfig } from '@/lib/googleTokenRefresh';
 
-const CLIENT_ID     = process.env.GOOGLE_CLIENT_ID        ?? '';
-const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET    ?? '';
 const APP_URL       = process.env.NEXT_PUBLIC_APP_URL     ?? 'http://localhost:3000';
 const PROJECT_ID    = process.env.NEXT_PUBLIC_PROJECT_ID  ?? 'mfo-crm';
 const REDIRECT_URI  = `${APP_URL}/api/oauth/google/callback`;
@@ -96,14 +95,16 @@ export async function GET(req: NextRequest) {
   try {
     const separator = returnTo.includes('?') ? '&' : '?';
 
+    const { clientId, clientSecret } = await getGoogleOAuthConfig();
+
     // 1. Exchange code for Google tokens
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         code,
-        client_id:     CLIENT_ID,
-        client_secret: CLIENT_SECRET,
+        client_id:     clientId,
+        client_secret: clientSecret,
         redirect_uri:  REDIRECT_URI,
         grant_type:    'authorization_code',
       }),
@@ -125,13 +126,15 @@ export async function GET(req: NextRequest) {
     const connectedEmail = profile.email ?? 'unknown';
 
     // 3. Read and clean auth cookies
-    const uid     = store.get('firebase_uid')?.value;
-    const idToken = store.get('firebase_token')?.value;
+    const uid      = store.get('firebase_uid')?.value;
+    const idToken  = store.get('firebase_token')?.value;
+    const tenantId = store.get('oauth_tenant_id')?.value;
     store.delete('firebase_uid');
     store.delete('firebase_token');
+    store.delete('oauth_tenant_id');
 
-    if (!uid || !idToken) {
-      return NextResponse.redirect(`${APP_URL}${returnTo}${separator}oauth_error=not_authenticated`);
+    if (!uid || !idToken || !tenantId) {
+      return NextResponse.redirect(`${APP_URL}${returnTo}${separator}oauth_error=not_authenticated_or_no_tenant`);
     }
 
     // 4a. If Google didn't return a refresh_token (normal on repeat consent),
@@ -141,7 +144,7 @@ export async function GET(req: NextRequest) {
     if (!refreshTokenToStore) {
       try {
         const existing = await fetch(
-          `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/users/${uid}/integrations/google`,
+          `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/tenants/${tenantId}/members/${uid}/integrations/google`,
           { headers: { Authorization: `Bearer ${idToken}` } }
         );
         if (existing.ok) {
@@ -178,7 +181,7 @@ export async function GET(req: NextRequest) {
     }
 
     // 4b. Persist integration record via Firestore REST API (no Admin SDK required)
-    await writeFirestoreDoc(idToken, `users/${uid}/integrations/google`, {
+    await writeFirestoreDoc(idToken, `tenants/${tenantId}/members/${uid}/integrations/google`, {
       provider:        'google',
       status:          'connected',
       connectedEmail,

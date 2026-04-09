@@ -1,12 +1,13 @@
 /**
  * GET /api/mail/thread/:threadId
  *
- * Fetches all messages in a Gmail thread and returns decoded bodies.
- * Query params: uid, idToken
+ * Fetches all messages in a thread (Google or Microsoft) and returns decoded bodies.
+ * Query params: uid, idToken, provider
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getValidGoogleToken } from '@/lib/googleTokenRefresh';
+import { getValidMicrosoftToken } from '@/lib/microsoftTokenRefresh';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,25 +65,107 @@ export async function GET(
     const { threadId } = await params;
     const uid      = req.nextUrl.searchParams.get('uid')     ?? '';
     const idToken  = req.nextUrl.searchParams.get('idToken') ?? '';
+    const provider = req.nextUrl.searchParams.get('provider') ?? 'google';
+    const tenantId = req.nextUrl.searchParams.get('tenantId') ?? '';
 
-    if (!uid || !idToken || !threadId) {
-      return NextResponse.json({ error: 'uid, idToken, threadId required' }, { status: 400 });
+    if (!uid || !idToken || !threadId || !tenantId) {
+      return NextResponse.json({ error: 'uid, idToken, threadId, tenantId required' }, { status: 400 });
     }
 
-    const accessToken = await getValidGoogleToken(uid, idToken);
+    if (provider === 'microsoft') {
+        const accessToken = await getValidMicrosoftToken(tenantId, uid, idToken);
+        
+        // Use $filter on conversationId to fetch the thread messages.
+        const queryParams = new URLSearchParams({
+          $filter: `conversationId eq '${threadId}'`,
+          $orderby: 'receivedDateTime asc'
+        });
+        const url = `https://graph.microsoft.com/v1.0/me/messages?${queryParams.toString()}`;
+        const res = await fetch(url, {
+           headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        
+        if (!res.ok) {
+           const errText = await res.text();
+           return NextResponse.json({ error: `MS Graph thread fetch failed: ${errText}` }, { status: res.status });
+        }
+        
+        const data = await res.json();
+        let threadMsgs = data.value || [];
 
-    const res = await fetch(`${GMAIL}/users/me/threads/${threadId}?format=full`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (!res.ok) {
-      const err = await res.text();
-      return NextResponse.json({ error: `Gmail thread fetch failed: ${err}` }, { status: 502 });
+        // If filtering by conversationId yields empty array, it means threadId was just a single message ID
+        if (threadMsgs.length === 0) {
+           const fallbackRes = await fetch(`https://graph.microsoft.com/v1.0/me/messages/${threadId}`, {
+               headers: { Authorization: `Bearer ${accessToken}` }
+           });
+           if (!fallbackRes.ok) {
+               const errText = await fallbackRes.text();
+               return NextResponse.json({ error: `MS Graph fallback fetch failed: ${errText}` }, { status: fallbackRes.status });
+           }
+           threadMsgs = [await fallbackRes.json()];
+        }
+        
+        // Wait, for Microsoft Graph we need attachments. They require a separate call per message if hasAttachments is true.
+        const messages = await Promise.all(threadMsgs.map(async (msg: any) => {
+           let attachments: any[] = [];
+           if (msg.hasAttachments) {
+              const attRes = await fetch(`https://graph.microsoft.com/v1.0/me/messages/${msg.id}/attachments`, {
+                  headers: { Authorization: `Bearer ${accessToken}` }
+              });
+              if (attRes.ok) {
+                  const attData = await attRes.json();
+                  attachments = (attData.value || []).map((a: any) => ({
+                     id: a.id,
+                     name: a.name,
+                     mimeType: a.contentType || 'application/octet-stream',
+                     size: a.size || 0,
+                     inlineData: a.contentBytes
+                  }));
+              }
+           }
+           
+           const fromEmail = msg.from?.emailAddress?.address || '';
+           const toEmails = (msg.toRecipients || []).map((t: any) => t.emailAddress?.address).filter(Boolean);
+           return {
+              id: msg.id,
+              threadId: msg.conversationId || msg.id,
+              labelIds: [],
+              subject: msg.subject,
+              from: msg.from?.emailAddress?.name ? `${msg.from.emailAddress.name} <${fromEmail}>` : fromEmail,
+              to: msg.toRecipients?.map((t: any) => t.emailAddress?.address).join(', '),
+              cc: msg.ccRecipients?.map((t: any) => t.emailAddress?.address).join(', '),
+              date: new Date(msg.receivedDateTime).toUTCString(),
+              snippet: msg.bodyPreview || '',
+              isUnread: !msg.isRead,
+              isStarred: msg.flag?.flagStatus === 'flagged',
+              isSent: false,
+              fromEmails: [fromEmail],
+              toEmails: toEmails,
+              html: msg.body?.contentType?.toLowerCase() === 'html' ? msg.body.content : '',
+              text: msg.body?.contentType?.toLowerCase() !== 'html' ? msg.body.content : '',
+              attachments,
+              internalDate: msg.receivedDateTime,
+           };
+        }));
+        
+        return NextResponse.json({ threadId, messages });
     }
 
-    const thread = await res.json();
+    if (provider === 'google') {
+      const accessToken = await getValidGoogleToken(tenantId, uid, idToken);
 
-    const messages = (thread.messages ?? []).map((msg: any) => {
+      const res = await fetch(`${GMAIL}/users/me/threads/${threadId}?format=full`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (!res.ok) {
+        const err = await res.text();
+        return NextResponse.json({ error: `Gmail thread fetch failed: ${err}` }, { status: 502 });
+      }
+
+      const thread = await res.json();
+
+      const messages = (thread.messages ?? []).map((msg: any) => {
       const headers  = msg.payload?.headers ?? [];
       const labelIds = msg.labelIds ?? [];
       const { html, text, attachments } = extractBody(msg.payload);
@@ -111,9 +194,12 @@ export async function GET(
       };
     });
 
-    return NextResponse.json({ threadId, messages });
+      return NextResponse.json({ threadId, messages });
+    }
+
+    return NextResponse.json({ error: `Unsupported or disconnected thread provider: ${provider}` }, { status: 400 });
   } catch (err: any) {
-    console.error('[mail/thread] error:', err);
+    console.warn(`[mail/thread] ${err.name}:`, err.message);
     return NextResponse.json({ error: err.message ?? 'failed' }, { status: 500 });
   }
 }

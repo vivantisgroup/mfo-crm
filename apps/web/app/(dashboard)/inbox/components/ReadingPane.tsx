@@ -269,6 +269,7 @@ function ActionBtn({ icon, title, onClick, color }: { icon: React.ReactNode; tit
 export function ReadingPane({ thread, uid, tenantId = '', emailLogId, initialLinks = [], onReply, onAction, onLinksChange }: Props) {
   const [messages,    setMessages]    = useState<MessageDetail[]>([]);
   const [loading,     setLoading]     = useState(false);
+  const [errorMsg,    setErrorMsg]    = useState<string | null>(null);
   const [collapsed,   setCollapsed]   = useState<Set<string>>(new Set());
   const [links,       setLinks]       = useState<CrmLinkTarget[]>(initialLinks);
 
@@ -278,23 +279,36 @@ export function ReadingPane({ thread, uid, tenantId = '', emailLogId, initialLin
   }, [thread?.id]);
 
   useEffect(() => {
-    if (!thread || !uid) { setMessages([]); return; }
-    loadThread(thread.gmailThreadId ?? thread.id);
+    if (!thread || !uid) { setMessages([]); setErrorMsg(null); return; }
+    loadThread(thread.gmailThreadId ?? thread.id, thread.provider ?? 'google');
   }, [thread?.id]);
 
-  async function loadThread(threadId: string) {
+  async function loadThread(threadId: string, provider: string = 'google') {
     setLoading(true);
+    setErrorMsg(null);
     try {
       const idToken = await getAuth().currentUser?.getIdToken();
-      const params  = new URLSearchParams({ uid, idToken: idToken ?? '' });
-      const res     = await fetch(`/api/mail/thread/${threadId}?${params}`);
-      if (!res.ok) throw new Error('Failed to load thread');
+      const params  = new URLSearchParams({ uid, idToken: idToken ?? '', provider, tenantId });
+      const res     = await fetch(`/api/mail/thread/${encodeURIComponent(threadId)}?${params}`);
+      if (!res.ok) {
+        let errText = await res.text();
+        try {
+          const json = JSON.parse(errText);
+          errText = json.error || errText;
+        } catch { /* ignore */ }
+        console.warn(`Thread load warning [${provider}]:`, res.status, errText);
+        throw new Error(`Failed to load from ${provider}: ${errText}`);
+      }
       const data = await res.json();
       setMessages(data.messages ?? []);
       const allIds = (data.messages as MessageDetail[]).map(m => m.id);
       const lastId = allIds[allIds.length - 1];
       setCollapsed(new Set(allIds.filter(id => id !== lastId)));
-    } catch (e) { console.error(e); }
+    } catch (e: any) { 
+      console.error(e); 
+      setErrorMsg(e.message);
+      setMessages([]);
+    }
     finally { setLoading(false); }
   }
 
@@ -328,6 +342,18 @@ export function ReadingPane({ thread, uid, tenantId = '', emailLogId, initialLin
       console.error('Auto tag failed:', e);
     }
   };
+
+  if (errorMsg) {
+    return (
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
+        <div style={{ textAlign: 'center', maxWidth: 400, padding: 24, background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12 }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>⚠️</div>
+          <p style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>Cannot load this conversation</p>
+          <p style={{ fontSize: 13 }}>{errorMsg}</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!thread) {
     return (
@@ -432,6 +458,13 @@ export function ReadingPane({ thread, uid, tenantId = '', emailLogId, initialLin
             ? Array.from({ length: 2 }).map((_, i) => (
                 <div key={i} style={{ height: 120, borderRadius: 12, background: 'var(--bg-elevated)', animation: 'pulse 1.5s infinite' }} />
               ))
+            : errorMsg 
+            ? (
+               <div style={{ padding: 24, background: '#ef444415', border: '1px solid #ef444440', borderRadius: 12, color: '#ef4444', fontSize: 14 }}>
+                 <strong>Cannot load thread:</strong> <br/>
+                 {errorMsg}
+               </div>
+              )
             : messages.map(msg => (
                 <MessageBubble key={msg.id} msg={msg} collapsed={collapsed.has(msg.id)}
                   onToggle={() => toggleCollapse(msg.id)} onReply={onReply} onAction={onAction} />

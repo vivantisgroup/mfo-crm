@@ -8,6 +8,7 @@ import { getFirestore, collection, onSnapshot, query, where, orderBy, limit } fr
 import { firebaseApp } from '@mfo-crm/config';
 import { ReadingPane } from '@/app/(dashboard)/inbox/components/ReadingPane';
 import { Composer } from '@/app/(dashboard)/inbox/components/Composer';
+import { getAllMailConnections } from '@/lib/emailIntegrationService';
 
 const db = getFirestore(firebaseApp);
 
@@ -31,11 +32,17 @@ export function CommunicationsHub() {
     if (!user || !firebaseUser) return;
     setSyncing(true);
     try {
-      const activeTenant = JSON.parse(localStorage.getItem('mfo_active_tenant') || '{}');
+      if (!tenant?.id) throw new Error('No active tenant context.');
+      const conns = await getAllMailConnections(tenant.id, user.uid);
+      const provider = conns.microsoft ? 'microsoft' : (conns.google ? 'google' : null);
+      if (!provider) {
+         throw new Error('No active email provider integration found (Google or Microsoft). Please connect an account in settings.');
+      }
+      
       const res = await fetch('/api/mail/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid: user.uid, idToken: await firebaseUser.getIdToken(), tenantId: activeTenant.id })
+        body: JSON.stringify({ uid: user.uid, idToken: await firebaseUser.getIdToken(), tenantId: tenant.id, provider })
       });
       if (!res.ok) {
         const errText = await res.text();
@@ -58,14 +65,16 @@ export function CommunicationsHub() {
     
     // For sandbox simplicity, subscribing to last 100 global communications
     // and filtering securely client side (since sandbox often drops strict user matching).
+    // Bypass missing Firestore index by sorting client-side
     const q = query(
       collection(db, 'communications'), 
-      orderBy('timestamp', 'desc'), 
+      where('tenant_id', '==', tenant?.id || 'default'),
       limit(100)
     );
 
     const unsubscribe = onSnapshot(q, (snap) => {
       const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      msgs.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       setFeed(msgs);
     });
 

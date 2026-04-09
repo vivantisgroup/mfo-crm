@@ -1493,7 +1493,7 @@ function SecretField({
 }
 
 function CommunicationsSection() {
-  const [activeProvider, setActiveProvider] = useState<'teams' | 'slack'>('teams');
+  const [activeProvider, setActiveProvider] = useState<'teams' | 'slack' | 'google'>('teams');
 
   const [teamsEnabled,      setTeamsEnabled]      = useState(false);
   const [teamsAppId,        setTeamsAppId]         = useState('');
@@ -1510,6 +1510,14 @@ function CommunicationsSection() {
   const [slackClientSecret, setSlackClientSecret]  = useState('');
   const [slackSigningSecret,setSlackSigningSecret] = useState('');
   const [slackSaved,        setSlackSaved]         = useState(false);
+
+  const [googleEnabled,      setGoogleEnabled]      = useState(false);
+  const [googleClientId,     setGoogleClientId]     = useState('');
+  const [googleClientSecret, setGoogleClientSecret] = useState('');
+  const [googleSaved,        setGoogleSaved]        = useState(false);
+  const [googleSaveError,    setGoogleSaveError]    = useState('');
+  const [isSavingGoogle,     setIsSavingGoogle]     = useState(false);
+  const [isLoadingGoogle,    setIsLoadingGoogle]    = useState(true);
 
   React.useEffect(() => {
     setIsLoadingTeams(true);
@@ -1533,6 +1541,25 @@ function CommunicationsSection() {
       })
       .catch(console.error)
       .finally(() => setIsLoadingTeams(false));
+
+    setIsLoadingGoogle(true);
+    fetch('/api/admin/platform/google')
+      .then(async res => {
+        const data = await res.json().catch(() => ({ error: true }));
+        return data;
+      })
+      .then(data => {
+        if (!data.error) {
+          const enabled = data.enabled ?? false;
+          setGoogleEnabled(enabled);
+          setGoogleClientId(data.clientId || '');
+          setGoogleClientSecret(data.clientSecret || '');
+        } else {
+          console.warn('[CommunicationsSection] Could not load Google config.');
+        }
+      })
+      .catch(console.error)
+      .finally(() => setIsLoadingGoogle(false));
   }, []);
 
   const handleSaveTeams = async () => {
@@ -1560,6 +1587,33 @@ function CommunicationsSection() {
       setTeamsSaveError(e.message);
     } finally {
       setIsSavingTeams(false);
+    }
+  };
+
+  const handleSaveGoogle = async () => {
+    setIsSavingGoogle(true);
+    setGoogleSaveError('');
+    try {
+      const res = await fetch('/api/admin/platform/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enabled:      googleEnabled,
+          clientId:     googleClientId,
+          clientSecret: googleClientSecret,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) {
+        setGoogleSaveError(data.error || `Server error ${res.status}`);
+      } else {
+        setGoogleSaved(true);
+        setTimeout(() => setGoogleSaved(false), 2500);
+      }
+    } catch (e: any) {
+      setGoogleSaveError(e.message);
+    } finally {
+      setIsSavingGoogle(false);
     }
   };
 
@@ -1626,6 +1680,20 @@ function CommunicationsSection() {
                   </div>
                   {slackEnabled && <Badge size="xs" color="emerald" className="ml-auto">Active</Badge>}
                 </button>
+
+                <button 
+                  onClick={() => setActiveProvider('google')}
+                  className={`flex items-center gap-3 p-4 rounded-tremor-default border text-left transition-all ${
+                    activeProvider === 'google' ? 'bg-[#4285F4]/10 border-[#4285F4] shadow-sm' : 'bg-tremor-background-subtle border-transparent hover:border-tremor-border opacity-70 hover:opacity-100'
+                  }`}
+                >
+                  <div className="w-10 h-10 rounded-md bg-blue-50 flex items-center justify-center text-[#4285F4] shrink-0 font-bold" style={{ fontSize: 18 }}>G</div>
+                  <div>
+                    <div className="font-semibold text-tremor-content-strong text-sm">Google Workspace</div>
+                    <div className="text-xs text-tremor-content mt-1">OAuth & Gmail API</div>
+                  </div>
+                  {googleEnabled && <Badge size="xs" color="emerald" className="ml-auto">Active</Badge>}
+                </button>
               </Col>
 
               {/* DETAIL VIEW */}
@@ -1691,6 +1759,64 @@ function CommunicationsSection() {
                           className="bg-[#5B5FC7] hover:bg-[#4d51a6] text-white border-transparent px-8 shadow-sm"
                         >
                           {teamsSaved ? '✅ Configuration Saved!' : isSavingTeams ? 'Saving…' : 'Save Connection Details'}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {activeProvider === 'google' && (
+                    <div className="flex-1 flex flex-col gap-6 animate-fade-in">
+                      <Flex alignItems="start" justifyContent="between">
+                        <div>
+                          <Title className="text-[#4285F4] flex items-center gap-2 font-bold">
+                            Google Workspace Integration
+                          </Title>
+                          <Text className="text-xs mt-1 text-tremor-content">Configure OAuth for user email and calendar syncing.</Text>
+                        </div>
+                        <div className="flex items-center gap-3 bg-tremor-background-subtle px-3 py-1.5 rounded-full border border-tremor-border">
+                          <Text className="text-xs font-semibold text-tremor-content-strong">{googleEnabled ? 'Enabled' : 'Disabled'}</Text>
+                          <Switch id="google-switch" checked={googleEnabled} onChange={setGoogleEnabled} />
+                        </div>
+                      </Flex>
+                      <Divider className="my-1" />
+                      <div className="text-xs text-tremor-content bg-blue-50/50 p-4 rounded-tremor-small border border-blue-100 leading-relaxed shadow-sm">
+                        <strong className="text-blue-900">Provisioning Requirements:</strong> Create an OAuth Client in the Google Cloud Console. Configure the authorized redirect URI to exactly <code className="text-xs font-mono text-blue-700 bg-blue-100 px-1 py-0.5 rounded">https://app.vivantisgroup.com/api/oauth/google/callback</code> (or localhost for dev). This will be used by all tenant members globally to connect their inboxes.
+                      </div>
+
+                      {isLoadingGoogle && (
+                        <div className="text-xs text-tremor-content animate-pulse">Loading saved configuration…</div>
+                      )}
+
+                      <div className="grid grid-cols-1 gap-5 mt-2">
+                        <SecretField
+                          label={<>Client ID * <FieldStatus filled={!!googleClientId} /></>}
+                          value={googleClientId}
+                          onChange={setGoogleClientId}
+                          placeholder="xxxxxxxxxx-xxxxxxxxxxxxxxx.apps.googleusercontent.com"
+                          isLoading={isLoadingGoogle}
+                        />
+                        <SecretField
+                          label={<>Client Secret * <FieldStatus filled={!!googleClientSecret} /></>}
+                          value={googleClientSecret}
+                          onChange={setGoogleClientSecret}
+                          placeholder="GOCSPX-xxxxxxxxxxxxxxxxxxxx"
+                          isLoading={isLoadingGoogle}
+                        />
+                      </div>
+
+                      {googleSaveError && (
+                        <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-tremor-small p-3 mt-2">
+                          ⚠️ Save failed: {googleSaveError}
+                        </div>
+                      )}
+
+                      <div className="mt-auto pt-6 flex justify-end">
+                        <Button
+                          onClick={handleSaveGoogle}
+                          disabled={isSavingGoogle || isLoadingGoogle}
+                          className="bg-[#4285F4] hover:bg-[#3367d6] text-white border-transparent px-8 shadow-sm"
+                        >
+                          {googleSaved ? '✅ Configuration Saved!' : isSavingGoogle ? 'Saving…' : 'Save Connection Details'}
                         </Button>
                       </div>
                     </div>
@@ -2619,18 +2745,18 @@ function DataExplorerSection() {
   );
 }
 
-// ─── Main Admin Page ───────────────────────────────────────────────────────────
-
 export default function AdminPage() {
   const { tenant } = useAuth();
   const isInternal = tenant?.isInternal;
-  // Show demo_data tab only for non-internal (client) tenants — trial check would come from subscription context
-  const [activeTab, setActiveTab] = useState<TabId>('platform');
-
-  const visibleTabs = TABS.filter(t => {
+  
+  const visibleTabs = React.useMemo(() => TABS.filter(t => {
     if (t.superAdminOnly && !isInternal) return false;
     return true;
-  });
+  }), [isInternal]);
+
+  // Use the first visible tab as the default unless a manual selection is made
+  const [activeTabOverride, setActiveTabOverride] = useState<TabId | null>(null);
+  const activeTab = activeTabOverride || visibleTabs[0]?.id || 'firm';
 
   return (
     <div className="absolute inset-0 flex flex-col animate-fade-in w-full bg-[var(--bg-background)] overflow-hidden">
@@ -2650,7 +2776,7 @@ export default function AdminPage() {
             {visibleTabs.map(tab => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => setActiveTabOverride(tab.id)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all text-left border ${
                   activeTab === tab.id 
                     ? 'bg-surface shadow text-primary border-border/50 font-semibold' 
@@ -2672,16 +2798,16 @@ export default function AdminPage() {
         {/* Central View */}
         <div className="flex-1 bg-[var(--bg-surface)] flex flex-col overflow-y-auto relative custom-scrollbar">
           <div className="p-8 md:p-10 w-full">
-            {activeTab === 'platform'       && <PlatformSection />}
-            {activeTab === 'database'       && <DatabaseSection />}
-            {activeTab === 'data_explorer'  && <DataExplorerSection />}
+            {activeTab === 'platform'       && isInternal && <PlatformSection />}
+            {activeTab === 'database'       && isInternal && <DatabaseSection />}
+            {activeTab === 'data_explorer'  && isInternal && <DataExplorerSection />}
             {activeTab === 'mfa'            && <MfaSection />}
             {activeTab === 'integrations'   && <IntegrationsSection />}
             {activeTab === 'ai_keys'        && <AiKeysSection />}
             {activeTab === 'firm'           && <FirmSection />}
             {activeTab === 'compliance'     && <ComplianceSection />}
             {activeTab === 'customizations' && <CustomizationsSection />}
-            {activeTab === 'communications' && <CommunicationsSection />}
+            {activeTab === 'communications' && isInternal && <CommunicationsSection />}
           </div>
         </div>
       </div>

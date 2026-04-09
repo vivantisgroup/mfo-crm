@@ -12,6 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getValidGoogleToken }       from '@/lib/googleTokenRefresh';
+import { getValidMicrosoftToken }    from '@/lib/microsoftTokenRefresh';
 
 const PROJECT_ID = process.env.NEXT_PUBLIC_PROJECT_ID ?? 'mfo-crm';
 
@@ -54,9 +55,9 @@ export async function POST(req: NextRequest) {
     idToken?:  string;
   };
 
-  const { provider, uid, idToken } = body;
-  if (!uid || !idToken) {
-    return NextResponse.json({ ok: false, error: 'uid and idToken required' }, { status: 400 });
+  const { provider, uid, idToken, tenantId } = body as { provider: string, uid: string, idToken: string, tenantId: string };
+  if (!uid || !idToken || !tenantId) {
+    return NextResponse.json({ ok: false, error: 'uid, idToken, tenantId required' }, { status: 400 });
   }
   if (!provider || !['google', 'microsoft'].includes(provider)) {
     return NextResponse.json({ ok: false, error: 'Invalid provider' }, { status: 400 });
@@ -70,7 +71,7 @@ export async function POST(req: NextRequest) {
     if (provider === 'google') {
       // Use the token refresh helper — refreshes if expired
       try {
-        accessToken = await getValidGoogleToken(uid, idToken);
+        accessToken = await getValidGoogleToken(tenantId, uid, idToken);
       } catch (e: any) {
         return NextResponse.json({
           ok:      false,
@@ -102,14 +103,11 @@ export async function POST(req: NextRequest) {
       }
 
     } else {
-      // Microsoft — read token from Firestore (MS token refresh not yet implemented)
-      const conn = await readFirestoreDoc(idToken, `users/${uid}/integrations/microsoft`);
-      if (!conn || conn.status !== 'connected') {
-        return NextResponse.json({ ok: false, error: 'Not connected', latency: Date.now() - start });
-      }
-      accessToken = conn._accessToken;
-      if (!accessToken) {
-        return NextResponse.json({ ok: false, error: 'No access token stored', latency: Date.now() - start });
+      // Microsoft — use refresh helper
+      try {
+        accessToken = await getValidMicrosoftToken(tenantId, uid, idToken);
+      } catch (e: any) {
+        return NextResponse.json({ ok: false, error: e.message || 'Not connected', latency: Date.now() - start });
       }
 
       const msRes = await fetch('https://graph.microsoft.com/v1.0/me?$select=mail,displayName', {

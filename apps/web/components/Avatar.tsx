@@ -24,7 +24,7 @@ interface AvatarProps {
   /** Show upload button on hover */
   editable?: boolean;
   /** Called after user picks a file */
-  onUpload?: (dataUrl: string) => void;
+  onUpload?: (dataUrl: string, file: File) => void;
   className?: string;
   style?: React.CSSProperties;
 }
@@ -99,7 +99,7 @@ export function Avatar({
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string;
       if (id)       setEntityAvatar(id, dataUrl);
-      onUpload?.(dataUrl);
+      onUpload?.(dataUrl, file);
     };
     reader.readAsDataURL(file);
     e.target.value = '';

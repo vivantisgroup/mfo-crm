@@ -126,14 +126,14 @@ interface TokenRecord {
 }
 
 /** Read token record via Firebase Admin SDK */
-async function readTokenViaAdmin(uid: string): Promise<TokenRecord> {
+async function readTokenViaAdmin(tenantId: string, uid: string): Promise<TokenRecord> {
   const { getAdminFirestore, forceReinitializeAdmin } = await import('@/lib/firebaseAdmin');
   
   // Retry once on ADC rotation errors (invalid_rapt / invalid_grant)
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const db   = getAdminFirestore();
-      const snap = await db.doc(`users/${uid}/integrations/microsoft`).get();
+      const snap = await db.doc(`tenants/${tenantId}/members/${uid}/integrations/microsoft`).get();
       if (!snap.exists) {
         throw new Error(
           `No Microsoft integration found for user ${uid}. ` +
@@ -165,8 +165,8 @@ async function readTokenViaAdmin(uid: string): Promise<TokenRecord> {
 }
 
 /** Read token record via Firestore REST API (fallback) */
-async function readTokenViaRest(uid: string, idToken: string): Promise<TokenRecord> {
-  const url = fsDocUrl(`users/${uid}/integrations/microsoft`);
+async function readTokenViaRest(tenantId: string, uid: string, idToken: string): Promise<TokenRecord> {
+  const url = fsDocUrl(`tenants/${tenantId}/members/${uid}/integrations/microsoft`);
   console.log('[microsoftTokenRefresh] REST fallback URL:', url.replace(/firestore.*documents\//, 'fs://'));
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${idToken}` },
@@ -187,11 +187,11 @@ async function readTokenViaRest(uid: string, idToken: string): Promise<TokenReco
 }
 
 /** Write refreshed tokens back (Admin SDK preferred, REST fallback) */
-async function writeTokenViaAdmin(uid: string, accessToken: string, refreshToken: string, expiresAt: number): Promise<void> {
+async function writeTokenViaAdmin(tenantId: string, uid: string, accessToken: string, refreshToken: string, expiresAt: number): Promise<void> {
   try {
     const { getAdminFirestore } = await import('@/lib/firebaseAdmin');
     const db = getAdminFirestore();
-    await db.doc(`users/${uid}/integrations/microsoft`).set(
+    await db.doc(`tenants/${tenantId}/members/${uid}/integrations/microsoft`).set(
       { _accessToken: accessToken, _expiresAt: expiresAt, _refreshToken: refreshToken },
       { merge: true }
     );
@@ -201,10 +201,10 @@ async function writeTokenViaAdmin(uid: string, accessToken: string, refreshToken
   }
 }
 
-async function writeTokenViaRest(uid: string, idToken: string, accessToken: string, refreshToken: string, expiresAt: number): Promise<void> {
+async function writeTokenViaRest(tenantId: string, uid: string, idToken: string, accessToken: string, refreshToken: string, expiresAt: number): Promise<void> {
   try {
     await fetch(
-      `${fsDocUrl(`users/${uid}/integrations/microsoft`)}?updateMask.fieldPaths=_accessToken&updateMask.fieldPaths=_expiresAt&updateMask.fieldPaths=_refreshToken`,
+      `${fsDocUrl(`tenants/${tenantId}/members/${uid}/integrations/microsoft`)}?updateMask.fieldPaths=_accessToken&updateMask.fieldPaths=_expiresAt&updateMask.fieldPaths=_refreshToken`,
       {
         method:  'PATCH',
         headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
@@ -230,13 +230,14 @@ async function writeTokenViaRest(uid: string, idToken: string, accessToken: stri
  * @param uid     Firebase UID of the user
  * @param idToken Firebase ID token (used as REST fallback when Admin SDK unavailable)
  */
-export async function getValidMicrosoftToken(uid: string, idToken?: string): Promise<string> {
+export async function getValidMicrosoftToken(tenantId: string, uid: string, idToken?: string): Promise<string> {
+  if (!tenantId) throw new Error("tenantId is required for Microsoft token refresh.");
   let record: TokenRecord;
   let useAdmin = true;
 
   // ── Step 1: Read the stored token record ──────────────────────────────────
   try {
-    record = await readTokenViaAdmin(uid);
+    record = await readTokenViaAdmin(tenantId, uid);
   } catch (adminErr: any) {
     const isAdcErr =
       String(adminErr?.message ?? adminErr).includes('invalid_rapt') ||
@@ -247,7 +248,7 @@ export async function getValidMicrosoftToken(uid: string, idToken?: string): Pro
       console.warn('[microsoftTokenRefresh] Admin SDK unavailable (ADC), falling back to Firestore REST API');
       useAdmin = false;
       try {
-        record = await readTokenViaRest(uid, idToken);
+        record = await readTokenViaRest(tenantId, uid, idToken);
       } catch (restErr: any) {
         throw new Error(
           `Microsoft token read failed (both Admin SDK and REST API). ` +
@@ -300,9 +301,9 @@ export async function getValidMicrosoftToken(uid: string, idToken?: string): Pro
 
   // ── Step 4: Persist the refreshed tokens ──────────────────────────────────
   if (useAdmin) {
-    await writeTokenViaAdmin(uid, newAccessToken, newRefresh, newExpiresAt);
+    await writeTokenViaAdmin(tenantId, uid, newAccessToken, newRefresh, newExpiresAt);
   } else if (idToken) {
-    await writeTokenViaRest(uid, idToken, newAccessToken, newRefresh, newExpiresAt);
+    await writeTokenViaRest(tenantId, uid, idToken, newAccessToken, newRefresh, newExpiresAt);
   }
 
   return newAccessToken;

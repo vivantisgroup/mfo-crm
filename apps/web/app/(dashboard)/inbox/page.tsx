@@ -50,6 +50,7 @@ interface EmailLog {
   linkedFamilyName?: string;
   loggedToCrm:       boolean;
   gmailMessageId?:   string;
+  provider?:         string;
   labelIds?:         string[];
   crmLinks?:         CrmLinkTarget[];
   tags?:             any[];
@@ -60,8 +61,16 @@ interface EmailLog {
 
 function emailLogToThread(e: EmailLog): ThreadSummary {
   const labelIds = e.labelIds ?? [];
+  let providerStr = e.provider;
+  if (!providerStr) {
+    if (e.id.startsWith('ms_')) providerStr = 'microsoft';
+    else if (e.id.startsWith('gmail_')) providerStr = 'google';
+    else providerStr = 'google';
+  }
+  
   return {
     id:              e.id,
+    provider:        providerStr,
     gmailThreadId:   e.gmailMessageId,
     subject:         e.subject,
     fromEmail:       e.fromEmail,
@@ -154,7 +163,7 @@ function AlertBanner({ type, uid, returnTo }: { type: 'not_connected' | 'no_toke
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function InboxPage() {
-  const { user } = useAuth();
+  const { user, tenant } = useAuth();
 
   const [emails,         setEmails]         = useState<EmailLog[]>([]);
   const [loading,        setLoading]        = useState(true);
@@ -206,9 +215,9 @@ export default function InboxPage() {
 
   // ── Realtime email_logs listener (replaces getDocs — updates instantly) ────
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!user?.uid || !tenant?.id) return;
     setLoading(true);
-    const q    = query(collection(db, 'users', user.uid, 'email_logs'), orderBy('receivedAt', 'desc'));
+    const q    = query(collection(db, 'tenants', tenant.id, 'members', user.uid, 'email_logs'), orderBy('receivedAt', 'desc'));
     const unsub = onSnapshot(
       q,
       (snap) => {
@@ -221,18 +230,18 @@ export default function InboxPage() {
       },
     );
     return () => unsub();
-  }, [user?.uid]);
+  }, [user?.uid, tenant?.id]);
 
   // ── Check Google integration health + auto-sync on first mount ───────────
   const hasSyncedOnMountRef = useRef(false);
   const checkHealth = useCallback(async () => {
-    if (!user?.uid) return;
+    if (!user?.uid || !tenant?.id) return;
     try {
       const idToken    = await getAuth().currentUser?.getIdToken();
       if (!idToken) { setConnHealth('not_connected'); return; }
       const PROJECT_ID = process.env.NEXT_PUBLIC_PROJECT_ID ?? 'mfo-crm';
       const res        = await fetch(
-        `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/users/${user.uid}/integrations/google`,
+        `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/tenants/${tenant.id}/members/${user.uid}/integrations/google`,
         { headers: { Authorization: `Bearer ${idToken}` } }
       );
       if (res.status === 404) { setConnHealth('not_connected'); return; }
@@ -247,7 +256,7 @@ export default function InboxPage() {
       const ok = (refreshToken.length > 0) || (accessToken.length > 0 && expiresAt > Date.now());
       setConnHealth(ok ? 'ok' : 'no_token');
     } catch { setConnHealth('unknown'); }
-  }, [user?.uid]);
+  }, [user?.uid, tenant?.id]);
 
   // Health check runs on mount; auto-sync triggered by connHealth effect
   useEffect(() => { checkHealth(); }, [checkHealth]);
@@ -258,7 +267,7 @@ export default function InboxPage() {
     setLabelsLoading(true);
     try {
       const idToken = await getAuth().currentUser?.getIdToken() ?? '';
-      const params  = new URLSearchParams({ uid: user.uid, idToken });
+      const params  = new URLSearchParams({ uid: user.uid, idToken, tenantId: tenant?.id || '' });
       const res     = await fetch(`/api/mail/labels?${params}`);
       if (res.ok) {
         const data = await res.json();
@@ -290,7 +299,6 @@ export default function InboxPage() {
     setSyncMsg(null);
     try {
       const idToken = await getAuth().currentUser?.getIdToken();
-      const tenant  = JSON.parse(localStorage.getItem('mfo_active_tenant') ?? '{}');
       const res = await fetch('/api/mail/sync', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -320,7 +328,7 @@ export default function InboxPage() {
       await fetch('/api/mail/action', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ uid: user.uid, idToken, messageIds, action }),
+        body:    JSON.stringify({ uid: user.uid, idToken, tenantId: tenant?.id, messageIds, action }),
       });
       // onSnapshot listener auto-updates the email list
     } catch (e) { console.error(e); }
@@ -410,10 +418,10 @@ export default function InboxPage() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
 
         {/* Banner area */}
-        {connHealth === 'not_connected' && user?.uid && (
+        {connHealth === 'not_connected' && user?.uid && tenant?.id && (
           <AlertBanner type="not_connected" uid={user.uid} returnTo="/inbox" />
         )}
-        {connHealth === 'no_token' && user?.uid && (
+        {connHealth === 'no_token' && user?.uid && tenant?.id && (
           <AlertBanner type="no_token" uid={user.uid} returnTo="/inbox" />
         )}
         {syncMsg && (
@@ -507,9 +515,9 @@ export default function InboxPage() {
           <ReadingPane
             thread={threads.find(t => t.id === selected?.id) ?? selected}
             uid={user?.uid ?? ''}
-            tenantId={tenantId}
+            tenantId={tenant?.id}
             emailLogId={selected?.id}
-            initialLinks={selected ? (emails.find(e => e.id === selected.id)?.crmLinks ?? []) : []}
+            initialLinks={selected?.crmLinks ?? []}
             onReply={(to, subject, messageId, threadId) =>
               setComposer({ to, subject, replyId: messageId, threadId })
             }

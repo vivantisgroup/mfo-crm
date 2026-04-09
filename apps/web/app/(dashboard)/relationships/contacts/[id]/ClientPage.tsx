@@ -4,11 +4,15 @@ import React, { useState, useEffect } from 'react';
 import { doc, onSnapshot, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Users, Building2, Ticket, CheckSquare, Briefcase } from 'lucide-react';
+import { ArrowLeft, Users, Building2, Ticket, CheckSquare, Briefcase, LayoutDashboard, Share2, MessageSquare, ClipboardList } from 'lucide-react';
 import { ContactRelationshipGraph } from '@/components/ContactRelationshipGraph';
 import { SecondaryDock } from '@/components/SecondaryDock';
+import { CommunicationPanel } from '@/components/CommunicationPanel';
 import { useTaskQueue } from '@/lib/TaskQueueContext';
 import { usePageTitle } from '@/lib/PageTitleContext';
+import { updateDoc } from 'firebase/firestore';
+import { uploadAttachment } from '@/lib/attachmentService';
+import { ProfileBanner } from '@/components/ProfileBanner';
 
 interface Contact {
   id:               string;
@@ -25,6 +29,8 @@ interface Contact {
   nationality?:     string;
   notes?:           string;
   kycStatus?:       string;
+  avatarUrl?:       string;
+  bannerUrl?:       string;
 }
 
 interface Activity {
@@ -53,20 +59,11 @@ function KV({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
-// Map linkedRecordType to pill display
-const RECORD_TYPE_TAGS: Record<string, { label: string, color: string }> = {
-  'ticket': { label: '🎟 Ticket', color: '#f59e0b' },
-  'task': { label: '✓ Task', color: '#10b981' },
-  'lead': { label: '💼 Lead', color: '#3b82f6' },
-  'opportunity': { label: '💼 Opp', color: '#6366f1' },
-  'service_request': { label: '🛎 Request', color: '#ec4899' },
-};
 
 export default function ContactClientPage() {
   const { id }   = useParams<{ id: string }>();
   const router   = useRouter();
   const [contact,    setContact]    = useState<Contact | null>(null);
-  const [activities, setActivities] = useState<Activity[]>([]);
   const [activeTab,  setActiveTab]  = useState('overview');
   const [tenantId,   setTenantId]   = useState('');
   
@@ -91,11 +88,6 @@ export default function ContactClientPage() {
     return () => unsub();
   }, [tenantId, id]);
 
-  useEffect(() => {
-    if (!tenantId || !id || activeTab !== 'communications') return;
-    const q = query(collection(db, 'tenants', tenantId, 'activities'), where('linkedContactId', '==', id));
-    getDocs(q).then(snap => setActivities(snap.docs.map(d => ({ id: d.id, ...d.data() } as Activity))));
-  }, [tenantId, id, activeTab]);
 
   useEffect(() => {
     if (contact && setCrumbOverrides) {
@@ -117,18 +109,40 @@ export default function ContactClientPage() {
   const supportTickets = myTasks.filter(t => t.taskTypeId === 'support' || t.queueId?.includes('support'));
   const regularTasks = myTasks.filter(t => t.taskTypeId !== 'support' && !t.queueId?.includes('support'));
 
+  const handleAvatarUpload = async (file: File) => {
+    if (!tenantId || !id) return;
+    const { url } = await uploadAttachment(tenantId, file);
+    await updateDoc(doc(db, 'tenants', tenantId, 'contacts', id), { avatarUrl: url });
+  };
+
+  const handleBannerUpload = async (file: File) => {
+    if (!tenantId || !id) return;
+    const { url } = await uploadAttachment(tenantId, file);
+    await updateDoc(doc(db, 'tenants', tenantId, 'contacts', id), { bannerUrl: url });
+  };
+
   return (
     <div className="page animate-fade-in" style={{ width: '100%', padding: '0 24px', paddingBottom: 60 }}>
+      {/* LinkedIn-Style Entity Header */}
+      <ProfileBanner 
+        title={`${contact.firstName} ${contact.lastName}`}
+        subtitle={contact.role ? (contact.role.charAt(0).toUpperCase() + contact.role.slice(1)) : 'Contact'}
+        avatarUrl={contact.avatarUrl || (contact as any).photoUrl}
+        bannerUrl={contact.bannerUrl}
+        onAvatarUpload={handleAvatarUpload}
+        onBannerUpload={handleBannerUpload}
+      />
+
       {/* Tabs */}
       <div style={{ marginBottom: 24, paddingBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)' }}>
         <SecondaryDock 
           tabs={[
-            { id: 'overview', label: 'Overview', icon: '📋' },
-            { id: 'relationships', label: 'Relationships', icon: '🔗' },
-            { id: 'communications', label: 'Comms', icon: '💬' },
-            { id: 'tasks', label: 'Tasks', icon: '✓' },
-            { id: 'tickets', label: 'Tickets', icon: '🎟' },
-            { id: 'leads', label: 'Leads', icon: '💼' }
+            { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+            { id: 'relationships', label: 'Relationships', icon: Share2 },
+            { id: 'communications', label: 'Comms', icon: MessageSquare },
+            { id: 'tasks', label: 'Tasks', icon: ClipboardList },
+            { id: 'tickets', label: 'Tickets', icon: Ticket },
+            { id: 'leads', label: 'Leads', icon: Briefcase }
           ]}
           activeTab={activeTab}
           onTabChange={setActiveTab}
@@ -190,39 +204,8 @@ export default function ContactClientPage() {
       )}
 
       {activeTab === 'communications' && (
-        <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 0 }}>
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 14 }}>
-            Communications Feed <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 400 }}>{activities.length} items</span>
-          </div>
-          {activities.length === 0 ? (
-            <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-tertiary)' }}>
-              <div style={{ fontSize: 32, marginBottom: 8 }}>💬</div>
-              <div>No communications linked to this contact yet.</div>
-              <div style={{ fontSize: 12, marginTop: 4 }}>Link emails in the inbox to start building a history.</div>
-            </div>
-          ) : activities.map(a => {
-            const rt = a.linkedRecordType ? RECORD_TYPE_TAGS[a.linkedRecordType] : null;
-
-            return (
-              <div key={a.id} style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                <span style={{ fontSize: 18 }}>{a.type === 'email' ? '✉️' : a.type === 'call' ? '📞' : a.type === 'meeting' ? '🤝' : '📝'}</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>{a.subject}</div>
-                    {rt && (
-                      <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: `${rt.color}15`, color: rt.color, fontWeight: 700 }}>
-                        {rt.label}
-                      </span>
-                    )}
-                  </div>
-                  {a.snippet && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{a.snippet}</div>}
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
-                    {a.fromName || a.fromEmail} · {a.createdAt ? new Date(a.createdAt).toLocaleDateString() : ''}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+        <div style={{ height: '600px' }}>
+           <CommunicationPanel contactId={id} />
         </div>
       )}
 

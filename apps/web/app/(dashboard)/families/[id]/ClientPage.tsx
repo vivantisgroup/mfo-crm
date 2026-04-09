@@ -15,6 +15,9 @@ import { InvestmentAdvisory } from '@/components/InvestmentAdvisory';
 import { CommunicationPanel } from '@/components/CommunicationPanel';
 import { SecondaryDock } from '@/components/SecondaryDock';
 import { usePageTitle } from '@/lib/PageTitleContext';
+import { uploadAttachment } from '@/lib/attachmentService';
+import { updateDoc } from 'firebase/firestore';
+import { ProfileBanner } from '@/components/ProfileBanner';
 
 export default function FamilyDetailPage() {
   const params   = useParams();
@@ -67,8 +70,30 @@ export default function FamilyDetailPage() {
     );
   }
 
+  const handleAvatarUpload = async (file: File) => {
+    if (!tenantId || !familyId) return;
+    const { url } = await uploadAttachment(tenantId, file);
+    await updateDoc(doc(db, 'tenants', tenantId, 'organizations', familyId), { avatarUrl: url });
+  };
+
+  const handleBannerUpload = async (file: File) => {
+    if (!tenantId || !familyId) return;
+    const { url } = await uploadAttachment(tenantId, file);
+    await updateDoc(doc(db, 'tenants', tenantId, 'organizations', familyId), { bannerUrl: url });
+  };
+
   return (
     <div className="page animate-fade-in" style={{ width: '100%', padding: '0 24px', paddingBottom: 60 }}>
+      {/* LinkedIn-Style Entity Header */}
+      <ProfileBanner 
+        title={family.name}
+        subtitle="Family Group"
+        avatarUrl={family.avatarUrl || family.logoUrl}
+        bannerUrl={family.bannerUrl}
+        onAvatarUpload={handleAvatarUpload}
+        onBannerUpload={handleBannerUpload}
+      />
+
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 16, gap: 12 }}>
         <button className="btn btn-secondary btn-sm" onClick={() => router.push(`/relationships/organizations/${family.id}`)}>View Base Entity</button>
         <button className="btn btn-primary btn-sm">Generate Report</button>

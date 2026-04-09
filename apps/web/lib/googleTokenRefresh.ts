@@ -9,9 +9,7 @@
  * Requires env vars: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET (server-only, no NEXT_PUBLIC_).
  */
 
-const PROJECT_ID    = process.env.NEXT_PUBLIC_PROJECT_ID ?? 'mfo-crm';
-const CLIENT_ID     = process.env.GOOGLE_CLIENT_ID     ?? '';
-const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET ?? '';
+const PROJECT_ID    = process.env.NEXT_PUBLIC_PROJECT_ID ?? process.env.FIREBASE_PROJECT_ID ?? 'mfo-crm';
 const TOKEN_URL     = 'https://oauth2.googleapis.com/token';
 
 // ─── Firestore REST helpers ───────────────────────────────────────────────────
@@ -42,22 +40,32 @@ function toFsFields(obj: Record<string, any>) {
   return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, toFsValue(v)]));
 }
 
-// ─── Configuration guard ──────────────────────────────────────────────────────
+// ─── Configuration Manager ──────────────────────────────────────────────────────
 
-/**
- * Throws a clear, actionable error if Google OAuth credentials are missing.
- * Prevents the cryptic "Could not determine client ID from request" error from Google.
- */
-function assertGoogleCredentials(): void {
-  if (!CLIENT_ID || !CLIENT_SECRET) {
-    const missing = [
-      !CLIENT_ID     && 'GOOGLE_CLIENT_ID',
-      !CLIENT_SECRET && 'GOOGLE_CLIENT_SECRET',
-    ].filter(Boolean).join(', ');
+export async function getGoogleOAuthConfig(): Promise<{ clientId: string; clientSecret: string }> {
+  let clientId     = process.env.GOOGLE_CLIENT_ID     || '';
+  let clientSecret = process.env.GOOGLE_CLIENT_SECRET || '';
+
+  try {
+    const { getAdminFirestore } = await import('@/lib/firebaseAdmin');
+    const db = getAdminFirestore();
+    const docSnap = await db.doc('system/integrations').get();
+    const goog = docSnap.data()?.google;
+    if (goog && goog.enabled) {
+      if (goog.clientId) clientId = goog.clientId;
+      if (goog.clientSecret) clientSecret = goog.clientSecret;
+    }
+  } catch (err: any) {
+    console.warn('[getGoogleOAuthConfig] Admin SDK config read failed (falling back to env if available):', err.message);
+  }
+
+  return { clientId, clientSecret };
+}
+
+function assertGoogleCredentials(clientId: string, clientSecret: string): void {
+  if (!clientId || !clientSecret) {
     throw new Error(
-      `Google OAuth not configured — missing env vars: ${missing}. ` +
-      `Set them in .env.local (local) and Vercel → Project → Settings → Environment Variables (production). ` +
-      `Get credentials from Google Cloud Console → APIs & Credentials → OAuth 2.0 Client IDs.`
+      `Google OAuth not configured. Save credentials in Platform Settings -> Communications, or set GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET environment variables.`
     );
   }
 }
@@ -78,12 +86,15 @@ export interface GoogleTokenInfo {
  * @param uid       Firebase UID of the user
  * @param idToken   Firebase ID token (for Firestore REST auth)
  */
-export async function getValidGoogleToken(uid: string, idToken: string): Promise<string> {
-  // 0. Guard — fail fast with a clear message if creds are not configured
-  assertGoogleCredentials();
+export async function getValidGoogleToken(tenantId: string, uid: string, idToken: string): Promise<string> {
+  if (!tenantId) throw new Error("tenantId is required for Google token refresh.");
+  
+  // 0. Fetch config and guard
+  const { clientId, clientSecret } = await getGoogleOAuthConfig();
+  assertGoogleCredentials(clientId, clientSecret);
 
   // 1. Read integration record from Firestore
-  const docRes = await fetch(fsUrl(`users/${uid}/integrations/google`), {
+  const docRes = await fetch(fsUrl(`tenants/${tenantId}/members/${uid}/integrations/google`), {
     headers: { Authorization: `Bearer ${idToken}` },
   });
 
@@ -116,8 +127,8 @@ export async function getValidGoogleToken(uid: string, idToken: string): Promise
     method:  'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      client_id:     CLIENT_ID,
-      client_secret: CLIENT_SECRET,
+      client_id:     clientId,
+      client_secret: clientSecret,
       refresh_token: refreshToken,
       grant_type:    'refresh_token',
     }),
@@ -142,7 +153,7 @@ export async function getValidGoogleToken(uid: string, idToken: string): Promise
 
   // 5. Persist refreshed token back to Firestore (field-level update — never wipes refresh_token)
   const patchRes = await fetch(
-    `${fsUrl(`users/${uid}/integrations/google`)}?updateMask.fieldPaths=_accessToken&updateMask.fieldPaths=_expiresAt`,
+    `${fsUrl(`tenants/${tenantId}/members/${uid}/integrations/google`)}?updateMask.fieldPaths=_accessToken&updateMask.fieldPaths=_expiresAt`,
     {
       method:  'PATCH',
       headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
@@ -163,9 +174,19 @@ export async function getValidGoogleToken(uid: string, idToken: string): Promise
 
 // ─── Config check utility (used by /api/oauth/google/debug) ──────────────────
 
-export function googleOAuthConfigured(): { ok: boolean; missing: string[] } {
+export async function googleOAuthConfigured(): Promise<{ ok: boolean; missing: string[]; source: string }> {
+  try {
+    const { getAdminFirestore } = await import('@/lib/firebaseAdmin');
+    const db = getAdminFirestore();
+    const docSnap = await db.doc('system/integrations').get();
+    const goog = docSnap.data()?.google;
+    if (goog && goog.enabled && goog.clientId && goog.clientSecret) {
+      return { ok: true, missing: [], source: 'database' };
+    }
+  } catch {}
+
   const missing: string[] = [];
-  if (!CLIENT_ID)     missing.push('GOOGLE_CLIENT_ID');
-  if (!CLIENT_SECRET) missing.push('GOOGLE_CLIENT_SECRET');
-  return { ok: missing.length === 0, missing };
+  if (!process.env.GOOGLE_CLIENT_ID)     missing.push('GOOGLE_CLIENT_ID');
+  if (!process.env.GOOGLE_CLIENT_SECRET) missing.push('GOOGLE_CLIENT_SECRET');
+  return { ok: missing.length === 0, missing, source: 'env' };
 }

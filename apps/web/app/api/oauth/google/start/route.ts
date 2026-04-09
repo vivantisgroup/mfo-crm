@@ -16,8 +16,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { randomBytes } from 'crypto';
+import { getGoogleOAuthConfig } from '@/lib/googleTokenRefresh';
 
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? '';
 const APP_URL   = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
 const REDIRECT  = `${APP_URL}/api/oauth/google/callback`;
 
@@ -33,7 +33,8 @@ function base64UrlEncode(buf: Buffer): string {
 }
 
 export async function GET(req: NextRequest) {
-  if (!CLIENT_ID) {
+  const { clientId } = await getGoogleOAuthConfig();
+  if (!clientId) {
     return NextResponse.json({ error: 'GOOGLE_CLIENT_ID not configured' }, { status: 503 });
   }
 
@@ -49,7 +50,7 @@ export async function GET(req: NextRequest) {
   }
 
   const params = new URLSearchParams({
-    client_id:     CLIENT_ID,
+    client_id:     clientId,
     redirect_uri:  REDIRECT,
     response_type: 'code',
     scope:         SCOPES,

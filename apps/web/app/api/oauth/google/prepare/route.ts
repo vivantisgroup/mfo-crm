@@ -12,8 +12,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { randomBytes } from 'crypto';
+import { getGoogleOAuthConfig } from '@/lib/googleTokenRefresh';
 
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? '';
 const APP_URL   = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
 const REDIRECT  = `${APP_URL}/api/oauth/google/callback`;
 
@@ -29,25 +29,28 @@ function base64UrlEncode(buf: Buffer): string {
 }
 
 export async function POST(req: NextRequest) {
-  if (!CLIENT_ID) {
+  const { clientId } = await getGoogleOAuthConfig();
+  if (!clientId) {
     return NextResponse.json({ error: 'GOOGLE_CLIENT_ID not configured' }, { status: 503 });
   }
 
   let idToken: string;
   let returnTo: string;
   let uid: string;
+  let tenantId: string;
 
   try {
     const body = await req.json();
     idToken  = body.idToken  ?? '';
     returnTo = body.returnTo ?? '/settings?section=mail';
     uid      = body.uid      ?? '';
+    tenantId = body.tenantId ?? '';
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  if (!idToken || !uid) {
-    return NextResponse.json({ error: 'idToken and uid are required' }, { status: 400 });
+  if (!idToken || !uid || !tenantId) {
+    return NextResponse.json({ error: 'idToken, uid, and tenantId are required' }, { status: 400 });
   }
 
   const state = base64UrlEncode(randomBytes(32));
@@ -56,10 +59,11 @@ export async function POST(req: NextRequest) {
   store.set('g_oauth_state',  state,    { httpOnly: true, maxAge: 600, path: '/', sameSite: 'lax' });
   store.set('g_return_to',    returnTo, { httpOnly: true, maxAge: 600, path: '/', sameSite: 'lax' });
   store.set('firebase_uid',   uid,      { httpOnly: true, maxAge: 600, path: '/', sameSite: 'lax' });
+  store.set('oauth_tenant_id', tenantId, { httpOnly: true, maxAge: 600, path: '/', sameSite: 'lax' });
   store.set('firebase_token', idToken,  { httpOnly: true, maxAge: 600, path: '/', sameSite: 'lax' });
 
   const params = new URLSearchParams({
-    client_id:     CLIENT_ID,
+    client_id:     clientId,
     redirect_uri:  REDIRECT,
     response_type: 'code',
     scope:         SCOPES,

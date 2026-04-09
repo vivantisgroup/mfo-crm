@@ -8,14 +8,14 @@ import { getValidGoogleToken } from '@/lib/googleTokenRefresh';
  */
 export async function POST(req: NextRequest) {
   try {
-    const { uid, idToken, provider, folderName } = await req.json();
+    const { uid, idToken, tenantId, provider, folderName } = await req.json();
 
-    if (!uid || !idToken || !provider || !folderName) {
-      return NextResponse.json({ error: 'uid, idToken, provider, and folderName are required' }, { status: 400 });
+    if (!uid || !idToken || !tenantId || !provider || !folderName) {
+      return NextResponse.json({ error: 'uid, idToken, tenantId, provider, and folderName are required' }, { status: 400 });
     }
 
     if (provider === 'microsoft') {
-      const accessToken = await getValidMicrosoftToken(uid, idToken);
+      const accessToken = await getValidMicrosoftToken(tenantId, uid, idToken);
       
       const res = await fetch(`https://graph.microsoft.com/v1.0/me/mailFolders`, {
         method: 'POST',
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, folderId: data.id, displayName: data.displayName });
 
     } else if (provider === 'google') {
-      const accessToken = await getValidGoogleToken(uid, idToken);
+      const accessToken = await getValidGoogleToken(tenantId, uid, idToken);
 
       const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/labels`, {
         method: 'POST',

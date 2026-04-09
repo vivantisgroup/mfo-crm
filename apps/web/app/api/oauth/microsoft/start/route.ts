@@ -97,6 +97,7 @@ export async function GET(req: NextRequest) {
   }
 
   const returnTo  = req.nextUrl.searchParams.get('returnTo') ?? '/settings?tab=messaging';
+  const targetTenantId = req.nextUrl.searchParams.get('tenantId') ?? '';
   const verifier  = base64UrlEncode(randomBytes(32));
   const challenge = base64UrlEncode(
     Buffer.from(createHash('sha256').update(verifier).digest('hex'), 'hex')
@@ -114,6 +115,7 @@ export async function GET(req: NextRequest) {
   store.set('ms_oauth_nonce',   nonce,         { httpOnly: true, maxAge: 600, path: '/', sameSite: 'lax' });
   store.set('ms_return_to',     returnTo,      { httpOnly: true, maxAge: 600, path: '/', sameSite: 'lax' });
   store.set('ms_redirect_uri',  REDIRECT,      { httpOnly: true, maxAge: 600, path: '/', sameSite: 'lax' });
+  store.set('oauth_tenant_id',  targetTenantId, { httpOnly: true, maxAge: 600, path: '/', sameSite: 'lax' });
 
   const params = new URLSearchParams({
     client_id:             clientId,

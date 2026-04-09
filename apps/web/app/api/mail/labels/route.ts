@@ -51,15 +51,16 @@ const SYSTEM_ORDER = [
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const uid     = searchParams.get('uid')     ?? '';
-  const idToken = searchParams.get('idToken') ?? '';
+  const uid      = searchParams.get('uid')     ?? '';
+  const idToken  = searchParams.get('idToken') ?? '';
+  const tenantId = searchParams.get('tenantId') ?? '';
 
-  if (!uid || !idToken) {
-    return NextResponse.json({ error: 'uid and idToken required' }, { status: 400 });
+  if (!uid || !idToken || !tenantId) {
+    return NextResponse.json({ error: 'uid, idToken, and tenantId required' }, { status: 400 });
   }
 
   try {
-    const accessToken = await getValidGoogleToken(uid, idToken);
+    const accessToken = await getValidGoogleToken(tenantId, uid, idToken);
 
     const res = await fetch(
       `${GMAIL}/users/me/labels?fields=labels(id,name,type,messagesUnread,messagesTotal)`,

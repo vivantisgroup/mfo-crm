@@ -1,21 +1,22 @@
 /**
  * POST /api/mail/sync/route.ts
  *
- * Syncs Gmail messages for the authenticated user.
- * - Fetches up to 50 messages from Gmail API (inbox + sent)
- * - Deduplicates by gmailMessageId
+ * Syncs messages for the authenticated user for Google Workspace (Gmail) or Microsoft 365 (Outlook).
+ * - Fetches up to 50 messages from the respective API
+ * - Deduplicates by provider message ID
  * - Auto-links emails to known CRM contacts/families by email address
  * - Creates CRM activity entries for matched emails
- * - Writes email metadata to users/{uid}/email_logs
+ * - Writes email metadata to users/{uid}/email_logs (via communications collection)
  *
  * Request body:
- *   { uid: string; idToken: string; tenantId?: string; maxResults?: number }
+ *   { uid: string; idToken: string; provider: 'google' | 'microsoft'; tenantId?: string; maxResults?: number }
  *
  * No Admin SDK required — uses Firestore REST API with Firebase ID token.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getValidGoogleToken } from '@/lib/googleTokenRefresh';
+import { getValidMicrosoftToken } from '@/lib/microsoftTokenRefresh';
 import { communicationService, CommunicationRecord } from '@/lib/communicationService';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 
@@ -45,20 +46,6 @@ function extractStr(fields: any, key: string) {
   return fields?.[key]?.stringValue ?? '';
 }
 
-/** Write a Firestore document via REST (PATCH = upsert). */
-async function fsWrite(idToken: string, path: string, data: Record<string, any>) {
-  const res = await fetch(fsUrl(path), {
-    method:  'PATCH',
-    headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ fields: toFsFields(data) }),
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Firestore write failed at ${path}: ${body}`);
-  }
-  return res.json();
-}
-
 /** List documents in a Firestore collection via REST. */
 async function fsList(idToken: string, path: string, pageSize = 200): Promise<any[]> {
   const url = `${fsUrl(path)}?pageSize=${pageSize}`;
@@ -66,42 +53,6 @@ async function fsList(idToken: string, path: string, pageSize = 200): Promise<an
   if (!res.ok) return [];
   const json = await res.json();
   return json.documents ?? [];
-}
-
-// ─── Gmail API helpers ────────────────────────────────────────────────────────
-
-const GMAIL = 'https://gmail.googleapis.com/gmail/v1';
-
-function gmailHeader(headers: any[], name: string): string {
-  return headers?.find((h: any) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? '';
-}
-
-function extractEmails(headerValue: string): string[] {
-  // Extract email addresses from "Name <email>, Name2 <email2>" format
-  const matches = headerValue.match(/[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}/g);
-  return matches ?? [];
-}
-
-function decodeBase64(str: string): string {
-  if (!str) return '';
-  try {
-    const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-    return Buffer.from(base64, 'base64').toString('utf-8');
-  } catch {
-    return '';
-  }
-}
-
-function getSnippet(body: any, fallbackSnippet: string): string {
-  // Try to extract plain text snippet from message parts
-  const parts = body?.parts ?? [];
-  for (const part of parts) {
-    if (part.mimeType === 'text/plain' && part.body?.data) {
-      const text = decodeBase64(part.body.data);
-      return text.slice(0, 300).replace(/\s+/g, ' ').trim();
-    }
-  }
-  return fallbackSnippet?.slice(0, 300) ?? '';
 }
 
 // ─── Contact matching ─────────────────────────────────────────────────────────
@@ -138,7 +89,7 @@ async function buildContactEmailMap(idToken: string, tenantId: string): Promise<
     }
   }
 
-  // Pre-load org names for robust mapping even if the org has no email
+  // Pre-load org names for robust mapping
   const orgNamesMap = new Map<string, string>();
   
   // Load platform organizations
@@ -173,11 +124,11 @@ async function buildContactEmailMap(idToken: string, tenantId: string): Promise<
 
 // ─── Get existing email IDs to deduplicate ────────────────────────────────────
 
-async function getExistingMessageIds(tenantId: string): Promise<Set<string>> {
+async function getExistingMessageIds(tenantId: string, provider: string): Promise<Set<string>> {
   const db = getAdminFirestore();
   const snap = await db.collection('communications')
     .where('tenant_id', '==', tenantId)
-    .where('provider', '==', 'google')
+    .where('provider', '==', provider)
     .limit(500)
     .get();
     
@@ -189,6 +140,40 @@ async function getExistingMessageIds(tenantId: string): Promise<Set<string>> {
   return ids;
 }
 
+// ─── Google Helpers ─────────────────────────────────────────────────────────────
+
+const GMAIL = 'https://gmail.googleapis.com/gmail/v1';
+
+function gmailHeader(headers: any[], name: string): string {
+  return headers?.find((h: any) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? '';
+}
+
+function extractEmails(headerValue: string): string[] {
+  const matches = headerValue.match(/[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}/g);
+  return matches ?? [];
+}
+
+function decodeBase64(str: string): string {
+  if (!str) return '';
+  try {
+    const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+    return Buffer.from(base64, 'base64').toString('utf-8');
+  } catch {
+    return '';
+  }
+}
+
+function getSnippet(body: any, fallbackSnippet: string): string {
+  const parts = body?.parts ?? [];
+  for (const part of parts) {
+    if (part.mimeType === 'text/plain' && part.body?.data) {
+      const text = decodeBase64(part.body.data);
+      return text.slice(0, 300).replace(/\s+/g, ' ').trim();
+    }
+  }
+  return fallbackSnippet?.slice(0, 300) ?? '';
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -197,148 +182,240 @@ export async function POST(req: NextRequest) {
     const body       = await req.json();
     const uid        = body.uid        as string;
     const idToken    = body.idToken    as string;
+    const provider   = body.provider   as 'google' | 'microsoft' ?? 'google'; // Added provider extraction!
     const tenantId   = body.tenantId   as string | undefined;
     const maxResults = body.maxResults as number ?? 50;
     const forceRepair= body.forceRepair=== true;
 
-    if (!uid || !idToken) {
-      return NextResponse.json({ error: 'uid and idToken required' }, { status: 400 });
+    if (!uid || !idToken || !tenantId) {
+      return NextResponse.json({ error: 'uid, idToken, and tenantId required' }, { status: 400 });
     }
 
-    // 1. Get valid (possibly refreshed) Google access token
-    const accessToken = await getValidGoogleToken(uid, idToken);
+    let accessToken = '';
+    try {
+      if (provider === 'microsoft') {
+        accessToken = await getValidMicrosoftToken(uid, idToken);
+      } else {
+        accessToken = await getValidGoogleToken(uid, idToken);
+      }
+    } catch (err: any) {
+       console.error(`Token refresh failed for ${provider}`, err);
+       return NextResponse.json({ error: `Sync failed: Failed to read ${provider} integration record or refresh token. The user may not have connected their account yet.` }, { status: 404 });
+    }
 
-    // 2. Build contact → family map for auto-linking
-    const contactMap = tenantId ? await buildContactEmailMap(idToken, tenantId) : new Map();
+    const contactMap = await buildContactEmailMap(idToken, tenantId);
 
     // 3. Get existing message IDs to avoid duplicates
-    const existingIds = tenantId 
-      ? await getExistingMessageIds(tenantId) 
-      : new Set<string>();
+    const existingIds = await getExistingMessageIds(tenantId, provider);
 
-    // 4. Fetch message list from Gmail — inbox and sent as SEPARATE queries
-    //    (Gmail's labelIds param is an AND filter, so INBOX+SENT matches nothing useful)
-    async function fetchGmailList(label: string, max: number): Promise<{ id: string; threadId: string }[]> {
-      const url  = `${GMAIL}/users/me/messages?maxResults=${max}&labelIds=${label}`;
-      const res  = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
-      if (!res.ok) {
-        const err = await res.text();
-        console.warn(`[mail/sync] Gmail ${label} list failed: ${err}`);
-        return [];
-      }
-      const data = await res.json();
-      return data.messages ?? [];
-    }
-
-    const half     = Math.ceil(maxResults / 2);
-    const [inboxMsgs, sentMsgs] = await Promise.all([
-      fetchGmailList('INBOX', half),
-      fetchGmailList('SENT',  half),
-    ]);
-
-    // Merge and deduplicate by message ID
-    const seen    = new Set<string>();
-    const messages: { id: string }[] = [];
-    for (const m of [...inboxMsgs, ...sentMsgs]) {
-      if (!seen.has(m.id)) { seen.add(m.id); messages.push(m); }
-    }
+    const db = getAdminFirestore();
 
     let newEmails    = 0;
     let newActivities = 0;
     const errors: string[] = [];
 
-    // 5. Fetch each message detail and write to Firestore
-    for (const msg of messages) {
-      if (!forceRepair && existingIds.has(msg.id)) continue;
-
-      try {
-        const detailRes = await fetch(
-          `${GMAIL}/users/me/messages/${msg.id}?format=full`,
-          { headers: { Authorization: `Bearer ${accessToken}` } }
-        );
-        if (!detailRes.ok) continue;
-
-        const detail   = await detailRes.json();
-        const headers  = detail.payload?.headers ?? [];
-        const labelIds = detail.labelIds ?? [];
-
-        const subject    = gmailHeader(headers, 'Subject') || '(no subject)';
-        const fromRaw    = gmailHeader(headers, 'From');
-        const toRaw      = gmailHeader(headers, 'To');
-        const dateStr    = gmailHeader(headers, 'Date');
-        const messageId  = gmailHeader(headers, 'Message-ID') || msg.id;
-
-        const fromEmails = extractEmails(fromRaw);
-        const toEmails   = extractEmails(toRaw);
-        const fromEmail  = fromEmails[0] ?? '';
-        const fromName   = fromRaw.replace(/<.*>/, '').trim().replace(/"/g, '') || fromEmail;
-        const direction  = labelIds.includes('SENT') ? 'outbound' : 'inbound';
-        const snippet    = getSnippet(detail.payload, detail.snippet ?? '');
-        const receivedAt = dateStr
-          ? new Date(dateStr).toISOString()
-          : new Date(Number(detail.internalDate)).toISOString();
-
-        // Try to match to a CRM contact/family
-        const searchEmails = direction === 'inbound' ? fromEmails : toEmails;
-        let match: ContactMatch | undefined;
-        for (const e of searchEmails) {
-          match = contactMap.get(e.toLowerCase());
-          if (match) break;
-        }
-
-        // Determine if it has attachments
-        let hasAttachments = false;
-        function walk(part: any) {
-          if (!part || hasAttachments) return;
-          if (part.filename && part.filename.trim() !== '') {
-             hasAttachments = true;
-             return;
+    // 4. Provider-specific fetch and index implementation
+    // =======================================================
+    if (provider === 'google') {
+        async function fetchGmailList(label: string, max: number): Promise<{ id: string; threadId: string }[]> {
+          const url  = `${GMAIL}/users/me/messages?maxResults=${max}&labelIds=${label}`;
+          const res  = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+          if (!res.ok) {
+            const err = await res.text();
+            console.warn(`[mail/sync] Gmail ${label} list failed: ${err}`);
+            return [];
           }
-          for (const child of part.parts ?? []) walk(child);
+          const data = await res.json();
+          return data.messages ?? [];
         }
-        walk(detail.payload);
 
-        // Dispatch the email directly into the canonical Communication Layer
-        const record: CommunicationRecord = {
-          id: `gmail_${msg.id}`,
-          tenant_id: tenantId || 'default',
-          provider: 'google',
-          type: 'email',
-          direction,
-          subject,
-          body: detail.snippet ?? '', // Default to snippet if body extraction is complex
-          snippet,
-          from: fromEmail,
-          to: toEmails,
-          timestamp: receivedAt,
-          thread_id: detail.threadId || msg.id,
-          provider_message_id: msg.id,
-          crm_entity_links: match ? [
-            { type: match.type || 'family', id: match.familyId, name: match.familyName },
-            ...(match.contactId ? [{ type: 'contact', id: match.contactId, name: match.contactName || match.familyName }] : [])
-          ] : []
-        };
+        const half     = Math.ceil(maxResults / 2);
+        const [inboxMsgs, sentMsgs] = await Promise.all([
+          fetchGmailList('INBOX', half),
+          fetchGmailList('SENT',  half),
+        ]);
+
+        const seen    = new Set<string>();
+        const messages: { id: string }[] = [];
+        for (const m of [...inboxMsgs, ...sentMsgs]) {
+          if (!seen.has(m.id)) { seen.add(m.id); messages.push(m); }
+        }
+
+        for (const msg of messages) {
+          if (!forceRepair && existingIds.has(msg.id)) continue;
+          try {
+            const detailRes = await fetch(
+              `${GMAIL}/users/me/messages/${msg.id}?format=full`,
+              { headers: { Authorization: `Bearer ${accessToken}` } }
+            );
+            if (!detailRes.ok) continue;
+
+            const detail   = await detailRes.json();
+            const headers  = detail.payload?.headers ?? [];
+            const labelIds = detail.labelIds ?? [];
+
+            const subject    = gmailHeader(headers, 'Subject') || '(no subject)';
+            const fromRaw    = gmailHeader(headers, 'From');
+            const toRaw      = gmailHeader(headers, 'To');
+            const dateStr    = gmailHeader(headers, 'Date');
+            
+            const fromEmails = extractEmails(fromRaw);
+            const toEmails   = extractEmails(toRaw);
+            const fromEmail  = fromEmails[0] ?? '';
+            const fromName   = fromRaw.replace(/<.*>/, '').trim().replace(/"/g, '') || fromEmail;
+            const direction  = labelIds.includes('SENT') ? 'outbound' : 'inbound';
+            const snippet    = getSnippet(detail.payload, detail.snippet ?? '');
+            const receivedAt = dateStr
+              ? new Date(dateStr).toISOString()
+              : new Date(Number(detail.internalDate)).toISOString();
+
+            const searchEmails = direction === 'inbound' ? fromEmails : toEmails;
+            let match: ContactMatch | undefined;
+            for (const e of searchEmails) {
+              match = contactMap.get(e.toLowerCase());
+              if (match) break;
+            }
+
+            const record: CommunicationRecord = {
+              id: `gmail_${msg.id}`,
+              tenant_id: tenantId || 'default',
+              provider: 'google',
+              type: 'email',
+              direction,
+              subject,
+              body: detail.snippet ?? '',
+              snippet,
+              from: fromEmail,
+              to: toEmails,
+              timestamp: receivedAt,
+              thread_id: detail.threadId || msg.id,
+              provider_message_id: msg.id,
+              crm_entity_links: match ? [
+                { type: match.type || 'family', id: match.familyId, name: match.familyName },
+                ...(match.contactId ? [{ type: 'contact', id: match.contactId, name: match.contactName || match.familyName }] : [])
+              ] : []
+            };
+            
+            await communicationService.ingestMessage(record);
+            
+            // Replicate to email_logs for Inbox pane
+            await db.collection('tenants').doc(tenantId).collection('members').doc(uid).collection('email_logs').doc(record.id).set({
+              provider: 'google',
+              subject: record.subject,
+              fromEmail: record.from,
+              fromName: fromName,
+              toEmails: record.to,
+              snippet: record.snippet,
+              direction: record.direction,
+              receivedAt: record.timestamp,
+              gmailMessageId: msg.id,
+              labelIds: labelIds,
+              hasAttachments: (attachments && attachments.length > 0) ? true : false,
+              loggedToCrm: match ? true : false,
+            }, { merge: true });
+
+            newEmails++;
+
+            if (!existingIds.has(msg.id)) existingIds.add(msg.id);
+          } catch (e: any) {
+            errors.push(`msg ${msg.id}: ${e.message}`);
+          }
+        }
+    } 
+    else if (provider === 'microsoft') {
+        const url = `https://graph.microsoft.com/v1.0/me/messages?$select=id,conversationId,subject,from,toRecipients,receivedDateTime,bodyPreview,isDraft&$filter=isDraft eq false&$top=${maxResults}&$orderby=receivedDateTime desc`;
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+        if (!res.ok) {
+           const errText = await res.text();
+           throw new Error(`MS Graph API failed: ${errText}`);
+        }
         
-        await communicationService.ingestMessage(record);
-        newEmails++;
+        const msData = await res.json();
+        const messages = msData.value ?? [];
+        
+        // We also need to determine user's own email to decide inbound/outbound
+        const meRes = await fetch('https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName', { headers: { Authorization: `Bearer ${accessToken}` } });
+        const meData = meRes.ok ? await meRes.json() : {};
+        const myEmail = (meData.mail || meData.userPrincipalName || '').toLowerCase();
 
-        if (!existingIds.has(msg.id)) existingIds.add(msg.id);
-      } catch (e: any) {
-        errors.push(`msg ${msg.id}: ${e.message}`);
-      }
+        for (const msg of messages) {
+           if (!forceRepair && existingIds.has(msg.id)) continue;
+           try {
+              const subject = msg.subject || '(no subject)';
+              const fromEmail = msg.from?.emailAddress?.address || '';
+              const fromName = msg.from?.emailAddress?.name || fromEmail;
+              const toEmails = (msg.toRecipients || []).map((t: any) => t.emailAddress?.address).filter(Boolean);
+              
+              // Assume if sender is me, it's outbound, otherwise inbound.
+              const direction = (fromEmail.toLowerCase() === myEmail) ? 'outbound' : 'inbound';
+              const receivedAt = new Date(msg.receivedDateTime).toISOString();
+              const snippet = msg.bodyPreview || '';
+
+              const searchEmails = direction === 'inbound' ? [fromEmail] : toEmails;
+              let match: ContactMatch | undefined;
+              for (const e of searchEmails) {
+                match = contactMap.get(e.toLowerCase());
+                if (match) break;
+              }
+
+              const record: CommunicationRecord = {
+                id: `ms_${msg.id}`,
+                tenant_id: tenantId || 'default',
+                provider: 'microsoft',
+                type: 'email',
+                direction,
+                subject,
+                body: msg.bodyPreview || '',
+                snippet,
+                from: fromEmail,
+                to: toEmails,
+                timestamp: receivedAt,
+                thread_id: msg.conversationId || msg.id,
+                provider_message_id: msg.id,
+                crm_entity_links: match ? [
+                  { type: match.type || 'family', id: match.familyId, name: match.familyName },
+                  ...(match.contactId ? [{ type: 'contact', id: match.contactId, name: match.contactName || match.familyName }] : [])
+                ] : []
+              };
+              
+              await communicationService.ingestMessage(record);
+              
+              await db.collection('tenants').doc(tenantId).collection('members').doc(uid).collection('email_logs').doc(record.id).set({
+                provider: 'microsoft',
+                subject: record.subject,
+                fromEmail: record.from,
+                fromName: fromName,
+                toEmails: record.to,
+                snippet: record.snippet,
+                direction: record.direction,
+                receivedAt: record.timestamp,
+                gmailMessageId: msg.id, // we map MS msg id here for legacy compatibility
+                labelIds: ['INBOX'], // fallback label if no specific folder mapping is yet developed
+                hasAttachments: msg.hasAttachments || false,
+                loggedToCrm: match ? true : false,
+              }, { merge: true });
+
+              newEmails++;
+  
+              if (!existingIds.has(msg.id)) existingIds.add(msg.id);
+           } catch (e: any) {
+              errors.push(`msg ${msg.id}: ${e.message}`);
+           }
+        }
     }
 
-    // 6. Update last sync timestamp (using explicit updateMask so we don't wipe tokens)
+
+    // 5. Update last sync timestamp
     const updatePayload = {
       lastSyncAt:     new Date().toISOString(),
       lastSyncResult: errors.length > 0 ? 'error' : 'ok',
       emailsSynced:   newEmails,
     };
-    await fetch(`${fsUrl(`users/${uid}/integrations/google`)}?updateMask.fieldPaths=lastSyncAt&updateMask.fieldPaths=lastSyncResult&updateMask.fieldPaths=emailsSynced`, {
+    await fetch(`${fsUrl(`tenants/${tenantId}/members/${uid}/integrations/${provider}`)}?updateMask.fieldPaths=lastSyncAt&updateMask.fieldPaths=lastSyncResult&updateMask.fieldPaths=emailsSynced`, {
       method:  'PATCH',
       headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: `projects/${PROJECT_ID}/databases/(default)/documents/users/${uid}/integrations/google`,
+        name: `projects/${PROJECT_ID}/databases/(default)/documents/tenants/${tenantId}/members/${uid}/integrations/${provider}`,
         fields: toFsFields(updatePayload)
       }),
     });

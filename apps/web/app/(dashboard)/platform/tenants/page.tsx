@@ -1,43 +1,36 @@
 'use client';
 
-import { Search } from 'lucide-react';
+import { Search, LayoutDashboard, MessageSquare, CreditCard, Receipt, Users, Leaf, FileText, Trash2, FlaskConical, Sprout, Star, Gem, Building2 } from 'lucide-react';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
-import { useSearchParams } from 'next/navigation';
-import {
- SUBSCRIPTION_PLANS, getAllSubscriptions, upsertSubscription, extendTrial,
- changePlan, updateSeats, generateInvoice, getInvoices, markInvoicePaid,
- getSubscriptionEvents, getAllInvoices,
- formatUsd, formatAum, planMonthlyTotal, trialDaysLeft,
- type TenantSubscription, type Invoice, type SubscriptionEvent,
- type PlanId, type BillingCycle, type InvoiceStatus, type SubscriptionStatus,
-} from '@/lib/subscriptionService';
-import {
- buildSeedManifest, loadDemoTenants, saveDemoTenants,
- generateDemoCredentials, demoTenantDaysLeft, totalDemoRecords, totalDemoCollections,
- PLAN_LABELS, PLAN_DAYS, type DemoTenant, type DemoTenantStatus,
-} from '@/lib/demoSeed';
-import {
- getAllOrgs, getContactsForOrg, linkTenantToOrg,
- type PlatformOrg, type PlatformContact,
-} from '@/lib/crmService';
-import { OrgCombobox, ContactCombobox } from '../crm/page';
-import {
- getTenantMembers, addMemberToTenant,
- addPlaceholderMember,
- removeMemberFromTenant,
- updateMemberRole, setMemberStatus,
- createInvitation, getInvitationsForTenant, revokeInvitation,
- ROLE_LABELS, ROLE_DESCRIPTIONS, TENANT_ROLES,
- type TenantMember, type TenantInvitation,
-} from '@/lib/tenantMemberService';
-import { getAllUsers, deleteTenant, createTenant, updateTenant, type UserProfile } from '@/lib/platformService';
-import { VERTICAL_REGISTRY, type IndustryVerticalId } from '@/lib/verticalRegistry';
-import { CommunicationPanel } from '@/components/CommunicationPanel';
 import { usePageTitle } from '@/lib/PageTitleContext';
-import { SUPPORTED_LANGUAGES } from '@/lib/emailTemplateService';
+import { useSearchParams } from 'next/navigation';
+import { CommunicationPanel } from '@/components/CommunicationPanel';
 import { SecondaryDock, type SecondaryDockTab } from '@/components/SecondaryDock';
-import { LayoutDashboard, MessageSquare, CreditCard, Receipt, Users, Leaf, FileText, Trash2 } from 'lucide-react';
+import { 
+  SUBSCRIPTION_PLANS, trialDaysLeft, planMonthlyTotal, 
+  TenantSubscription, Invoice, SubscriptionEvent, PlanId, BillingCycle,
+  extendTrial, changePlan, updateSeats, generateInvoice, markInvoicePaid,
+  getInvoices, getSubscriptionEvents, formatUsd, formatAum,
+  getAllSubscriptions, getAllInvoices, getAllSubscriptionEvents
+} from '@/lib/subscriptionService';
+import { buildSeedManifest, generateDemoCredentials } from '@/lib/demoSeed';
+import { 
+  getTenantMembers, getInvitationsForTenant, addMemberToTenant, 
+  updateMemberRole, setMemberStatus, removeMemberFromTenant, revokeInvitation,
+  ROLE_LABELS, TENANT_ROLES
+} from '@/lib/tenantMemberService';
+import { getAllUsers } from '@/lib/platformService';
+import { UserProfile, TenantMember, TenantInvitation, PlatformOrg, PlatformContact } from '@/lib/types';
+import { SUPPORTED_LANGUAGES } from '@/lib/emailTemplateService';
+const PLAN_ICONS: Record<string, React.ElementType> = {
+  FlaskConical, Sprout, Star, Gem, Building2
+};
+
+function PlanIcon({ name, ...props }: { name: string; [key: string]: any }) {
+  const Icon = PLAN_ICONS[name] || Star;
+  return <Icon {...props} />;
+}
 
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -635,7 +628,9 @@ function TenantDetailModal({ sub, demoTenant, onClose, onRefresh, performer, onD
  <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 3 }}>{sub.contactName} · {sub.contactEmail}</div>
  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
  <Chip label={sub.status} status={sub.status} />
- <Chip label={`${plan.icon} ${plan.name}`} status={sub.status} />
+ <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 10, background: 'var(--bg-overlay)', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>
+   <PlanIcon name={plan.icon} size={12} /> {plan.name}
+ </div>
  {daysLeft !== null && <Chip label={daysLeft === 0 ? 'Trial expired' : `${daysLeft}d trial left`} status={daysLeft <= 3 ? 'overdue' : 'trial'} />}
  {selCrmOrgName && (
  <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 8, background: '#6366f115', color: '#6366f1', border: '1px solid #6366f130' }}>
@@ -1866,6 +1861,24 @@ export default function TenantManagementPage() {
  return <span style={{ marginLeft: 4 }}>{sortDir === 'asc' ? '↑' : '↓'}</span>;
  }
 
+ const handleRemoveGlobalMember = async (targetUid: string, targetName: string, tenantId: string, tenantName: string) => {
+   if (!confirm(`Are you sure you want to remove ${targetName} from ${tenantName}? If this is their last tenant, they will be deleted entirely from the system.`)) return;
+   setLoading(true);
+   try {
+     await removeMemberFromTenant(tenantId, tenantName, targetUid, targetName, performer);
+     const [u, m] = await Promise.all([
+       getAllUsers(),
+       import('@/lib/tenantMemberService').then(mod => mod.getAllGlobalMemberships())
+     ]);
+     setAllPlatformUsers(u);
+     setGlobalMemberships(m);
+   } catch (err: any) {
+     alert('Failed to remove member: ' + err.message);
+   } finally {
+     setLoading(false);
+   }
+ };
+
  const load = useCallback(async () => {
  setLoading(true);
  try {
@@ -2029,7 +2042,7 @@ export default function TenantManagementPage() {
  <select className="input" style={{ flex: '0 0 140px' }} value={planF} onChange={e => setPlanF(e.target.value as any)}>
  <option value="all">All Plans</option>
  {Object.values(SUBSCRIPTION_PLANS).map(p => (
- <option key={p.id} value={p.id}>{p.icon} {p.name}</option>
+ <option key={p.id} value={p.id}>{p.name}</option>
  ))}
  </select>
  <span style={{ fontSize: 12, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>{filtered.length} tenant{filtered.length !== 1 ? 's' : ''}</span>
@@ -2043,7 +2056,7 @@ export default function TenantManagementPage() {
  <div style={{ textAlign: 'center', padding: 60, color: 'var(--text-tertiary)' }}>Loading…</div>
  ) : filtered.length === 0 ? (
  <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ textAlign: 'center', padding: '60px 40px' }}>
- <div style={{ fontSize: 48, marginBottom: 16 }}>🏢</div>
+ <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center' }}><Building2 size={48} className="text-tertiary" /></div>
  <h2 style={{ fontWeight: 800, marginBottom: 8 }}>No tenants found</h2>
  <p style={{ color: 'var(--text-secondary)', marginBottom: 24 }}>Create your first tenant subscription to get started.</p>
  <button className="btn btn-primary" onClick={() => setShowNew(true)}>+ New Tenant</button>
@@ -2073,7 +2086,7 @@ export default function TenantManagementPage() {
  <div style={{ fontWeight: 700 }}>{s.tenantName}</div>
  <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{s.contactEmail}</div>
  </td>
- <td><span style={{ fontWeight: 600 }}>{p.icon} {p.name}</span></td>
+ <td><span style={{ fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}><PlanIcon name={p.icon} size={14} /> {p.name}</span></td>
  <td><Chip label={s.status} status={s.status} /></td>
  <td style={{ fontWeight: 600 }}>{s.licensedSeats}</td>
  <td>{formatAum(s.currentAumUsd)}</td>
@@ -2333,18 +2346,50 @@ export default function TenantManagementPage() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {(() => {
                       const userMemberships = globalMemberships.filter(m => m.uid === user.uid);
-                      if (userMemberships.length === 0) return <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>No tenants</span>;
-                      return userMemberships.map(m => {
-                        const t = subs.find(s => s.tenantId === m.tenantId);
-                        return (
-                          <div key={m.tenantId} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg-overlay)', padding: '4px 10px', borderRadius: 8, width: 'fit-content' }}>
-                            <span style={{ fontSize: 12, fontWeight: 800 }}>{t?.tenantName ?? m.tenantId}</span>
-                            <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                              {ROLE_LABELS[m.role as keyof typeof ROLE_LABELS] || m.role}
-                            </span>
-                          </div>
-                        );
-                      });
+                      const isMasterAdmin = user.role === 'saas_master_admin';
+                      const hasExplicitMaster = userMemberships.some(m => m.tenantId === 'master');
+                      
+                      if (userMemberships.length === 0 && !isMasterAdmin) return <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>No tenants</span>;
+                      
+                      return (
+                        <>
+                          {(isMasterAdmin && !hasExplicitMaster) && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#6366f115', padding: '4px 10px', borderRadius: 8, width: 'fit-content', border: '1px solid #6366f130' }}>
+                              <span style={{ fontSize: 12, fontWeight: 800, color: '#6366f1' }}>Platform HQ (Master Tenant)</span>
+                              <span style={{ fontSize: 11, color: '#818cf8', fontWeight: 700 }}>SaaS Master Admin</span>
+                            </div>
+                          )}
+                          {userMemberships.filter(m => !isMasterAdmin || m.tenantId !== 'master').map((m, idx) => {
+                            const t = subs.find(s => s.tenantId === m.tenantId);
+                            const isMasterTenant = m.tenantId === 'master';
+                            return (
+                              <div key={`${m.tenantId || 'unknown'}-${idx}`} style={{ 
+                                display: 'flex', alignItems: 'center', gap: 8, 
+                                background: isMasterTenant ? '#6366f115' : 'var(--bg-overlay)', 
+                                padding: '4px 10px', borderRadius: 8, width: 'fit-content',
+                                border: isMasterTenant ? '1px solid #6366f130' : 'none'
+                              }}>
+                                <span style={{ fontSize: 12, fontWeight: 800, color: isMasterTenant ? '#6366f1' : 'inherit' }}>
+                                  {isMasterTenant ? 'Platform HQ (Master Tenant)' : (t?.tenantName ?? m.tenantId)}
+                                </span>
+                                <span style={{ fontSize: 11, color: isMasterTenant ? '#818cf8' : 'var(--text-secondary)', fontWeight: isMasterTenant ? 700 : 400 }}>
+                                  {ROLE_LABELS[m.role as keyof typeof ROLE_LABELS] || m.role}
+                                </span>
+                                {!isMasterTenant && (
+                                  <button
+                                    onClick={() => handleRemoveGlobalMember(user.uid, user.displayName || user.email, m.tenantId, t?.tenantName ?? m.tenantId)}
+                                    style={{ padding: 4, marginLeft: 4, borderRadius: 4, color: 'var(--text-tertiary)', background: 'transparent' }}
+                                    className="hover:bg-red-500/10 hover:text-red-500 flex items-center justify-center transition-colors"
+                                    title={`Remove from ${t?.tenantName ?? m.tenantId}`}
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </>
+                      );
                     })()}
                   </div>
                 </td>

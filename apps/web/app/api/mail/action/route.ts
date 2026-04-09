@@ -31,15 +31,16 @@ const ACTION_MAP: Record<ActionType, { addLabelIds?: string[]; removeLabelIds?: 
 
 export async function POST(req: NextRequest) {
   try {
-    const { uid, idToken, messageIds, action } = await req.json() as {
+    const { uid, idToken, tenantId, messageIds, action } = await req.json() as {
       uid: string;
       idToken: string;
+      tenantId: string;
       messageIds: string[];
       action: ActionType;
     };
 
-    if (!uid || !idToken || !messageIds?.length || !action) {
-      return NextResponse.json({ error: 'uid, idToken, messageIds, action required' }, { status: 400 });
+    if (!uid || !idToken || !tenantId || !messageIds?.length || !action) {
+      return NextResponse.json({ error: 'uid, idToken, tenantId, messageIds, action required' }, { status: 400 });
     }
 
     const labelMod = ACTION_MAP[action];
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
     }
 
-    const accessToken = await getValidGoogleToken(uid, idToken);
+    const accessToken = await getValidGoogleToken(tenantId, uid, idToken);
 
     // Apply the label modification to each message
     const results = await Promise.allSettled(
