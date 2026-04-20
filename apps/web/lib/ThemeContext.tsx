@@ -44,7 +44,7 @@ export const PRESET_THEMES: Theme[] = [
 ];
 
 export const FONTS: { id: FontFamily; label: string; stack: string; description: string }[] = [
-  { id: 'Inter',          label: 'Inter',          description: 'Terminal Precision',        stack: "'Inter', system-ui, sans-serif" },
+  { id: 'Inter',          label: 'Inter',          description: 'Platform Precision',        stack: "'Inter', system-ui, sans-serif" },
 ];
 
 // ─── Context ──────────────────────────────────────────────────────────────────

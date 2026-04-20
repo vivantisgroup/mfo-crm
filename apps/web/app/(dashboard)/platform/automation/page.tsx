@@ -3,7 +3,6 @@
 import React, { useState } from 'react';
 import { usePageTitle } from '@/lib/PageTitleContext';
 import { SecondaryDock } from '@/components/SecondaryDock';
-import { Card, Metric, Text, Flex, BarList, BadgeDelta, Title, Table, TableHead, TableHeaderCell, TableBody, TableRow, TableCell, Badge, Grid } from '@tremor/react';
 import { Settings, Play, Pause, Activity, CalendarClock, ChevronRight, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 // ─── Mock Data ─────────────────────────────────────────────────────────────
@@ -42,40 +41,47 @@ function OverviewTab() {
   return (
     <div className="flex flex-col gap-6 w-full max-w-6xl mx-auto p-6 animate-fade-in">
       {/* KPIs */}
-      <Grid numItemsSm={2} numItemsLg={3} className="gap-6">
-        <Card decoration="top" decorationColor="indigo">
-          <Text>24h Executions</Text>
-          <Metric>139</Metric>
-          <Flex className="mt-4">
-            <Text>Successful runs</Text>
-            <BadgeDelta deltaType="increase" size="sm" isIncreasePositive={true}>+12.5%</BadgeDelta>
-          </Flex>
-        </Card>
-        <Card decoration="top" decorationColor="emerald">
-          <Text>Active Triggers</Text>
-          <Metric>3</Metric>
-          <Flex className="mt-4">
-            <Text>Scheduled Cron Routines</Text>
-          </Flex>
-        </Card>
-        <Card decoration="top" decorationColor="red">
-          <Text>Failing Jobs</Text>
-          <Metric>1</Metric>
-          <Flex className="mt-4">
-            <Text className="text-red-500 font-medium">FX Rate Sync</Text>
-            <BadgeDelta deltaType="moderateDecrease" size="sm" isIncreasePositive={true}>Since 2 days ago</BadgeDelta>
-          </Flex>
-        </Card>
-      </Grid>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 border-t-4 border-t-indigo-500">
+          <div className="text-sm text-[var(--text-secondary)]">24h Executions</div>
+          <div className="text-3xl font-bold tracking-tight">139</div>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
+            <div className="text-sm text-[var(--text-secondary)]">Successful runs</div>
+            <span className="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">+12.5%</span>
+          </div>
+        </div>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 border-t-4 border-t-emerald-500">
+          <div className="text-sm text-[var(--text-secondary)]">Active Triggers</div>
+          <div className="text-3xl font-bold tracking-tight">3</div>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
+            <div className="text-sm text-[var(--text-secondary)]">Scheduled Cron Routines</div>
+          </div>
+        </div>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 border-t-4 border-t-red-500">
+          <div className="text-sm text-[var(--text-secondary)]">Failing Jobs</div>
+          <div className="text-3xl font-bold tracking-tight">1</div>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
+            <div className="text-sm text-[var(--text-secondary)] text-red-500 font-medium">FX Rate Sync</div>
+            <span className="inline-flex items-center rounded-md bg-yellow-50 px-2 py-1 text-xs font-medium text-yellow-800 ring-1 ring-inset ring-yellow-600/20">Since 2 days ago</span>
+          </div>
+        </div>
+      </div>
 
       {/* Analytics */}
-      <Grid numItemsLg={2} className="gap-6 mt-2">
-         <Card>
-            <Title>Execution Events by Type (Last 30 Days)</Title>
-            <BarList data={metricData} className="mt-6" />
-         </Card>
-         <Card className="flex flex-col">
-            <Title>System Health Status</Title>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-2">
+         <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+            <h3 className="text-lg font-semibold tracking-tight mb-2">Execution Events by Type (Last 30 Days)</h3>
+            <div className="mt-6 flex flex-col gap-2">
+               {metricData.map(m => (
+                 <div key={m.name} className="flex flex-col gap-1">
+                   <div className="flex justify-between text-sm"><span>{m.name}</span><span className="font-bold">{m.value}</span></div>
+                   <div className="w-full bg-slate-100 rounded-full h-2"><div className="bg-[var(--brand-500)] h-2 rounded-full" style={{ width: `${(m.value / 100) * 100}%` }}></div></div>
+                 </div>
+               ))}
+            </div>
+         </div>
+         <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 flex flex-col">
+            <h3 className="text-lg font-semibold tracking-tight mb-2">System Health Status</h3>
             <div className="flex-1 flex flex-col items-center justify-center pt-8 pb-4">
                <div className="w-24 h-24 rounded-full bg-emerald-50 flex items-center justify-center border-4 border-emerald-100 mb-6 relative">
                  <div className="absolute inset-0 rounded-full border-4 border-emerald-400 opacity-20 animate-ping"></div>
@@ -86,8 +92,8 @@ function OverviewTab() {
                  <p className="text-sm text-slate-500 mt-2 max-w-sm mx-auto">All Google Cloud functions and scheduled event buses are responsive. Message queue latency is currently ~42ms.</p>
                </div>
             </div>
-         </Card>
-      </Grid>
+         </div>
+      </div>
     </div>
   );
 }
@@ -114,39 +120,39 @@ function JobsTab() {
         </button>
       </div>
 
-      <Card className="p-0 overflow-hidden">
-        <Table>
-          <TableHead className="bg-slate-50/80">
-            <TableRow>
-              <TableHeaderCell>Scehdule / Frequency</TableHeaderCell>
-              <TableHeaderCell>Job Detail</TableHeaderCell>
-              <TableHeaderCell>Target Pool</TableHeaderCell>
-              <TableHeaderCell>Last Executed</TableHeaderCell>
-              <TableHeaderCell>Status</TableHeaderCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
+      <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] overflow-hidden">
+        <table className="min-w-full divide-y border-slate-200">
+          <thead className="bg-slate-50/80">
+            <tr>
+              <th className="px-3 py-3.5 text-left text-sm font-semibold text-slate-900 border-b border-slate-200">Schedule / Frequency</th>
+              <th className="px-3 py-3.5 text-left text-sm font-semibold text-slate-900 border-b border-slate-200">Job Detail</th>
+              <th className="px-3 py-3.5 text-left text-sm font-semibold text-slate-900 border-b border-slate-200">Target Pool</th>
+              <th className="px-3 py-3.5 text-left text-sm font-semibold text-slate-900 border-b border-slate-200">Last Executed</th>
+              <th className="px-3 py-3.5 text-left text-sm font-semibold text-slate-900 border-b border-slate-200">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-200 bg-white">
             {jobs.map(job => (
-               <TableRow key={job.id} className="hover:bg-slate-50/50 transition-colors">
-                 <TableCell>
+               <tr key={job.id} className="hover:bg-slate-50/50 transition-colors">
+                 <td className="whitespace-nowrap px-3 py-4 text-sm text-slate-500">
                     <div className="flex items-center gap-2">
                       <CalendarClock size={16} className={job.status==='active' ? 'text-indigo-400' : 'text-slate-300'} />
                       <span className="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">{job.schedule}</span>
                     </div>
-                 </TableCell>
-                 <TableCell>
+                 </td>
+                 <td className="whitespace-nowrap px-3 py-4">
                     <div className="font-bold text-sm text-slate-800">{job.name}</div>
                     <div className="text-xs text-slate-500">Next run: {job.nextRun}</div>
-                 </TableCell>
-                 <TableCell>
-                    <Badge color={job.type === 'crm' ? 'emerald' : job.type === 'finance' ? 'blue' : 'indigo'} size="xs" className="uppercase font-extrabold tracking-wider text-[10px]">
+                 </td>
+                 <td className="whitespace-nowrap px-3 py-4">
+                    <span className={`inline-flex items-center rounded-md px-2.5 py-0.5 text-xs font-semibold shadow uppercase tracking-wider ${job.type === 'crm' ? 'bg-emerald-500 text-white hover:bg-emerald-600' : job.type === 'finance' ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-indigo-500 text-white hover:bg-indigo-600'}`}>
                       {job.type}
-                    </Badge>
-                 </TableCell>
-                 <TableCell>
+                    </span>
+                 </td>
+                 <td className="whitespace-nowrap px-3 py-4">
                     <span className="text-sm text-slate-600 font-medium">{job.lastRun}</span>
-                 </TableCell>
-                 <TableCell>
+                 </td>
+                 <td className="whitespace-nowrap px-3 py-4">
                     <div className="flex items-center gap-3">
                        <button 
                          onClick={() => toggleJob(job.id)}
@@ -160,12 +166,12 @@ function JobsTab() {
                          {job.status}
                        </span>
                     </div>
-                 </TableCell>
-               </TableRow>
+                 </td>
+               </tr>
             ))}
-          </TableBody>
-        </Table>
-      </Card>
+          </tbody>
+        </table>
+      </div>
       
       <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-xl flex items-start gap-3 mt-4">
         <AlertCircle size={20} className="text-indigo-500 shrink-0 mt-0.5" />
@@ -185,23 +191,23 @@ function LogsTab() {
     <div className="flex flex-col gap-6 w-full max-w-6xl mx-auto p-6 animate-fade-in">
         <h2 className="text-2xl font-black text-slate-800 tracking-tight mb-2">Execution Logs</h2>
 
-        <Card className="p-0 overflow-hidden">
-          <Table>
-            <TableHead className="bg-slate-50/80">
-              <TableRow>
-                <TableHeaderCell>Time (UTC)</TableHeaderCell>
-                <TableHeaderCell>Status</TableHeaderCell>
-                <TableHeaderCell>Trigger Name</TableHeaderCell>
-                <TableHeaderCell>Output / Error Details</TableHeaderCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] overflow-hidden">
+          <table className="min-w-full divide-y border-slate-200">
+            <thead className="bg-slate-50/80">
+              <tr>
+                <th className="px-3 py-3.5 text-left text-sm font-semibold text-slate-900 border-b border-slate-200">Time (UTC)</th>
+                <th className="px-3 py-3.5 text-left text-sm font-semibold text-slate-900 border-b border-slate-200">Status</th>
+                <th className="px-3 py-3.5 text-left text-sm font-semibold text-slate-900 border-b border-slate-200">Trigger Name</th>
+                <th className="px-3 py-3.5 text-left text-sm font-semibold text-slate-900 border-b border-slate-200">Output / Error Details</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 bg-white">
               {MOCK_LOGS.map(log => (
-                 <TableRow key={log.id} className="hover:bg-slate-50/50 transition-colors">
-                    <TableCell>
+                 <tr key={log.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="whitespace-nowrap px-3 py-4">
                       <span className="font-mono text-xs text-slate-500">{new Date(log.timestamp).toLocaleString()}</span>
-                    </TableCell>
-                    <TableCell>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-4">
                       {log.status === 'success' ? (
                         <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full inline-flex">
                           <CheckCircle2 size={12} /> Success
@@ -211,18 +217,18 @@ function LogsTab() {
                           <AlertCircle size={12} /> Failed
                         </div>
                       )}
-                    </TableCell>
-                    <TableCell>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-4">
                       <span className="font-semibold text-sm text-slate-700">{log.job}</span>
-                    </TableCell>
-                    <TableCell>
+                    </td>
+                    <td className="px-3 py-4">
                       <span className={`text-xs ${log.status === 'error' ? 'text-red-700 font-medium' : 'text-slate-600'}`}>{log.details}</span>
-                    </TableCell>
-                 </TableRow>
+                    </td>
+                 </tr>
               ))}
-            </TableBody>
-          </Table>
-        </Card>
+            </tbody>
+          </table>
+        </div>
         
         <div className="flex justify-center mt-4">
            <button className="btn btn-secondary btn-sm flex items-center gap-2">Load More Logs <ChevronRight size={14}/></button>

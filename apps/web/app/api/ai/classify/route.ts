@@ -45,8 +45,14 @@ export async function POST(req: NextRequest) {
           description: t.data().description || ''
        }));
 
+    const { getSystemPrompt } = await import('@/lib/promptService');
+    const systemPromptContext = { 
+      language: req.headers.get('accept-language')?.split(',')[0] || 'pt-BR'
+    };
+    const basePrompt = await getSystemPrompt(tenantId, 'classify', systemPromptContext);
+
     // 2. Synthesize Context for AI
-    const systemPrompt = `Você é um Analista de Dados e Gestor de Relacionamento Nível Sênior para um CRM de Family Office.
+    const systemPrompt = basePrompt + `
 Sua missão é classificar emails recebidos ou enviados.
 
 DADOS DO EMAIL:

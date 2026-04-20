@@ -3,10 +3,10 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useSearchParams } from 'next/navigation';
-import { Card, Title, Text, Button, Badge, TextInput } from '@tremor/react';
 import { MessageSquare, Slack, CheckCircle2 } from 'lucide-react';
 import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
 import { firebaseApp, auth } from '@mfo-crm/config';
+import { toast } from 'sonner';
 
 type MessagingProvider = 'teams' | 'slack' | 'google_chat' | null;
 
@@ -124,7 +124,7 @@ export function MessagingIntegrationSection() {
       
       setActiveProvider(provider);
     } catch (err) {
-      alert("Failed to connect provider");
+      toast.error("Failed to connect provider");
     }
   };
 
@@ -155,7 +155,7 @@ export function MessagingIntegrationSection() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Microsoft Teams */}
-        <Card className="flex flex-col relative overflow-hidden border-slate-200">
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 flex flex-col relative overflow-hidden border-slate-200">
           {activeProvider === 'teams' && (
             <div className="absolute top-0 left-0 w-full h-1 bg-indigo-600" />
           )}
@@ -168,9 +168,9 @@ export function MessagingIntegrationSection() {
                <span className="text-[11px] font-medium text-slate-500">M365 Graph Router</span>
              </div>
           </div>
-          <Text className="text-sm text-slate-600 mb-4 flex-1">
+          <div className="text-sm text-[var(--text-secondary)] text-sm text-slate-600 mb-4 flex-1">
             Treats your internal CRM teams implementation as a frontend mirroring Teams Graph endpoints directly. Free within standard M365 API allocations.
-          </Text>
+          </div>
           <div className="mb-6">
             <button onClick={() => setShowTeamsGuide(!showTeamsGuide)} className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors flex items-center">
               {showTeamsGuide ? 'Hide' : 'Show'} Microsoft Entra ID Admin Guide
@@ -203,7 +203,7 @@ export function MessagingIntegrationSection() {
              <div className="flex flex-col gap-3">
                <div>
                  <span className="text-xs font-semibold text-slate-700 mb-1 block">Account Identity Binding</span>
-                 <TextInput placeholder="Enter M365 Email (UPN) e.g., user@domain.onmicrosoft.com" value={teamsUpn} onValueChange={setTeamsUpn} className="text-xs" disabled={isAuthenticating} />
+                 <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" placeholder="Enter M365 Email (UPN) e.g., user@domain.onmicrosoft.com" value={teamsUpn} onChange={e => setTeamsUpn(e.target.value)} disabled={isAuthenticating} />
                  <p className="text-[10px] text-slate-500 mt-1">Your exact Universal Principal Name is required to map your Teams Graph integration telemetry securely.</p>
                </div>
                
@@ -237,10 +237,10 @@ export function MessagingIntegrationSection() {
                </button>
              </div>
           )}
-        </Card>
+        </div>
 
         {/* Slack */}
-        <Card className={`flex flex-col relative overflow-hidden border-slate-200 ${activeProvider !== 'slack' ? 'opacity-80' : ''}`}>
+        <div className={`bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 flex flex-col relative overflow-hidden border-slate-200 ${activeProvider !== 'slack' ? 'opacity-80' : ''}`}>
           {activeProvider === 'slack' && (
             <div className="absolute top-0 left-0 w-full h-1 bg-[#E01E5A]" />
           )}
@@ -253,9 +253,9 @@ export function MessagingIntegrationSection() {
                <span className="text-[11px] font-medium text-slate-500">Events API</span>
              </div>
           </div>
-          <Text className="text-sm text-slate-600 mb-4 flex-1">
+          <div className="text-sm text-[var(--text-secondary)] text-sm text-slate-600 mb-4 flex-1">
             Real-time chat integration routing communications via Slack.
-          </Text>
+          </div>
           <div className="mb-6">
             <button onClick={() => setShowSlackGuide(!showSlackGuide)} className="text-xs font-semibold text-rose-600 hover:text-rose-800 transition-colors flex items-center">
               {showSlackGuide ? 'Hide' : 'Show'} Slack App Manifest Guide
@@ -283,14 +283,14 @@ export function MessagingIntegrationSection() {
                <button onClick={handleDisconnect} className="text-xs font-medium text-slate-500 hover:text-red-600 px-2 py-1">Disconnect</button>
              </div>
           ) : (
-             <Button variant="secondary" className="w-full font-medium" onClick={() => handleConnect('slack')} disabled={activeProvider !== null}>
+             <button className="inline-flex w-full font-medium items-center justify-center rounded-md text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2" onClick={() => handleConnect('slack')} disabled={activeProvider !== null}>
                Connect Platform
-             </Button>
+             </button>
           )}
-        </Card>
+        </div>
 
         {/* Google Chat */}
-        <Card className="flex flex-col border-slate-200 opacity-60 grayscale relative">
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 flex flex-col border-slate-200 opacity-60 grayscale relative">
            <div className="absolute inset-0 z-10 bg-slate-50/10 cursor-not-allowed" title="Coming Soon"></div>
           <div className="flex items-center gap-3 mb-4">
              <div className="w-10 h-10 rounded-md bg-emerald-50 flex items-center justify-center text-emerald-600">
@@ -301,11 +301,11 @@ export function MessagingIntegrationSection() {
                <span className="text-[11px] font-medium text-slate-500">Workspace API</span>
              </div>
           </div>
-          <Text className="text-sm text-slate-600 mb-6 flex-1">
+          <div className="text-sm text-[var(--text-secondary)] text-sm text-slate-600 mb-6 flex-1">
             Route messages natively through Google Chat spaces.
-          </Text>
-          <Button variant="light" className="w-full text-slate-400" disabled>Coming Soon</Button>
-        </Card>
+          </div>
+          <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2 w-full text-slate-400" disabled>Coming Soon</button>
+        </div>
       </div>
     </div>
   );

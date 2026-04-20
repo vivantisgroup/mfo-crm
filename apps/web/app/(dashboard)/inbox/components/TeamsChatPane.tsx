@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Send, MessageSquare, Plus, FileText, Loader2 } from 'lucide-react';
 import { Avatar } from '@/components/Avatar';
+import { toast } from 'sonner';
 
 interface ChatMessage {
   id: string;
@@ -38,7 +39,7 @@ export function TeamsChatPane({
       setReplyBody('');
     } catch (e) {
       console.error(e);
-      alert('Failed to send Teams message.');
+      toast.error('Failed to send Teams message.');
     } finally {
       setSending(false);
     }

@@ -6,7 +6,9 @@ import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
 import Dropcursor from '@tiptap/extension-dropcursor';
-import { Bold, Italic, Link as LinkIcon, List, ListOrdered, Image as ImageIcon } from 'lucide-react';
+import { Bold, Italic, Link as LinkIcon, List, ListOrdered, Image as ImageIcon, PenTool } from 'lucide-react';
+import { ExcalidrawNode } from './ExcalidrawNode';
+import { v4 as uuidv4 } from 'uuid';
 
 interface Props {
   content: string;
@@ -24,7 +26,8 @@ export function RichTextEditor({ content, onChange, placeholder }: Props) {
       StarterKit,
       Link.configure({ openOnClick: false }),
       Image.configure({ inline: true }),
-      Dropcursor.configure({ color: '#6366f1', width: 2 })
+      Dropcursor.configure({ color: '#6366f1', width: 2 }),
+      ExcalidrawNode
     ],
     content,
     onUpdate: ({ editor }) => {
@@ -105,6 +108,15 @@ export function RichTextEditor({ content, onChange, placeholder }: Props) {
           className={`p-1.5 rounded hover:bg-slate-200 text-slate-600 transition-colors ${editor.isActive('link') ? 'bg-slate-200 text-slate-900' : ''}`}
           title="Add Link"
         ><LinkIcon size={14} /></button>
+        <div className="w-px h-4 bg-slate-300 mx-1"></div>
+        <button
+          onClick={() => {
+            const id = uuidv4();
+            editor.chain().focus().insertContent({ type: 'excalidraw', attrs: { drawingId: id } }).run();
+          }}
+          className={`p-1.5 rounded hover:bg-slate-200 text-slate-600 transition-colors`}
+          title="Insert Diagram / Whiteboard"
+        ><PenTool size={14} /></button>
       </div>
 
       {showLinkPrompt && (

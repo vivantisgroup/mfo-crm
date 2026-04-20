@@ -31,6 +31,7 @@ import {
   updateDoc,
   deleteDoc,
   arrayRemove,
+  arrayUnion,
   increment,
 } from 'firebase/firestore';
 import type { User as FirebaseUser } from 'firebase/auth';
@@ -56,7 +57,12 @@ export type PlatformRole =
   | 'account_executive'
   | 'sdr'
   | 'customer_success_manager'
-  | 'data_analyst';
+  | 'data_analyst'
+  | 'data_designer'
+  | 'app_designer'
+  | 'integration_architect'
+  | 'security_officer'
+  | 'ai_officer';
 
 export interface PlatformConfig {
   initialized:    boolean;
@@ -112,6 +118,14 @@ export interface TenantRecord {
   expiresAt?:       string;
   /** If true, users must complete email-OTP MFA after selecting this tenant */
   mfaRequired?:     boolean;
+  /** Global UX property controlling the assistant name (e.g. Joule, Canoe, Masttro) */
+  aiAssistantName?: string;
+
+  // ── AI Platform Billing Configurations ─────────────────────────────────────────
+  /** Unique account number given by Platform for AI usage billing tracking */
+  aiAccountNumber?: string;
+  /** Whether the tenant uses Platform AI integration rather than their own custom keys */
+  usesPlatformAi?:  boolean;
 
   // ── Multi-Vertical Architecture ──────────────────────────────────────────────
   /** Industry vertical that drives available modules, roles, and nav */
@@ -145,6 +159,9 @@ export interface TenantRecord {
     mfaEnforced?: boolean;
     allowedMethods?: string[];
   };
+  
+  // ── Navigation Restrictions ──────────────────────────────────────────────────
+  navRestrictions?: Record<string, string[]>;
 }
 
 
@@ -203,6 +220,23 @@ export async function updateUserProfile(
 ): Promise<void> {
   const ref = doc(db, 'users', uid);
   await updateDoc(ref, { ...patch, updatedAt: nowISO() });
+}
+
+/**
+ * Add a tenantId to the user's tenantIds array (arrayUnion — idempotent).
+ * Call this BEFORE getTenant() when switching tenants so Firestore rules
+ * can confirm membership via userTenantIds().hasAny([tenantId]).
+ */
+export async function addTenantToUser(
+  uid:      string,
+  tenantId: string,
+): Promise<void> {
+  const ref = doc(db, 'users', uid);
+  await updateDoc(ref, {
+    tenantIds:  arrayUnion(tenantId),
+    tenantId,
+    updatedAt:  nowISO(),
+  });
 }
 
 /** Suspend a user platform-wide (sets status: 'suspended'). */
@@ -306,7 +340,13 @@ export async function getAllTenants(): Promise<TenantRecord[]> {
 }
 
 export async function getTenant(id: string): Promise<TenantRecord | null> {
-  const snap = await getDocFromServer(doc(db, 'tenants', id));
+  // Guard: Firebase doc() calls .indexOf('/') on the id — reject anything that
+  // isn't a non-empty string to avoid the cryptic "n.indexOf is not a function" error.
+  if (!id || typeof id !== 'string') {
+    console.warn('[getTenant] called with invalid id:', id);
+    return null;
+  }
+  const snap = await getDoc(doc(db, 'tenants', id));
   if (!snap.exists()) return null;
   return snap.data() as TenantRecord;
 }

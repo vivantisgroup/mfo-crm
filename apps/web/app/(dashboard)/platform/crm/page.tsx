@@ -14,6 +14,7 @@ import { DashboardTab, PipelineTab, ActivitiesTab, TeamsTab, ReportsTab } from '
 import { SecondaryDock, type SecondaryDockTab } from '@/components/SecondaryDock';
 import { EntitiesTab } from './components/EntitiesTab';
 import { LayoutDashboard, Building, Target, Calendar, Users, LineChart } from 'lucide-react';
+import { toast } from 'sonner';
 
 const CRM_TABS: SecondaryDockTab[] = [
   { id: 'dashboard',  label: 'Dashboard', icon: LayoutDashboard },
@@ -130,7 +131,7 @@ export default function CrmPage() {
 
   async function handleSeed() {
     const seeded = await seedCrmIfEmpty(performer);
-    if (seeded) await load(); else alert('CRM already has data — seed skipped.');
+    if (seeded) await load(); else toast.error('CRM already has data — seed skipped.');
   }
 
   async function handleUpdatePipelineStages(newStages: PipelineStageConfig[]) {

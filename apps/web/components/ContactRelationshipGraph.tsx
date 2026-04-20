@@ -33,6 +33,7 @@ interface FsContact {
   role?:             string; // subType mapping
   clientIds?:        string[];
   organizationIds?:  string[];
+  linkedFamilyIds?:  string[];
 }
 
 interface FsOrg {
@@ -41,6 +42,7 @@ interface FsOrg {
   type?:             string; // subType mapping
   contactIds?:       string[];
   clientIds?:        string[];
+  parentFamilyId?:   string;
 }
 
 interface FsRelationship {
@@ -130,8 +132,8 @@ export function ContactRelationshipGraph({ tenantId, focusContactId, focusOrgId,
         if (c.organizationIds?.includes(focusOrgId)) includeContactIds.add(c.id);
       }
     } else if (familyId) {
-      includeContactIds = new Set(contacts.filter(c => c.clientIds?.includes(familyId)).map(c => c.id));
-      includeOrgIds     = new Set(orgs.filter(o => o.clientIds?.includes(familyId)).map(o => o.id));
+      includeContactIds = new Set(contacts.filter(c => c.clientIds?.includes(familyId) || c.linkedFamilyIds?.includes(familyId)).map(c => c.id));
+      includeOrgIds     = new Set(orgs.filter(o => o.clientIds?.includes(familyId) || o.parentFamilyId === familyId).map(o => o.id));
     }
 
     const nodes: NetworkNode[] = [

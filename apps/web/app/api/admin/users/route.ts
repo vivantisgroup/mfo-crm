@@ -441,6 +441,7 @@ export async function PUT(req: NextRequest) {
     if (smtpReady && generatedLink) {
       try {
         // @ts-ignore
+        // @ts-ignore
         const nodemailer = await import('nodemailer');
         const transporter = nodemailer.default.createTransport({
           host:   process.env.SMTP_HOST,

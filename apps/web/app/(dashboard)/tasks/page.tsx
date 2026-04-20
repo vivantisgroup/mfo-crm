@@ -16,6 +16,9 @@ import { useAuth } from '@/lib/AuthContext';
 import { getTenantMembers } from '@/lib/tenantMemberService';
 import { getAllOrgs } from '@/lib/crmService';
 import { getEmployees } from '@/lib/hrService';
+import { RichTextEditor } from '@/components/ui/RichTextEditor';
+import { RichTextRenderer } from '@/components/RichTextRenderer';
+import { Edit3 } from 'lucide-react';
 
 function useIsPlatform() {
   const [isPlatform, setIsPlatform] = useState(false);
@@ -1104,11 +1107,13 @@ function TaskDropdowns({ task }: { task: Task }) {
 
 function TaskDetailView({ task, onClose }: { task: Task; onClose: () => void }) {
   const isPlatform = useIsPlatform();
-  const { queues } = useTaskQueue();
+  const { queues, updateTask } = useTaskQueue();
   const q = queues.find(x => x.id === task.queueId);
   const taskType = TASK_TYPES.find(t => t.id === task.taskTypeId);
   
   const { setTitle } = usePageTitle();
+  const [isEditingDesc, setIsEditingDesc] = useState(false);
+  const [tempDesc, setTempDesc] = useState(task.description || '');
   
   useEffect(() => {
     setTitle('Workflows', '', [
@@ -1143,11 +1148,31 @@ function TaskDetailView({ task, onClose }: { task: Task; onClose: () => void }) 
             </div>
           </div>
 
-          <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 20 }}>
+          <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6 relative group" style={{ padding: 20 }}>
             <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: 'var(--text-secondary)' }}>Description</h3>
-            <div style={{ fontSize: 14, color: 'var(--text-primary)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-              {task.description || <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>No description provided.</span>}
-            </div>
+            
+            {isEditingDesc ? (
+              <div className="flex flex-col gap-2">
+                 <div className="border border-indigo-200 rounded-lg overflow-hidden shadow-inner">
+                    <RichTextEditor value={tempDesc} onChange={setTempDesc} />
+                 </div>
+                 <div className="flex justify-end gap-2 mt-2">
+                    <button onClick={() => { setIsEditingDesc(false); setTempDesc(task.description || ''); }} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold transition-colors">Cancel</button>
+                    <button onClick={() => { updateTask(task.id, { description: tempDesc }); setIsEditingDesc(false); }} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-bold transition-colors shadow">Save Description</button>
+                 </div>
+              </div>
+            ) : (
+              <div onClick={() => setIsEditingDesc(true)} className="cursor-text hover:bg-slate-50 transition-colors rounded p-2 -mx-2">
+                <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 text-indigo-500 transition-opacity bg-indigo-50 p-1.5 rounded-lg border border-indigo-100 shadow-sm cursor-pointer hover:bg-indigo-100">
+                   <Edit3 size={14}/>
+                </div>
+                {task.description ? (
+                   <RichTextRenderer content={task.description} />
+                ) : (
+                   <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic', fontSize: 13 }}>Click here to add formatting, images, or paste HTML...</span>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 20 }}>

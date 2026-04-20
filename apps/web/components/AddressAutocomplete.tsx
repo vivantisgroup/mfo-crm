@@ -2,7 +2,6 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Search, MapPin, Building2, UserCircle2 } from 'lucide-react';
-import { Button } from '@tremor/react';
 
 export interface InternalAddress {
   id: string;
@@ -218,8 +217,8 @@ export function AddressAutocomplete({ value, onSave, canEdit = true, internalAdd
        </div>
        
        <div className="flex gap-3 border-t border-slate-100 pt-3 mt-1">
-         <Button variant="secondary" size="xs" onClick={(e) => { e.preventDefault(); setAddr(value || defaultAddr); setIsEditing(false); }} className="flex-1">Cancel</Button>
-         <Button variant="primary" size="xs" onClick={(e) => { e.preventDefault(); save(); }} className="flex-1">Confirm Output</Button>
+         <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 h-9 px-4 py-2 flex-1" onClick={(e) => { e.preventDefault(); setAddr(value || defaultAddr); setIsEditing(false); }}>Cancel</button>
+         <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2 flex-1" onClick={(e) => { e.preventDefault(); save(); }}>Confirm Output</button>
        </div>
     </div>
   );

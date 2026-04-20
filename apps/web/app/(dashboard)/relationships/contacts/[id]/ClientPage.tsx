@@ -13,6 +13,7 @@ import { usePageTitle } from '@/lib/PageTitleContext';
 import { updateDoc } from 'firebase/firestore';
 import { uploadAttachment } from '@/lib/attachmentService';
 import { ProfileBanner } from '@/components/ProfileBanner';
+import { RichTextEditor } from '@/components/ui/RichTextEditor';
 
 interface Contact {
   id:               string;
@@ -169,12 +170,22 @@ export default function ContactClientPage() {
               <KV label="Nationality"  value={contact.nationality} />
               <KV label="PEP Flag"     value={contact.pepFlag ? 'Yes — Politically Exposed Person' : 'No'} />
             </div>
-            {contact.notes && (
-              <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 6 }}>Notes</div>
-                <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0 }}>{contact.notes}</p>
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Internal Notes</div>
               </div>
-            )}
+              <div className="min-h-[200px] border border-slate-200 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-transparent transition-all">
+                <RichTextEditor
+                  value={contact.notes || ''}
+                  onChange={(val) => {
+                    updateDoc(doc(db, 'tenants', tenantId, 'contacts', id), { notes: val }).catch(console.error);
+                  }}
+                  placeholder="Add qualitative notes and KYC remarks..."
+                  tenantId={tenantId}
+                  contextRecord={{ type: 'contacts', id }}
+                />
+              </div>
+            </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Families */}

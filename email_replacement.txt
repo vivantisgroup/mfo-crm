@@ -1,0 +1,229 @@
+        {/* EMAIL INTERFACE */}
+        {activeTab === 'email' && (
+          <Card className="flex-1 flex flex-col p-0 overflow-hidden shadow-sm border-slate-200">
+            {loading ? (
+              <div className="flex flex-col justify-center items-center h-full text-slate-500 gap-4">
+                <RefreshCcw className="animate-spin text-indigo-500" size={32} />
+                <span>Syncing Inbox...</span>
+              </div>
+            ) : !isConfigured ? (
+              <div className="flex flex-col items-center justify-center p-16 text-center h-full">
+                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-6">
+                  <Mail className="text-slate-400" size={32} />
+                </div>
+                <p className="font-semibold text-slate-800 text-xl mb-2">No Email Account Connected</p>
+                <p className="text-slate-500 text-sm max-w-sm mb-6">Connect your Google Workspace or Microsoft O365 account to manage emails directly within this workspace.</p>
+                <Button variant="primary" onClick={() => window.location.href = '/platform/settings?tab=integrations'}>Configure Email Pipeline</Button>
+              </div>
+            ) : (
+              <div className="flex h-full w-full overflow-hidden relative">
+                
+                {/* 1. LEFT SIDEBAR - FOLDERS */}
+                <div className="w-[220px] lg:w-[260px] border-r border-slate-200 flex flex-col h-full bg-slate-50 shrink-0">
+                  <div className="p-4 border-b border-slate-200">
+                    <Button className="w-full shadow-sm font-semibold flex items-center justify-center gap-2" variant="primary" onClick={() => setIsComposing(true)}>
+                      <Edit size={16} /> Compose New
+                    </Button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-3 space-y-1">
+                    <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mt-2 mb-2 ml-2">Mailboxes</div>
+                    {(['inbox', 'sent', 'drafts', 'spam', 'trash'] as Folder[]).map((folder) => (
+                      <div
+                        key={folder}
+                        onClick={() => setActiveFolder(folder)}
+                        className={lex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-colors \}
+                      >
+                        {folder === 'inbox' ? <Mail size={16} className={activeFolder === 'inbox' ? 'text-indigo-600' : 'text-slate-400'} /> :
+                         folder === 'sent' ? <Send size={16} className={activeFolder === 'sent' ? 'text-indigo-600' : 'text-slate-400'} /> :
+                         folder === 'trash' ? <Trash2 size={16} className={activeFolder === 'trash' ? 'text-indigo-600' : 'text-slate-400'} /> :
+                         folder === 'spam' ? <ShieldAlert size={16} className={activeFolder === 'spam' ? 'text-indigo-600' : 'text-slate-400'} /> :
+                         <FileText size={16} className={activeFolder === 'drafts' ? 'text-indigo-600' : 'text-slate-400'} />}
+                        <span className="capitalize text-sm">{folder}</span>
+                        {folder === 'inbox' && <span className="ml-auto bg-indigo-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">3</span>}
+                      </div>
+                    ))}
+                    <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mt-6 mb-2 ml-2 flex justify-between items-center pr-2">
+                       Smart Labels
+                       <Plus size={14} className="cursor-pointer hover:text-indigo-500" />
+                    </div>
+                    <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-transparent hover:bg-slate-100 cursor-pointer text-slate-600 font-medium text-sm">
+                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500"></div> High Priority
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. MIDDLE COLUMN - MESSAGE LIST */}
+                <div className="\ w-full lg:w-[350px] xl:w-[400px] border-r border-slate-200 flex-col h-full bg-white shrink-0 relative">
+                  <div className="p-3 border-b border-slate-200 bg-white z-10 sticky top-0">
+                    <TextInput 
+                      icon={Mail} 
+                      placeholder="Search mail..." 
+                      value={search} 
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="w-full text-sm"
+                    />
+                  </div>
+                  <div className="flex-1 overflow-y-auto overflow-x-hidden">
+                    {logs.length === 0 ? (
+                      <div className="p-8 text-center text-slate-400 text-sm">Folder is empty.</div>
+                    ) : (
+                      <div className="divide-y divide-slate-100">
+                        {logs.map((log) => (
+                          <div 
+                            key={log.id} 
+                            onClick={() => setSelectedLog(log)}
+                            className={p-4 cursor-pointer transition-colors border-l-4 \}
+                          >
+                            <div className="flex justify-between items-start mb-1 gap-2">
+                              <span className="\ text-[13px] truncate">
+                                {log.direction === 'inbound' ? log.fromEmail : 'To: ' + log.toEmail}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-medium whitespace-nowrap pt-0.5">{(log.date).substring(0, 10)}</span>
+                            </div>
+                            <div className="text-[13px] text-slate-800 font-bold truncate mb-1 pr-4">{log.subject || '(No Subject)'}</div>
+                            <div className="text-[12px] text-slate-500 font-medium line-clamp-2 leading-relaxed pr-2">
+                              {log.body ? log.body.substring(0, 100).replace(/<[^>]+>/g, '') : log.snippet}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 3. RIGHT COLUMN - READING PANE */}
+                <div className="\ flex-1 flex-col h-full bg-white relative">
+                  {isComposing ? (
+                     <div className="flex flex-col h-full absolute inset-0 bg-white z-20">
+                        <div className="px-5 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50">
+                           <h3 className="font-bold text-slate-800 flex items-center gap-2"><Edit size={16}/> New Message</h3>
+                           <button onClick={() => setIsComposing(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+                        </div>
+                        <div className="p-5 flex flex-col gap-4 flex-1 overflow-y-auto">
+                           <TextInput placeholder="To: email@domain.com" className="w-full font-medium" value={composeTo} onChange={e=>setComposeTo(e.target.value)} />
+                           <TextInput placeholder="Subject" className="w-full font-bold" value={composeSubject} onChange={e=>setComposeSubject(e.target.value)} />
+                           
+                           {/* Formatting Tools Placeholder */}
+                           <div className="flex gap-2 p-2 border border-slate-200 border-b-0 rounded-t-lg bg-slate-50">
+                             <button className="p-1.5 hover:bg-slate-200 rounded text-slate-600"><Bold size={14}/></button>
+                             <button className="p-1.5 hover:bg-slate-200 rounded text-slate-600"><Italic size={14}/></button>
+                             <div className="w-[1px] bg-slate-200 mx-1"></div>
+                             <button className="p-1.5 hover:bg-slate-200 rounded text-slate-600"><List size={14}/></button>
+                             <button className="p-1.5 hover:bg-slate-200 rounded text-slate-600"><LinkIcon size={14}/></button>
+                           </div>
+                           
+                           <Textarea 
+                             className="w-full flex-1 min-h-[300px] border-slate-200 rounded-b-lg rounded-t-none resize-none" 
+                             placeholder="Write your message here. HTML is supported by the backend injection pipeline..."
+                             value={composeBody} onChange={e=>setComposeBody(e.target.value)}
+                           />
+                           
+                           {/* Attachments UI */}
+                           {attachments.length > 0 && (
+                             <div className="flex flex-wrap gap-2 mt-2">
+                               {attachments.map((f, i) => (
+                                 <Badge key={i} size="sm" color="indigo" className="px-2 py-1 flex items-center gap-2 shadow-sm">
+                                   <FileText size={12}/> {f.name}
+                                   <X size={12} className="cursor-pointer ml-1 hover:text-indigo-900" onClick={() => setAttachments(attachments.filter((_, idx)=>idx!==i))} />
+                                 </Badge>
+                               ))}
+                             </div>
+                           )}
+                           
+                           <div className="flex justify-between items-center mt-4">
+                              <input type="file" multiple className="hidden" ref={fileInputRef} onChange={e => {
+                                 if (e.target.files) setAttachments([...attachments, ...Array.from(e.target.files)]);
+                              }} />
+                              <Button variant="light" color="slate" icon={() => <Paperclip size={16} className="mr-2"/>} onClick={() => fileInputRef.current?.click()}>
+                                Attach Files
+                              </Button>
+                              <Button variant="primary" icon={() => <Send size={16} className="mr-2"/>} onClick={() => {
+                                 // Logic handled by handleSendEmail. Closing composer for demo layout.
+                                 showToast('Email queued for delivery (Simulation)');
+                                 setIsComposing(false);
+                              }}>
+                                Send Message
+                              </Button>
+                           </div>
+                        </div>
+                     </div>
+                  ) : !selectedLog ? (
+                    <div className="m-auto flex flex-col items-center justify-center text-slate-300 gap-4">
+                      <Mail size={48} strokeWidth={1} />
+                      <p className="text-sm">Select an email to read</p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col h-full bg-white absolute inset-0">
+                      {/* Reading Pane Toolbar */}
+                      <div className="px-5 py-3 border-b border-slate-200 flex justify-between items-center bg-white sticky top-0 z-10 shrink-0">
+                        <div className="flex gap-2">
+                          <button onClick={() => setSelectedLog(null)} className="lg:hidden p-2 -ml-2 text-slate-400 hover:text-slate-600">?</button>
+                          <Button size="xs" variant="secondary" onClick={() => alert('Reply Logic Engaged')} icon={() => <Reply size={14} className="mr-1 inline" />}>Reply</Button>
+                          <Button size="xs" variant="secondary" onClick={() => alert('Forward Logic Engaged')} icon={() => <Forward size={14} className="mr-1 inline" />}>Forward</Button>
+                          <Button size="xs" color="rose" variant="light" className="ml-2 hover:bg-rose-50" icon={() => <Trash2 size={14} className="mr-0" />}></Button>
+                        </div>
+                        <div className="flex items-center gap-3">
+                           {toast?.type === 'success' && <Badge size="xs" color="emerald" className="animate-pulse">{toast.msg}</Badge>}
+                           <Button size="xs" variant="primary" loading={isLinking} onClick={async () => {
+                             setIsLinking(true);
+                             await logEmailToCrm(selectedLog, 'client_123', 'John Doe');
+                             setIsLinking(false);
+                             showToast('Saved to CRM');
+                           }} icon={() => <LinkIcon size={14} className="mr-1.5 inline"/>}>
+                             Link to Record
+                           </Button>
+                        </div>
+                      </div>
+
+                      {/* Reading Pane Content */}
+                      <div className="flex-1 overflow-y-auto p-6 md:p-8">
+                        <div className="mb-6">
+                           <h2 className="text-2xl font-black text-slate-900 leading-tight mb-4 tracking-tight">{selectedLog.subject || '(No Subject)'}</h2>
+                           <div className="flex items-start justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold text-base border border-indigo-200 shadow-sm shrink-0">
+                                  {selectedLog.direction === 'inbound' ? selectedLog.fromEmail.charAt(0).toUpperCase() : selectedLog.toEmail.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="leading-tight">
+                                   <div className="font-bold text-slate-800 text-sm">
+                                     {selectedLog.direction === 'inbound' ? selectedLog.fromEmail : 'You'}
+                                   </div>
+                                   <div className="text-xs text-slate-500 font-medium">to {selectedLog.direction === 'inbound' ? 'You' : selectedLog.toEmail}</div>
+                                </div>
+                              </div>
+                              <div className="text-xs text-slate-400 font-bold tracking-wide">
+                                {new Date(selectedLog.date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                              </div>
+                           </div>
+                        </div>
+
+                        {/* Attachments Mock Gallery */}
+                        {(selectedLog as any).hasAttachments && (
+                          <div className="mb-6 p-4 rounded-xl border border-slate-200 bg-slate-50 flex gap-4">
+                             <div className="w-auto h-auto px-4 py-3 bg-white border border-slate-200 shadow-sm rounded-lg flex items-center gap-3 cursor-pointer hover:border-indigo-400 transition-colors">
+                                <FileText className="text-indigo-500" size={24} />
+                                <div>
+                                   <div className="text-[13px] font-bold text-slate-800">Q3_Report.pdf</div>
+                                   <div className="text-[11px] text-slate-500 font-medium">2.4 MB</div>
+                                </div>
+                             </div>
+                          </div>
+                        )}
+
+                        {/* HTML Body Rendering */}
+                        <div className="prose prose-sm prose-slate max-w-none prose-a:text-indigo-600 prose-a:no-underline hover:prose-a:underline font-sans text-[14px] leading-[1.6]">
+                          {selectedLog.body ? (
+                            <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selectedLog.body) }} />
+                          ) : (
+                            <div dangerouslySetInnerHTML={{ __html: formatSnippetAsHTML(selectedLog.snippet) }} />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            )}
+          </Card>
+        )}

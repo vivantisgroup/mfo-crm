@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (provider === 'microsoft') {
-      const accessToken = await getValidMicrosoftToken(tenantId, uid, idToken);
+      const accessToken = await getValidMicrosoftToken(uid, idToken, tenantId);
       
       const res = await fetch(`https://graph.microsoft.com/v1.0/me/mailFolders`, {
         method: 'POST',
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, folderId: data.id, displayName: data.displayName });
 
     } else if (provider === 'google') {
-      const accessToken = await getValidGoogleToken(tenantId, uid, idToken);
+      const accessToken = await getValidGoogleToken(uid, idToken, tenantId);
 
       const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/labels`, {
         method: 'POST',

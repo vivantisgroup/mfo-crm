@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
     if (provider === 'google') {
       // Use the token refresh helper — refreshes if expired
       try {
-        accessToken = await getValidGoogleToken(tenantId, uid, idToken);
+        accessToken = await getValidGoogleToken(uid, idToken, tenantId);
       } catch (e: any) {
         return NextResponse.json({
           ok:      false,
@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
     } else {
       // Microsoft — use refresh helper
       try {
-        accessToken = await getValidMicrosoftToken(tenantId, uid, idToken);
+        accessToken = await getValidMicrosoftToken(uid, idToken, tenantId);
       } catch (e: any) {
         return NextResponse.json({ ok: false, error: e.message || 'Not connected', latency: Date.now() - start });
       }

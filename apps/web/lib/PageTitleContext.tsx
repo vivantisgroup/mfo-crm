@@ -50,6 +50,8 @@ export function PageTitleProvider({ children }: { children: React.ReactNode }) {
 export function usePageTitle(title?: string, subtitle?: string, crumbs?: BreadcrumbCrumb[]) {
   const ctx = useContext(PageTitleContext);
 
+  const crumbDep = crumbs ? crumbs.map(c => c.label).join('|') : '';
+
   React.useEffect(() => {
     if (title !== undefined) {
       ctx.setTitle(title, subtitle, crumbs);
@@ -60,7 +62,7 @@ export function usePageTitle(title?: string, subtitle?: string, crumbs?: Breadcr
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, subtitle, crumbs]);
+  }, [title, subtitle, crumbDep, ctx]);
 
   return ctx;
 }

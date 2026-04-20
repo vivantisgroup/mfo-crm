@@ -30,6 +30,8 @@ import { ReadingPane } from './components/ReadingPane';
 import { Composer } from './components/Composer';
 import type { GmailLabel } from '@/app/api/mail/labels/route';
 import { Tag, getAllTags } from '@/lib/tagService';
+import { getAllMailConnections } from '@/lib/emailIntegrationService';
+import { toast } from 'sonner';
 
 type CrmLinkTarget = any;
 
@@ -130,7 +132,7 @@ function AlertBanner({ type, uid, returnTo }: { type: 'not_connected' | 'no_toke
       const { authUrl } = await res.json();
       window.location.href = authUrl;
     } catch (e: any) {
-      alert(e.message);
+      toast.error(e.message);
       setBusy(false);
     }
   }
@@ -237,24 +239,12 @@ export default function InboxPage() {
   const checkHealth = useCallback(async () => {
     if (!user?.uid || !tenant?.id) return;
     try {
-      const idToken    = await getAuth().currentUser?.getIdToken();
-      if (!idToken) { setConnHealth('not_connected'); return; }
-      const PROJECT_ID = process.env.NEXT_PUBLIC_PROJECT_ID ?? 'mfo-crm';
-      const res        = await fetch(
-        `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/tenants/${tenant.id}/members/${user.uid}/integrations/google`,
-        { headers: { Authorization: `Bearer ${idToken}` } }
-      );
-      if (res.status === 404) { setConnHealth('not_connected'); return; }
-      if (!res.ok)            { setConnHealth('unknown');       return; }
-      const doc    = await res.json();
-      const fields = doc.fields ?? {};
-      const status = fields.status?.stringValue ?? '';
-      if (status !== 'connected') { setConnHealth('not_connected'); return; }
-      const refreshToken = fields._refreshToken?.stringValue ?? '';
-      const accessToken  = fields._accessToken?.stringValue  ?? '';
-      const expiresAt    = Number(fields._expiresAt?.integerValue ?? 0);
-      const ok = (refreshToken.length > 0) || (accessToken.length > 0 && expiresAt > Date.now());
-      setConnHealth(ok ? 'ok' : 'no_token');
+      const conns = await getAllMailConnections(tenant.id, user.uid);
+      const isGoogleConnected = conns.google?.status === 'connected';
+      const isMicrosoftConnected = conns.microsoft?.status === 'connected';
+      
+      const ok = isGoogleConnected || isMicrosoftConnected;
+      setConnHealth(ok ? 'ok' : 'not_connected');
     } catch { setConnHealth('unknown'); }
   }, [user?.uid, tenant?.id]);
 
@@ -291,28 +281,38 @@ export default function InboxPage() {
   async function handleSync(maxResults?: number) {
     if (!user?.uid || syncing) return;
     if (connHealth === 'not_connected') {
-      setSyncMsg('❌ Gmail is not connected. Go to Settings → Integrations.');
+      setSyncMsg('❌ No email provider is connected. Go to Settings → Integrations.');
       return;
     }
     const count = maxResults ?? syncCount;
     setSyncing(true);
     setSyncMsg(null);
     try {
+      const conns = await getAllMailConnections(tenant!.id, user.uid);
+      const providersToSync = [];
+      if (conns.microsoft?.status === 'connected') providersToSync.push('microsoft');
+      if (conns.google?.status === 'connected') providersToSync.push('google');
+
       const idToken = await getAuth().currentUser?.getIdToken();
-      const res = await fetch('/api/mail/sync', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ uid: user.uid, idToken, tenantId: tenant?.id, maxResults: count }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setSyncMsg(`✅ Synced ${data.newEmails} new emails (last ${count}) — ${data.newActivities} linked to CRM`);
-        await checkHealth();
-        await fetchLabels();
-      } else {
-        setSyncMsg(`❌ ${data.error}`);
-        if (data.error?.includes('refresh token') || data.error?.includes('re-connect')) setConnHealth('no_token');
+      let totalFetched = 0;
+      
+      for (const provider of providersToSync) {
+        const res = await fetch('/api/mail/sync', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ uid: user.uid, idToken, tenantId: tenant?.id, provider, maxResults: count }),
+        });
+        if (res.ok) {
+           const result = await res.json();
+           totalFetched += result.newEmails || 0;
+        } else {
+           const err = await res.json().catch(() => ({}));
+           console.error(`Sync error for ${provider}:`, err);
+        }
       }
+      setSyncMsg(`✅ Synced ${totalFetched} new messages`);
+      await checkHealth();
+      await fetchLabels();
     } catch (e: any) {
       setSyncMsg(`❌ ${e.message}`);
     } finally {
@@ -464,7 +464,7 @@ export default function InboxPage() {
                 <input
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="Terminal Search…"
+                  placeholder="Platform Search…"
                   style={{
                     width: '100%', boxSizing: 'border-box',
                     padding: '8px 28px 8px 32px',

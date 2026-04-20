@@ -8,11 +8,21 @@ import {
   type NodeProps, MarkerType,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { Maximize2, Minimize2, X, Target } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import dagre from 'dagre';
 
 // ─── Typed node data ─────────────────────────────────────────────────────────
-type FamilyData  = { label: string; icon: string };
-type RelData     = { label: string; nodeType: string; subType?: string };
-type GroupData   = { label: string; contacts: NetworkNode[]; expanded: boolean; onToggle?: () => void };
+type TreeData = { 
+  hasChildren?: boolean; 
+  treeExpanded?: boolean; 
+  onToggleTree?: () => void; 
+  isFocused?: boolean;
+  onFocus?: () => void;
+};
+type FamilyData  = TreeData & { label: string; icon: string };
+type RelData     = TreeData & { label: string; nodeType: string; subType?: string };
+type GroupData   = TreeData & { label: string; contacts: NetworkNode[]; expanded: boolean; onToggle?: () => void };
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -26,8 +36,8 @@ interface RelationshipsTabProps {
 
 const TYPE_COLORS: Record<string, string> = {
   family:   'var(--brand-500)',
-  member:   'var(--color-blue)',
-  entity:   'var(--color-purple)',
+  member:   '#3b82f6', // Tailwind blue-500
+  entity:   '#a855f7', // Tailwind purple-500
   provider: 'var(--color-amber)',
   group:    'var(--color-amber)',
 };
@@ -48,44 +58,92 @@ const SUBTYPE_ICON: Record<string, string> = {
 
 // ─── Custom Nodes ─────────────────────────────────────────────────────────────
 
-/** Root / family node */
-function FamilyNode({ data: _d }: NodeProps) {
-  const d = _d as FamilyData;
+function ExpandHandle({ isExpanded, onToggle, hasChildren }: { isExpanded: boolean, onToggle: () => void, hasChildren: boolean }) {
+  if (!hasChildren) return null;
   return (
-    <div style={{
-      padding: '14px 20px', textAlign: 'center', minWidth: 200,
-      background: 'linear-gradient(135deg, var(--brand-600), var(--brand-400))',
-      color: 'white', borderRadius: 14, boxShadow: '0 12px 28px -6px rgba(0,0,0,0.45)',
-    }}>
-      <Handle type="source" position={Position.Bottom} style={{ background: 'white', width: 8, height: 8 }} />
-      <div style={{ fontSize: 26, marginBottom: 6 }}>{d.icon}</div>
-      <div style={{ fontWeight: 800, fontSize: 15 }}>{d.label}</div>
-      <div style={{ fontSize: 9, opacity: 0.75, marginTop: 3, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Family Core</div>
+    <div
+      onClick={(e) => { e.stopPropagation(); onToggle(); }}
+      style={{
+        position: 'absolute', bottom: -10, left: '50%', transform: 'translateX(-50%)',
+        width: 20, height: 20, borderRadius: '50%', background: 'var(--bg-surface)',
+        border: '1px solid var(--border-hover)', color: 'var(--text-secondary)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 14, fontWeight: 800, cursor: 'pointer', zIndex: 10, lineHeight: 1,
+        boxShadow: 'var(--shadow-sm)', transition: 'all 0.15s ease'
+      }}
+    >
+      {isExpanded ? '−' : '+'}
     </div>
   );
 }
 
-/** Regular entity / member node */
+function FamilyNode({ data: _d }: NodeProps) {
+  const d = _d as FamilyData;
+  const color = 'var(--brand-500)';
+  return (
+    <div style={{
+      padding: '8px 12px', minWidth: 160, display: 'flex', alignItems: 'center', gap: 10,
+      background: 'var(--bg-elevated)', border: `1px solid var(--border)`,
+      borderLeft: `5px solid ${color}`, borderRadius: 8, boxShadow: 'var(--shadow-sm)',
+      position: 'relative',
+    }}>
+      <Handle type="source" position={Position.Bottom} style={{ background: color, width: 6, height: 6 }} />
+      
+      <div style={{ position: 'absolute', top: 4, right: 4 }}>
+        <button onClick={(e) => { e.stopPropagation(); d.onFocus?.(); }} title={d.isFocused ? 'Clear Focus' : 'Focus on direct relationships'} style={{ 
+          background: d.isFocused ? 'var(--brand-500)' : 'transparent', 
+          color: d.isFocused ? '#fff' : 'var(--text-tertiary)',
+          border: 'none', borderRadius: '50%', width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s'
+        }}>
+          <Target size={14} />
+        </button>
+      </div>
+
+      <div style={{ fontSize: 20 }}>{d.icon}</div>
+      <div style={{ textAlign: 'left' }}>
+        <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>{d.label}</div>
+        <div style={{ fontSize: 9, color: 'var(--text-tertiary)', marginTop: 1, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Family Core</div>
+      </div>
+      <ExpandHandle hasChildren={!!d.hasChildren} isExpanded={!!d.treeExpanded} onToggle={() => d.onToggleTree?.()} />
+    </div>
+  );
+}
+
 function RelNode({ data: _d }: NodeProps) {
   const d = _d as RelData;
-  const color = TYPE_COLORS[d.nodeType ?? 'member'];
+  const color = TYPE_COLORS[d.nodeType ?? 'member'] || 'var(--text-secondary)';
   const icon  = SUBTYPE_ICON[d.subType ?? ''] ?? TYPE_ICONS[d.nodeType ?? 'member'];
   return (
     <div style={{
-      padding: '10px 16px', minWidth: 180, textAlign: 'center',
-      background: 'var(--bg-elevated)', border: `1px solid ${color}44`,
-      borderLeft: `4px solid ${color}`, borderRadius: 10,
-      boxShadow: 'var(--shadow-md)', color: 'var(--text-primary)',
+      padding: '6px 10px', minWidth: 140, display: 'flex', alignItems: 'center', gap: 8,
+      background: 'var(--bg-elevated)', border: `1px solid var(--border)`,
+      borderLeft: `4px solid ${color}`, borderRadius: 6,
+      boxShadow: 'var(--shadow-sm)', color: 'var(--text-primary)',
+      position: 'relative',
     }}>
-      <Handle type="target" position={Position.Top} style={{ background: color, width: 8, height: 8 }} />
-      <Handle type="source" position={Position.Bottom} style={{ background: color, width: 8, height: 8 }} />
-      <div style={{ fontSize: 18, marginBottom: 4 }}>{icon}</div>
-      <div style={{ fontWeight: 700, fontSize: 13 }}>{d.label}</div>
-      {d.subType && (
-        <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 3, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-          {d.subType}
-        </div>
-      )}
+      <Handle type="target" position={Position.Top} style={{ background: color, width: 6, height: 6 }} />
+      <Handle type="source" position={Position.Bottom} style={{ background: color, width: 6, height: 6 }} />
+      
+      <div style={{ position: 'absolute', top: 4, right: 4 }}>
+        <button onClick={(e) => { e.stopPropagation(); d.onFocus?.(); }} title={d.isFocused ? 'Clear Focus' : 'Focus on direct relationships'} style={{ 
+          background: d.isFocused ? color : 'transparent', 
+          color: d.isFocused ? '#fff' : 'var(--text-tertiary)',
+          border: 'none', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s'
+        }}>
+          <Target size={12} />
+        </button>
+      </div>
+
+      <div style={{ fontSize: 16 }}>{icon}</div>
+      <div style={{ textAlign: 'left', flex: 1, paddingRight: 16 }}>
+        <div style={{ fontWeight: 600, fontSize: 12 }}>{d.label}</div>
+        {d.subType && (
+          <div style={{ fontSize: 9, color: 'var(--text-tertiary)', marginTop: 1, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            {d.subType}
+          </div>
+        )}
+      </div>
+      <ExpandHandle hasChildren={!!d.hasChildren} isExpanded={!!d.treeExpanded} onToggle={() => d.onToggleTree?.()} />
     </div>
   );
 }
@@ -105,23 +163,32 @@ function GroupNode({ data: _d }: NodeProps) {
 
   return (
     <div style={{
-      minWidth: 200, maxWidth: 280, textAlign: 'center',
-      background: 'var(--bg-elevated)', border: `1px solid ${color}44`,
-      borderLeft: `4px solid ${color}`, borderRadius: 10,
-      boxShadow: 'var(--shadow-md)', color: 'var(--text-primary)',
+      minWidth: 160, maxWidth: 220, textAlign: 'left',
+      background: 'var(--bg-elevated)', border: `1px solid var(--border)`,
+      borderLeft: `4px solid ${color}`, borderRadius: 6,
+      boxShadow: 'var(--shadow-sm)', color: 'var(--text-primary)',
       overflow: 'hidden',
     }}>
-      <Handle type="target" position={Position.Top} style={{ background: color, width: 8, height: 8 }} />
-      <Handle type="source" position={Position.Bottom} style={{ background: color, width: 8, height: 8 }} />
+      <Handle type="target" position={Position.Top} style={{ background: color, width: 6, height: 6 }} />
+      <Handle type="source" position={Position.Bottom} style={{ background: color, width: 6, height: 6 }} />
 
       {/* Header row */}
-      <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 18, flexShrink: 0 }}>{icon}</span>
-        <div style={{ flex: 1, textAlign: 'left' }}>
-          <div style={{ fontWeight: 700, fontSize: 13 }}>{d.label}</div>
+      <div style={{ padding: '6px 10px', display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
+        <div style={{ position: 'absolute', top: 4, right: 4 }}>
+          <button onClick={(e) => { e.stopPropagation(); d.onFocus?.(); }} title={d.isFocused ? 'Clear Focus' : 'Focus on direct relationships'} style={{ 
+            background: d.isFocused ? color : 'transparent', 
+            color: d.isFocused ? '#fff' : 'var(--text-tertiary)',
+            border: 'none', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s'
+          }}>
+            <Target size={12} />
+          </button>
+        </div>
 
-          <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }}>
-            {contacts.length} contact{contacts.length !== 1 ? 's' : ''}
+        <span style={{ fontSize: 16, flexShrink: 0 }}>{icon}</span>
+        <div style={{ flex: 1, paddingRight: 16 }}>
+          <div style={{ fontWeight: 600, fontSize: 12 }}>{d.label}</div>
+          <div style={{ fontSize: 9, color: 'var(--text-tertiary)', marginTop: 1 }}>
+            {contacts.length} {contacts.length !== 1 ? 'contacts' : 'contact'}
           </div>
         </div>
         {/* Expand / collapse toggle button */}
@@ -129,11 +196,11 @@ function GroupNode({ data: _d }: NodeProps) {
           onClick={(e) => { e.stopPropagation(); onToggle?.(); }}
           title={isExpanded ? 'Collapse contacts' : 'Show contacts'}
           style={{
-            width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
-            background: isExpanded ? `${color}33` : `${color}22`,
-            border: `1px solid ${color}66`, cursor: 'pointer',
+            width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+            background: 'var(--bg-surface)',
+            border: `1px solid var(--border)`, cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 14, fontWeight: 800, color: color,
+            fontSize: 12, fontWeight: 800, color: 'var(--text-secondary)',
             transition: 'all 0.2s', lineHeight: 1,
           }}
         >
@@ -144,23 +211,23 @@ function GroupNode({ data: _d }: NodeProps) {
       {/* Expanded contacts list */}
       {isExpanded && (
         <div style={{
-          borderTop: `1px solid ${color}22`, padding: '8px 10px',
-          display: 'flex', flexDirection: 'column', gap: 6,
-          background: `${color}08`,
+          borderTop: `1px solid var(--border)`, padding: '6px 10px',
+          display: 'flex', flexDirection: 'column', gap: 4,
+          background: 'var(--bg-surface)',
         }}>
           {contacts.map(c => (
             <div key={c.id} style={{
-              display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
-              background: 'var(--bg-surface)', borderRadius: 7,
-              border: `1px solid ${color}22`, textAlign: 'left',
+              display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px',
+              background: 'var(--bg-elevated)', borderRadius: 4,
+              border: `1px solid var(--border)`, textAlign: 'left',
             }}>
               <span style={{ fontSize: 14 }}>
                 {SUBTYPE_ICON[c.subType ?? ''] ?? '🤝'}
               </span>
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 12 }}>{c.name}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="truncate" style={{ fontWeight: 600, fontSize: 11 }}>{c.name}</div>
                 {c.subType && (
-                  <div style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <div className="truncate" style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     {c.subType}
                   </div>
                 )}
@@ -169,6 +236,7 @@ function GroupNode({ data: _d }: NodeProps) {
           ))}
         </div>
       )}
+      <ExpandHandle hasChildren={!!d.hasChildren} isExpanded={!!d.treeExpanded} onToggle={() => d.onToggleTree?.()} />
     </div>
   );
 }
@@ -181,39 +249,28 @@ const NODE_TYPES = {
 
 // ─── Layout engine ────────────────────────────────────────────────────────────
 
+// ─── Layout engine ────────────────────────────────────────────────────────────
+
 interface LayoutOptions {
   nodes: NetworkNode[];
   edges: RelationshipEdge[];
   rootId: string;
-  /** Set of groupKey strings that are expanded */
   expandedGroups: Set<string>;
+  expandedTreeNodes: Set<string>;
+  focusIds: Set<string>;
 }
 
-function buildLayout({ nodes, edges, rootId, expandedGroups }: LayoutOptions) {
-  const vGap = 200;
-  const hGap = 240;
-  const startX = 800;
-  const startY = 40;
+function buildLayout({ nodes, edges, rootId, expandedGroups, expandedTreeNodes, focusIds }: LayoutOptions) {
+  const dagreGraph = new dagre.graphlib.Graph();
+  dagreGraph.setDefaultEdgeLabel(() => ({}));
+  dagreGraph.setGraph({ rankdir: 'TB', ranksep: 80, nodesep: 40 });
 
-  const flowNodes: any[] = [];
-
-  // ── 1. Root (family) ────────────────────────────────────────────────────────
   const root = nodes.find(n => n.id === rootId);
   if (!root) return { flowNodes: [], flowEdges: [] };
 
-  flowNodes.push({
-    id: root.id,
-    type: 'familyNode',
-    position: { x: startX, y: startY },
-    data: { label: root.name, icon: TYPE_ICONS.family },
-  });
-
-  // ── 2. Group providers by groupKey ─────────────────────────────────────────
-  const providerNodes = nodes.filter(n => n.nodeType === 'provider');
-  const ungrouped     = providerNodes.filter(n => !n.groupKey);
-
-  // Build groups map: groupKey → contacts[]
+  // 1. Resolve providers to their "group", and map node to group.
   const groupsMap = new Map<string, { label: string; contacts: NetworkNode[] }>();
+  const providerNodes = nodes.filter(n => n.nodeType === 'provider');
   for (const p of providerNodes) {
     if (!p.groupKey) continue;
     if (!groupsMap.has(p.groupKey)) {
@@ -221,83 +278,11 @@ function buildLayout({ nodes, edges, rootId, expandedGroups }: LayoutOptions) {
     }
     groupsMap.get(p.groupKey)!.contacts.push(p);
   }
-
-  // ── 3. Categorise non-provider nodes ───────────────────────────────────────
-  const members  = nodes.filter(n => n.nodeType === 'member');
-  const entities = nodes.filter(n => n.nodeType === 'entity');
-
-  // ── 4. Position levels ─────────────────────────────────────────────────────
-  function layOut(items: { id: string; width?: number }[], y: number) {
-    const totalW = (items.length - 1) * hGap;
-    const x0 = startX - totalW / 2;
-    return items.map((item, i) => ({ id: item.id, x: x0 + i * hGap, y }));
-  }
-
-  // Level 1: members
-  const memPositions = layOut(members, startY + vGap);
-  for (const pos of memPositions) {
-    const n = members.find(m => m.id === pos.id)!;
-    flowNodes.push({
-      id: n.id, type: 'relNode',
-      position: { x: pos.x, y: pos.y },
-      data: { label: n.name, nodeType: n.nodeType, subType: n.subType },
-    });
-  }
-
-  // Level 2: entities
-  const entPositions = layOut(entities, startY + vGap * 2);
-  for (const pos of entPositions) {
-    const n = entities.find(e => e.id === pos.id)!;
-    flowNodes.push({
-      id: n.id, type: 'relNode',
-      position: { x: pos.x, y: pos.y },
-      data: { label: n.name, nodeType: n.nodeType, subType: n.subType },
-    });
-  }
-
-  // Level 3: provider groups + ungrouped providers
-  const groupItems = Array.from(groupsMap.entries()).map(([key]) => ({ id: `group-${key}` }));
-  const ungroupedItems = ungrouped.map(n => ({ id: n.id }));
-  const level3Items = [...groupItems, ...ungroupedItems];
-  const l3Positions = layOut(level3Items, startY + vGap * 3);
-
-  // Place group nodes
-  for (const [groupKey, { label, contacts }] of groupsMap.entries()) {
-    const pos = l3Positions.find(p => p.id === `group-${groupKey}`)!;
-    const isExpanded = expandedGroups.has(groupKey);
-    flowNodes.push({
-      id: `group-${groupKey}`,
-      type: 'groupNode',
-      position: { x: pos.x - 10, y: pos.y },
-      data: {
-        label,
-        contacts,
-        expanded: isExpanded,
-        // onToggle injected in effect below
-      },
-    });
-  }
-
-  // Place ungrouped (solo) providers
-  for (const n of ungrouped) {
-    const pos = l3Positions.find(p => p.id === n.id)!;
-    flowNodes.push({
-      id: n.id, type: 'relNode',
-      position: { x: pos.x, y: pos.y },
-      data: { label: n.name, nodeType: n.nodeType, subType: n.subType },
-    });
-  }
-
-  // ── 5. Build edges ─────────────────────────────────────────────────────────
-  // For grouped providers: edge targets the group node (not the individual)
-  // unless expanded — then preserve individual edges.
+  
   const nodeToGroup = new Map<string, string>();
   for (const [groupKey, { contacts }] of groupsMap.entries()) {
     for (const c of contacts) nodeToGroup.set(c.id, groupKey);
   }
-
-  const processedEdges = new Set<string>();
-  const flowEdges: any[] = [];
 
   const resolveId = (nodeId: string) => {
     const gk = nodeToGroup.get(nodeId);
@@ -305,30 +290,127 @@ function buildLayout({ nodes, edges, rootId, expandedGroups }: LayoutOptions) {
     return `group-${gk}`;
   };
 
+  // 2. Build explicit adjacency map
+  const childrenMap = new Map<string, Set<string>>();
+  const parentMap = new Map<string, Set<string>>();
+  
+  const rawEdges: { src: string, tgt: string, id: string, type: string }[] = [];
+
   for (const e of edges) {
     const src = resolveId(e.sourceId);
     const tgt = resolveId(e.targetId);
-    if (src === tgt) continue; // same group — skip self-loop
+    if (src === tgt) continue;
+    rawEdges.push({ src, tgt, id: e.id, type: e.relationType });
+    
+    if (!childrenMap.has(src)) childrenMap.set(src, new Set());
+    childrenMap.get(src)!.add(tgt);
+    
+    if (!parentMap.has(tgt)) parentMap.set(tgt, new Set());
+    parentMap.get(tgt)!.add(src);
+  }
 
-    const dedupKey = `${src}→${tgt}`;
-    if (processedEdges.has(dedupKey)) continue;
-    processedEdges.add(dedupKey);
+  const visibleNodes = new Set<string>();
 
-    const isGroupEdge = src.startsWith('group-') || tgt.startsWith('group-');
+  if (focusIds.size > 0) {
+    // 3. Focus Traversal: show ONLY focused nodes and their 1-hop neighbors
+    for (const id of Array.from(focusIds)) {
+      visibleNodes.add(id);
+      const children = childrenMap.get(id) || new Set();
+      for (const child of Array.from(children)) visibleNodes.add(child);
+      const parents = parentMap.get(id) || new Set();
+      for (const parent of Array.from(parents)) visibleNodes.add(parent);
+    }
+  } else {
+    // 3. Tree Traversal (BFS) to determine visible nodes
+    // Ensure we capture everything by identifying all nodes with no parents as 'pseudo-roots'
+    const resolvedNodesSet = new Set(nodes.map(n => resolveId(n.id)));
+    const allRoots = new Set<string>();
+    allRoots.add(resolveId(rootId)); // Always ensure actual root is here
+    
+    for (const r of Array.from(resolvedNodesSet)) {
+      if (!parentMap.has(r)) allRoots.add(r);
+    }
 
-    flowEdges.push({
-      id: `fe-${e.id}`,
-      source: src,
-      target: tgt,
-      label: e.relationType.replace(/_/g, ' '),
-      animated: isGroupEdge,
-      type: 'smoothstep',
-      markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--border-hover)' },
-      style: { stroke: isGroupEdge ? 'var(--color-amber)' : 'var(--border-hover)', strokeWidth: isGroupEdge ? 2 : 1.5, opacity: 0.85 },
-      labelStyle: { fill: 'var(--text-secondary)', fontWeight: 600, fontSize: 10 },
-      labelBgStyle: { fill: 'var(--bg-elevated)', fillOpacity: 0.9, rx: 4 },
-      labelBgPadding: [4, 6] as [number, number],
-    });
+    const queue = Array.from(allRoots);
+    
+    while (queue.length > 0) {
+      const curr = queue.shift()!;
+      if (visibleNodes.has(curr)) continue; // Prevent cycle loops
+      visibleNodes.add(curr);
+      
+      if (expandedTreeNodes.has(curr)) {
+        const children = childrenMap.get(curr) || new Set();
+        for (const child of Array.from(children)) {
+          if (!visibleNodes.has(child)) queue.push(child);
+        }
+      }
+    }
+  }
+
+  // 4. Construct flow nodes & edges with dagre
+  const flowNodes: any[] = [];
+  const flowEdges: any[] = [];
+
+  for (const id of Array.from(visibleNodes)) {
+    let type = 'relNode';
+    let data: any = {};
+    let width = 160;
+    let height = 60;
+
+    if (id === rootId) {
+      type = 'familyNode';
+      data = { label: root.name, icon: TYPE_ICONS.family };
+      width = 200; height = 80;
+    } else if (id.startsWith('group-')) {
+      type = 'groupNode';
+      const groupKey = id.replace('group-', '');
+      const groupData = groupsMap.get(groupKey)!;
+      data = { label: groupData.label, contacts: groupData.contacts, expanded: expandedGroups.has(groupKey) };
+      width = data.expanded ? 240 : 180; height = data.expanded ? 120 : 60;
+    } else {
+      const originalNode = nodes.find(n => n.id === id);
+      if (originalNode) {
+        data = { label: originalNode.name, nodeType: originalNode.nodeType, subType: originalNode.subType };
+      }
+    }
+    
+    data.hasChildren = (childrenMap.get(id)?.size ?? 0) > 0;
+    data.treeExpanded = expandedTreeNodes.has(id);
+    
+    dagreGraph.setNode(id, { width, height });
+    
+    flowNodes.push({ id, type, data, position: { x: 0, y: 0 } });
+  }
+
+  for (const edge of rawEdges) {
+    if (visibleNodes.has(edge.src) && visibleNodes.has(edge.tgt)) {
+      dagreGraph.setEdge(edge.src, edge.tgt);
+      
+      const isGroupEdge = edge.src.startsWith('group-') || edge.tgt.startsWith('group-');
+      flowEdges.push({
+        id: `fe-${edge.id}`, source: edge.src, target: edge.tgt,
+        label: edge.type.replace(/_/g, ' '),
+        animated: isGroupEdge, type: 'smoothstep',
+        // NO arrow markers here, discreet minimalist lines instead!
+        style: { stroke: isGroupEdge ? 'var(--color-amber)' : 'var(--border-hover)', strokeWidth: isGroupEdge ? 2 : 1.5, opacity: 0.8 },
+        labelStyle: { fill: 'var(--text-secondary)', fontWeight: 600, fontSize: 10 },
+        labelBgStyle: { fill: 'var(--bg-elevated)', fillOpacity: 0.9, rx: 4 },
+        labelBgPadding: [4, 6] as [number, number],
+      });
+    }
+  }
+
+  // 5. Apply Dagre Layout algorithms
+  dagre.layout(dagreGraph);
+
+  for (const fn of flowNodes) {
+    const nodeWithPos = dagreGraph.node(fn.id);
+    if (nodeWithPos) {
+      fn.position = {
+        x: nodeWithPos.x - nodeWithPos.width / 2,
+        y: nodeWithPos.y - nodeWithPos.height / 2
+      };
+    }
   }
 
   return { flowNodes, flowEdges };
@@ -340,7 +422,46 @@ export function RelationshipsTab({ nodes, edges, familyId }: RelationshipsTabPro
   const [viewMode, setViewMode]         = useState<'cards' | 'list' | 'diagram'>('diagram');
   const [typeFilters, setTypeFilters]   = useState<Set<string>>(new Set(['family', 'member', 'entity', 'provider']));
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [expandedTreeNodes, setExpandedTreeNodes] = useState<Set<string>>(new Set([familyId]));
+  const [focusIds, setFocusIds]         = useState<Set<string>>(new Set());
   const [showMinimap, setShowMinimap]   = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  
+  const router = useRouter();
+  const [selectedNodeData, setSelectedNodeData] = useState<NetworkNode | null>(null);
+
+  const onNodeDoubleClick = useCallback((evt: React.MouseEvent, node: any) => {
+    if (node.type === 'groupNode' || node.type === 'familyNode') return;
+    if (node.id.startsWith('fe-') || node.id.startsWith('group-')) return;
+     
+    const dataNode = nodes.find(n => n.id === node.id);
+    if (dataNode) {
+      setSelectedNodeData(dataNode);
+    }
+  }, [nodes]);
+
+  const toggleFullscreen = () => {
+    if (!isFullscreen) {
+      window.dispatchEvent(new CustomEvent('mfo-collapse-right'));
+    }
+    setIsFullscreen(prev => !prev);
+  };
+
+  const toggleTreeExpand = useCallback((nodeId: string) => {
+    setExpandedTreeNodes(prev => {
+      const next = new Set(Array.from(prev));
+      if (next.has(nodeId)) next.delete(nodeId); else next.add(nodeId);
+      return next;
+    });
+  }, []);
+
+  const toggleFocus = useCallback((nodeId: string) => {
+    setFocusIds(prev => {
+      const next = new Set(Array.from(prev));
+      if (next.has(nodeId)) next.delete(nodeId); else next.add(nodeId);
+      return next;
+    });
+  }, []);
 
   const availableTypes = useMemo(() => Array.from(new Set(nodes.map(n => n.nodeType).filter(t => t !== 'group'))), [nodes]);
 
@@ -385,27 +506,42 @@ export function RelationshipsTab({ nodes, edges, familyId }: RelationshipsTabPro
   // Rebuild layout whenever anything changes
   useEffect(() => {
     if (viewMode !== 'diagram') return;
-    const rootId = `node-${familyId}`;
+    // familyId prop is exactly the ID of the root node ('root-tenantId')
+    const rootId = familyId;
 
     const { flowNodes: fn, flowEdges: fe } = buildLayout({
-      nodes: filteredNodes, edges: filteredEdges, rootId, expandedGroups,
+      nodes: filteredNodes, edges: filteredEdges, rootId, expandedGroups, expandedTreeNodes, focusIds
     });
 
-    // Inject onToggle callbacks into group nodes
+    // Inject onToggle callbacks into nodes
     const enriched = fn.map((n: any) => {
-      if (n.type !== 'groupNode') return n;
-      const gk = n.id.replace('group-', '');
-      return { ...n, data: { ...n.data, onToggle: () => toggleGroup(gk) } };
+      let dataExt = { 
+        ...n.data, 
+        onToggleTree: () => toggleTreeExpand(n.id),
+        isFocused: focusIds.has(n.id),
+        onFocus: () => toggleFocus(n.id)
+      };
+      if (n.type === 'groupNode') {
+        const gk = n.id.replace('group-', '');
+        dataExt.onToggle = () => toggleGroup(gk);
+      }
+      return { ...n, data: dataExt };
     });
 
     setFlowNodes(enriched);
     setFlowEdges(fe);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, JSON.stringify(filteredNodes.map(n => n.id)), JSON.stringify(filteredEdges.map(e => e.id)), expandedGroups, familyId]);
+  }, [viewMode, JSON.stringify(filteredNodes.map(n => n.id)), JSON.stringify(filteredEdges.map(e => e.id)), expandedGroups, expandedTreeNodes, focusIds, familyId]);
 
   // ── Collapse / expand all helpers ────────────────────────────────────────────
-  const collapseAll = () => setExpandedGroups(new Set());
-  const expandAll   = () => setExpandedGroups(new Set(Array.from(allGroups.keys())));
+  const collapseAll = () => {
+    setExpandedGroups(new Set());
+    setExpandedTreeNodes(new Set([familyId]));
+  };
+  const expandAll = () => {
+    setExpandedGroups(new Set(allGroups.keys()));
+    setExpandedTreeNodes(new Set(nodes.map(n => n.id)));
+  };
 
   const groupCount       = allGroups.size;
   const expandedCount    = expandedGroups.size;
@@ -448,11 +584,17 @@ export function RelationshipsTab({ nodes, edges, familyId }: RelationshipsTabPro
                 className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: '2px 8px', opacity: expandedCount === 0 ? 0.4 : 1 }}>
                 − Collapse all
               </button>
-              {viewMode === 'diagram' && (
                 <button onClick={() => setShowMinimap(m => !m)}
                   className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: '2px 8px' }}
                   title="Toggle minimap">
                   {showMinimap ? '🗺 Hide map' : '🗺 Map'}
+                </button>
+              {focusIds.size > 0 && (
+                <button onClick={() => setFocusIds(new Set())}
+                  className="btn btn-sm" style={{ fontSize: 11, padding: '2px 8px', background: 'var(--brand-faint)', color: 'var(--brand-600)' }}
+                  title="Clear focus">
+                  <Target size={12} style={{ marginRight: 4, display: 'inline-block' }} />
+                  Clear Focus ({focusIds.size})
                 </button>
               )}
             </div>
@@ -468,6 +610,19 @@ export function RelationshipsTab({ nodes, edges, familyId }: RelationshipsTabPro
               </button>
             ))}
           </div>
+
+          {/* Fullscreen Expansion Toggle */}
+          {viewMode === 'diagram' && (
+            <button
+              onClick={toggleFullscreen}
+              className="btn btn-sm btn-ghost"
+              style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+              title={isFullscreen ? 'Exit Fullscreen' : 'Expand Network'}
+            >
+              {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              {isFullscreen ? 'Exit' : 'Expand'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -490,14 +645,39 @@ export function RelationshipsTab({ nodes, edges, familyId }: RelationshipsTabPro
 
       {/* ── Diagram ── */}
       {viewMode === 'diagram' && (
-        <div className="card" style={{ height: 640, width: '100%', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-          <ReactFlow
+        <div 
+          className="card" 
+          style={isFullscreen ? {
+            position: 'fixed', inset: 32, zIndex: 100, 
+            background: 'var(--bg-surface)', 
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.4)', 
+            borderRadius: 'var(--radius-xl)', 
+            border: '1px solid var(--border)',
+            display: 'flex', flexDirection: 'column'
+          } : {
+            height: 640, width: '100%', borderRadius: 'var(--radius-lg)', overflow: 'hidden',
+            display: 'flex', flexDirection: 'column'
+          }}
+        >
+          {isFullscreen && (
+            <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-elevated)', flexShrink: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 16 }}>Network visualization</div>
+              <button onClick={toggleFullscreen} className="btn btn-ghost btn-sm" style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 12px', border: '1px solid var(--border)', borderRadius: 8 }}>
+                <Minimize2 size={14} /> Close Expanded View
+              </button>
+            </div>
+          )}
+          <div style={{ flex: 1, position: 'relative' }}>
+            <ReactFlow
             nodes={flowNodes} edges={flowEdges}
             onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
+            onNodeDoubleClick={onNodeDoubleClick}
             nodeTypes={NODE_TYPES}
             fitView fitViewOptions={{ padding: 0.15 }}
             proOptions={{ hideAttribution: true }}
             defaultEdgeOptions={{ type: 'smoothstep' }}
+            panOnScroll={true}
+            zoomOnScroll={false}
           >
             <Background color="var(--border)" gap={24} size={1} />
             <Controls style={{
@@ -516,6 +696,7 @@ export function RelationshipsTab({ nodes, edges, familyId }: RelationshipsTabPro
               />
             )}
           </ReactFlow>
+          </div>
         </div>
       )}
 
@@ -588,6 +769,52 @@ export function RelationshipsTab({ nodes, edges, familyId }: RelationshipsTabPro
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* ── Node Info Modal ── */}
+      {selectedNodeData && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)', opacity: 1, backdropFilter: 'blur(4px)' }}>
+          <div className="card animate-fade-in" style={{ width: 380, padding: 24, position: 'relative', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.4)', border: '1px solid var(--border)' }}>
+            <button onClick={() => setSelectedNodeData(null)} style={{ position: 'absolute', top: 16, right: 16 }} className="text-slate-400 hover:text-slate-700 transition-colors">
+              <X size={16} />
+            </button>
+            <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+              <div style={{
+                width: 48, height: 48, borderRadius: 8,
+                background: TYPE_COLORS[selectedNodeData.nodeType] + '22', color: TYPE_COLORS[selectedNodeData.nodeType],
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24,
+              }}>
+                {SUBTYPE_ICON[selectedNodeData.subType ?? ''] ?? TYPE_ICONS[selectedNodeData.nodeType]}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <h3 className="text-lg font-bold truncate text-[var(--text-primary)]" title={selectedNodeData.name}>{selectedNodeData.name}</h3>
+                <span className="badge badge-neutral capitalize text-[10px] mt-1">{selectedNodeData.nodeType}</span>
+                {selectedNodeData.subType && <span className="badge ml-1 capitalize text-[10px] bg-slate-100 text-slate-700">{selectedNodeData.subType}</span>}
+              </div>
+            </div>
+            
+            <div className="mb-6 space-y-2 text-sm text-[var(--text-secondary)]">
+               {selectedNodeData.groupLabel && (
+                 <div className="flex items-center gap-2">
+                   <span className="opacity-70">Institution:</span> <span className="font-medium text-[var(--text-primary)]">{selectedNodeData.groupLabel}</span>
+                 </div>
+               )}
+               <p className="text-xs opacity-70 mt-4 leading-relaxed">This record is dynamically mapped by the relationship graph. Open to view full attributes, notes, and activity history.</p>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button className="btn btn-secondary flex-1" onClick={() => setSelectedNodeData(null)}>Close</button>
+              <button className="btn btn-primary flex-1 shadow-sm" onClick={() => {
+                 setSelectedNodeData(null);
+                 if (selectedNodeData.nodeType === 'entity' || selectedNodeData.nodeType === 'provider') {
+                   router.push(`/relationships/organizations/${selectedNodeData.id}`);
+                 } else {
+                   router.push(`/relationships/contacts/${selectedNodeData.id}`);
+                 }
+              }}>Open Record</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

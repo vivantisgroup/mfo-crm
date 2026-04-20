@@ -3,18 +3,51 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
+import DashboardHub from '@/components/dashboards/DashboardHub';
 import { useLiveMode } from '@/lib/useLiveMode';
 import { usePageTitle } from '@/lib/PageTitleContext';
 import { getPlatformConfig, getAllTenants, getAllUsers } from '@/lib/platformService';
 import type { PlatformConfig, TenantRecord, UserProfile } from '@/lib/platformService';
 import { getAllOpportunities, getAllActivities, getSalesTeams } from '@/lib/crmService';
 import type { Opportunity, CrmActivity, SalesTeam } from '@/lib/crmService';
-import {
-  Card, Metric, Text, Title, Subtitle, Flex, Grid, Col,
-  AreaChart, BarList, DonutChart, BadgeDelta, ProgressBar, Badge,
-  Tracker, Divider, Button
-} from '@tremor/react';
 import ReactECharts from 'echarts-for-react';
+
+// ─── Tremor Migration Stubs ───────────────────────────────────────────────────
+// These lightweight components replace the uninstalled Tremor library dependencies
+
+export const Grid = ({ numItemsSm, numItemsLg, className, children }: any) => {
+  const smCols = numItemsSm === 1 ? 'sm:grid-cols-1' : numItemsSm === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-3';
+  const lgCols = numItemsLg === 2 ? 'lg:grid-cols-2' : numItemsLg === 3 ? 'lg:grid-cols-3' : numItemsLg === 4 ? 'lg:grid-cols-4' : 'lg:grid-cols-1';
+  return <div className={`grid grid-cols-1 ${smCols} ${lgCols} ${className || ''}`}>{children}</div>;
+};
+
+export const Flex = ({ alignItems, className, children, justifyContent }: any) => {
+  const align = alignItems === 'start' ? 'items-start' : 'items-center';
+  const justify = justifyContent === 'center' ? 'justify-center' : 'justify-between';
+  return <div className={`flex ${justify} ${align} w-full ${className || ''}`}>{children}</div>;
+};
+
+export const Subtitle = ({ className, children }: any) => (
+  <div className={`text-sm text-[var(--text-secondary)] ${className || ''}`}>{children}</div>
+);
+
+export const ProgressBar = ({ value, color, className }: any) => {
+  let bg = 'bg-primary';
+  if (color === 'emerald') bg = 'bg-emerald-500';
+  if (color === 'blue') bg = 'bg-blue-500';
+  if (color === 'amber') bg = 'bg-amber-500';
+  if (color === 'rose') bg = 'bg-rose-500';
+  
+  return (
+    <div className={`w-full bg-secondary/30 rounded-full h-2 ${className || ''}`}>
+       <div className={`${bg} h-2 rounded-full transition-all`} style={{ width: `${Math.min(100, Math.max(0, value))}%` }}></div>
+    </div>
+  );
+};
+
+export const DonutChart = (props: any) => <div className="flex h-full w-full items-center justify-center border border-dashed rounded-xl bg-card/50 text-sm text-muted-foreground p-4">Analytic Chart Unavailable</div>;
+export const AreaChart = (props: any) => <div className="flex h-full w-full items-center justify-center border border-dashed rounded-xl bg-card/50 text-sm text-muted-foreground p-4">Analytic Chart Unavailable</div>;
+export const BarList = (props: any) => <div className="flex h-full w-full items-center justify-center border border-dashed rounded-xl bg-card/50 text-sm text-muted-foreground p-4">Data List Unavailable</div>;
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
 
@@ -37,15 +70,15 @@ function GreetingBar({ name, role, action }: { name: string; role: string; actio
           <span className="text-2xl font-black text-brand-600">{name.charAt(0).toUpperCase()}</span>
         </div>
         <div>
-          <Title className="text-3xl font-black text-primary tracking-tight">{getGreeting()}, {name}</Title>
-          <Text className="text-secondary font-medium">{role}</Text>
+          <h3 className="text-lg font-semibold tracking-tight mb-2 text-3xl font-black text-primary tracking-tight">{getGreeting()}, {name}</h3>
+          <div className="text-sm text-[var(--text-secondary)] text-secondary font-medium">{role}</div>
         </div>
       </div>
       {action && (
         <Link href={action.href}>
-          <Button variant="primary" size="xs">
+          <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2">
             {action.label}
-          </Button>
+          </button>
         </Link>
       )}
     </div>
@@ -132,33 +165,33 @@ function PlatformAdminDashboard({ user, platformCfg, tenants, users }: {
       />
       
       <Grid numItemsSm={2} numItemsLg={4} className="gap-6 mb-6">
-        <Card decoration="top" decorationColor="emerald">
-          <Text>Active Tenants</Text>
-          <Metric>{active}</Metric>
-          <Text className="mt-2 text-tremor-content">Platform clients</Text>
-        </Card>
-        <Card decoration="top" decorationColor="amber">
-          <Text>Trial Tenants</Text>
-          <Metric>{trials}</Metric>
-          <Text className="mt-2 text-tremor-content">Evaluating</Text>
-        </Card>
-        <Card decoration="top" decorationColor="blue">
-          <Text>Total Users</Text>
-          <Metric>{users.length}</Metric>
-          <Text className="mt-2 text-tremor-content">Across all tenants</Text>
-        </Card>
-        <Card decoration="top" decorationColor="teal">
-          <Text>Platform Status</Text>
-          <Metric>Healthy</Metric>
-          <Text className="mt-2 text-tremor-content">All systems operational</Text>
-        </Card>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <div className="text-sm text-[var(--text-secondary)]">Active Tenants</div>
+          <div className="text-3xl font-bold tracking-tight">{active}</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-2 text-tremor-content">Platform clients</div>
+        </div>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <div className="text-sm text-[var(--text-secondary)]">Trial Tenants</div>
+          <div className="text-3xl font-bold tracking-tight">{trials}</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-2 text-tremor-content">Evaluating</div>
+        </div>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <div className="text-sm text-[var(--text-secondary)]">Total Users</div>
+          <div className="text-3xl font-bold tracking-tight">{users.length}</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-2 text-tremor-content">Across all tenants</div>
+        </div>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <div className="text-sm text-[var(--text-secondary)]">Platform Status</div>
+          <div className="text-3xl font-bold tracking-tight">Healthy</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-2 text-tremor-content">All systems operational</div>
+        </div>
       </Grid>
 
       <Grid numItemsSm={1} numItemsLg={2} className="gap-6 mb-8">
-        <Card>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
           <Flex alignItems="start">
             <div>
-              <Title>Tenant Breakdown</Title>
+              <h3 className="text-lg font-semibold tracking-tight mb-2">Tenant Breakdown</h3>
               <Subtitle>Distribution by subscription status</Subtitle>
             </div>
             <Link href="/platform/tenants" className="text-sm font-medium text-brand-500 hover:text-brand-600 hover:underline">Manage &rarr;</Link>
@@ -176,12 +209,12 @@ function PlatformAdminDashboard({ user, platformCfg, tenants, users }: {
           <div className="mt-6">
             <BarList data={tenantData.map(d => ({ name: d.name, value: d.value }))} className="mt-2" color="blue" />
           </div>
-        </Card>
+        </div>
 
-        <Card>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
            <Flex alignItems="start">
             <div>
-              <Title>Platform Growth</Title>
+              <h3 className="text-lg font-semibold tracking-tight mb-2">Platform Growth</h3>
               <Subtitle>Tenant acquisition over last 90 days</Subtitle>
             </div>
           </Flex>
@@ -194,14 +227,14 @@ function PlatformAdminDashboard({ user, platformCfg, tenants, users }: {
             yAxisWidth={30}
             showAnimation={true}
           />
-        </Card>
+        </div>
       </Grid>
 
       <Grid numItemsSm={1} numItemsLg={2} className="gap-6 mb-8">
-        <Card>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
           <Flex alignItems="start">
             <div>
-              <Title>User Utilization</Title>
+              <h3 className="text-lg font-semibold tracking-tight mb-2">User Utilization</h3>
               <Subtitle>Global user engagement & churn risk</Subtitle>
             </div>
             <Link href="/platform/users" className="text-sm font-medium text-brand-500 hover:text-brand-600 hover:underline">View Users &rarr;</Link>
@@ -211,46 +244,46 @@ function PlatformAdminDashboard({ user, platformCfg, tenants, users }: {
               <ReactECharts option={utilizationChartOptions} style={{ height: '100%', width: '100%' }} />
             ) : (
               <Flex className="h-full" justifyContent="center">
-                <Text>No user data available</Text>
+                <div className="text-sm text-[var(--text-secondary)]">No user data available</div>
               </Flex>
             )}
           </div>
-        </Card>
+        </div>
 
-        <Card>
-          <Title>Engagement Metrics</Title>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <h3 className="text-lg font-semibold tracking-tight mb-2">Engagement Metrics</h3>
           <Subtitle>Real-time platform activity</Subtitle>
           <div className="mt-6 space-y-6">
             <div>
               <Flex>
-                <Text>Online Now</Text>
-                <Text className="font-bold text-emerald-600">{onlineNow}</Text>
+                <div className="text-sm text-[var(--text-secondary)]">Online Now</div>
+                <div className="text-sm text-[var(--text-secondary)] font-bold text-emerald-600">{onlineNow}</div>
               </Flex>
               <ProgressBar value={users.length ? (onlineNow / users.length)*100 : 0} color="emerald" className="mt-2" />
             </div>
             <div>
               <Flex>
-                <Text>Active Today</Text>
-                <Text className="font-bold text-blue-600">{activeToday}</Text>
+                <div className="text-sm text-[var(--text-secondary)]">Active Today</div>
+                <div className="text-sm text-[var(--text-secondary)] font-bold text-blue-600">{activeToday}</div>
               </Flex>
               <ProgressBar value={users.length ? (activeToday / users.length)*100 : 0} color="blue" className="mt-2" />
             </div>
             <div>
               <Flex>
-                <Text>Dormant Users ({'<'} 30 days)</Text>
-                <Text className="font-bold text-amber-600">{dormant}</Text>
+                <div className="text-sm text-[var(--text-secondary)]">Dormant Users ({'<'} 30 days)</div>
+                <div className="text-sm text-[var(--text-secondary)] font-bold text-amber-600">{dormant}</div>
               </Flex>
               <ProgressBar value={users.length ? (dormant / users.length)*100 : 0} color="amber" className="mt-2" />
             </div>
             <div>
               <Flex>
-                <Text>High Churn Risk ({'>'} 30 days inactive)</Text>
-                <Text className="font-bold text-rose-600">{churnRisk}</Text>
+                <div className="text-sm text-[var(--text-secondary)]">High Churn Risk ({'>'} 30 days inactive)</div>
+                <div className="text-sm text-[var(--text-secondary)] font-bold text-rose-600">{churnRisk}</div>
               </Flex>
               <ProgressBar value={users.length ? (churnRisk / users.length)*100 : 0} color="rose" className="mt-2" />
             </div>
           </div>
-        </Card>
+        </div>
       </Grid>
 
     </div>
@@ -297,33 +330,33 @@ function SalesLeaderDashboard({ user, opps, activities, teams }: {
       />
       
       <Grid numItemsSm={2} numItemsLg={4} className="gap-6 mb-6">
-        <Card decoration="top" decorationColor="indigo">
-          <Text>Total Pipeline</Text>
-          <Metric>{fmtUsd(pipeline)}</Metric>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <div className="text-sm text-[var(--text-secondary)]">Total Pipeline</div>
+          <div className="text-3xl font-bold tracking-tight">{fmtUsd(pipeline)}</div>
           <Flex className="mt-2 text-sm text-tremor-content">
-            <Text>{openOpps.length} active deals</Text>
+            <div className="text-sm text-[var(--text-secondary)]">{openOpps.length} active deals</div>
           </Flex>
-        </Card>
-        <Card decoration="top" decorationColor="emerald">
-          <Text>Won Revenue</Text>
-          <Metric>{fmtUsd(won)}</Metric>
-          <Text className="mt-2 text-tremor-content">Closed won this cycle</Text>
-        </Card>
-        <Card decoration="top" decorationColor={winRate >= 30 ? "emerald" : "amber"}>
-          <Text>Win Rate</Text>
-          <Metric>{winRate}%</Metric>
-          <Text className="mt-2 text-tremor-content">Across {closedTotal} closed opportunities</Text>
-        </Card>
-        <Card decoration="top" decorationColor={closingSoon.length > 3 ? "rose" : "amber"}>
-          <Text>Closing ≤30d</Text>
-          <Metric>{closingSoon.length}</Metric>
-          <Text className="mt-2 text-tremor-content">Deals fast approaching close date</Text>
-        </Card>
+        </div>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <div className="text-sm text-[var(--text-secondary)]">Won Revenue</div>
+          <div className="text-3xl font-bold tracking-tight">{fmtUsd(won)}</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-2 text-tremor-content">Closed won this cycle</div>
+        </div>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <div className="text-sm text-[var(--text-secondary)]">Win Rate</div>
+          <div className="text-3xl font-bold tracking-tight">{winRate}%</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-2 text-tremor-content">Across {closedTotal} closed opportunities</div>
+        </div>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <div className="text-sm text-[var(--text-secondary)]">Closing ≤30d</div>
+          <div className="text-3xl font-bold tracking-tight">{closingSoon.length}</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-2 text-tremor-content">Deals fast approaching close date</div>
+        </div>
       </Grid>
 
       <Grid numItemsSm={1} numItemsLg={2} className="gap-6 mb-6">
-         <Card>
-          <Title>Sales Teams Attainment</Title>
+         <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <h3 className="text-lg font-semibold tracking-tight mb-2">Sales Teams Attainment</h3>
           <Subtitle>Quota completion percentage</Subtitle>
           <BarList 
             data={teamAttainment} 
@@ -331,37 +364,37 @@ function SalesLeaderDashboard({ user, opps, activities, teams }: {
             color="indigo" 
             valueFormatter={(val: number) => `${val}%`}
           />
-        </Card>
+        </div>
 
-        <Card>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
           <Flex alignItems="start">
             <div>
-              <Title>Hot Deals Closing Soon</Title>
+              <h3 className="text-lg font-semibold tracking-tight mb-2">Hot Deals Closing Soon</h3>
               <Subtitle>Top 6 deals scheduled to close in next 30 days</Subtitle>
             </div>
-            <Badge color="rose">{closingSoon.length} Deals</Badge>
+            <span className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-[var(--brand-500)] text-white shadow hover:bg-[var(--brand-600)]" color="rose">{closingSoon.length} Deals</span>
           </Flex>
           <div className="mt-6 flex flex-col gap-4">
             {closingSoon.length === 0 ? (
-              <Text>No deals closing in the next 30 days.</Text>
+              <div className="text-sm text-[var(--text-secondary)]">No deals closing in the next 30 days.</div>
             ) : closingSoon.slice(0, 6).map(o => (
               <div key={o.id} className="flex justify-between items-center border-b border-tremor-border pb-3 last:border-0 last:pb-0">
                 <div>
-                  <Text className="font-semibold text-tremor-content-strong">{o.orgName}</Text>
-                  <Text className="text-xs text-tremor-content">{o.ownerName} &bull; {o.stage.replace('_', ' ')}</Text>
+                  <div className="text-sm text-[var(--text-secondary)] font-semibold text-tremor-content-strong">{o.orgName}</div>
+                  <div className="text-sm text-[var(--text-secondary)] text-xs text-tremor-content">{o.ownerName} &bull; {o.stage.replace('_', ' ')}</div>
                 </div>
                 <div className="text-right">
-                  <Text className="font-bold text-tremor-content-strong">{fmtUsd(o.valueUsd ?? 0)}</Text>
-                  <Text className="text-xs text-tremor-brand">{o.closeDate?.slice(0,10)}</Text>
+                  <div className="text-sm text-[var(--text-secondary)] font-bold text-tremor-content-strong">{fmtUsd(o.valueUsd ?? 0)}</div>
+                  <div className="text-sm text-[var(--text-secondary)] text-xs text-tremor-brand">{o.closeDate?.slice(0,10)}</div>
                 </div>
               </div>
             ))}
           </div>
-        </Card>
+        </div>
       </Grid>
 
-      <Card>
-        <Title>Recent Activities Feed</Title>
+      <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+        <h3 className="text-lg font-semibold tracking-tight mb-2">Recent Activities Feed</h3>
         <div className="mt-4 flex flex-col gap-3">
           {activities.slice(0, 5).map(a => (
             <div key={a.id} className="flex items-center gap-4 py-3 border-b border-tremor-border last:border-0 last:pb-0">
@@ -369,13 +402,13 @@ function SalesLeaderDashboard({ user, opps, activities, teams }: {
                 {a.type === 'call' ? '📞' : a.type === 'email' ? '📧' : a.type === 'meeting' ? '🤝' : '📝'}
               </div>
               <div className="flex-1">
-                <Text className="font-semibold text-tremor-content-strong leading-tight">{a.subject}</Text>
-                <Text className="text-xs text-tremor-content mt-1">{a.performedByName} &bull; {new Date(a.scheduledAt).toLocaleDateString()}</Text>
+                <div className="text-sm text-[var(--text-secondary)] font-semibold text-tremor-content-strong leading-tight">{a.subject}</div>
+                <div className="text-sm text-[var(--text-secondary)] text-xs text-tremor-content mt-1">{a.performedByName} &bull; {new Date(a.scheduledAt).toLocaleDateString()}</div>
               </div>
             </div>
           ))}
         </div>
-      </Card>
+      </div>
     </div>
   );
 }
@@ -411,31 +444,31 @@ function SalesRepDashboard({ user, opps, activities }: {
       />
       
       <Grid numItemsSm={2} numItemsLg={4} className="gap-6 mb-6">
-        <Card decoration="top" decorationColor="blue">
-          <Text>My Pipeline</Text>
-          <Metric>{fmtUsd(pipeline)}</Metric>
-          <Text className="mt-2 text-tremor-content">{openOpps.length} open deals</Text>
-        </Card>
-        <Card decoration="top" decorationColor="emerald">
-          <Text>Won This Cycle</Text>
-          <Metric>{fmtUsd(won)}</Metric>
-          <Text className="mt-2 text-tremor-content">Closed won revenue</Text>
-        </Card>
-        <Card decoration="top" decorationColor="amber">
-          <Text>My Activities</Text>
-          <Metric>{myActivities.length}</Metric>
-          <Text className="mt-2 text-tremor-content">Logged interactions</Text>
-        </Card>
-        <Card decoration="top" decorationColor="indigo">
-          <Text>In Progress</Text>
-          <Metric>{openOpps.length}</Metric>
-          <Text className="mt-2 text-tremor-content">Actively working deals</Text>
-        </Card>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <div className="text-sm text-[var(--text-secondary)]">My Pipeline</div>
+          <div className="text-3xl font-bold tracking-tight">{fmtUsd(pipeline)}</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-2 text-tremor-content">{openOpps.length} open deals</div>
+        </div>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <div className="text-sm text-[var(--text-secondary)]">Won This Cycle</div>
+          <div className="text-3xl font-bold tracking-tight">{fmtUsd(won)}</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-2 text-tremor-content">Closed won revenue</div>
+        </div>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <div className="text-sm text-[var(--text-secondary)]">My Activities</div>
+          <div className="text-3xl font-bold tracking-tight">{myActivities.length}</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-2 text-tremor-content">Logged interactions</div>
+        </div>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <div className="text-sm text-[var(--text-secondary)]">In Progress</div>
+          <div className="text-3xl font-bold tracking-tight">{openOpps.length}</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-2 text-tremor-content">Actively working deals</div>
+        </div>
       </Grid>
 
       <Grid numItemsSm={1} numItemsLg={2} className="gap-6">
-        <Card>
-          <Title>Pipeline Spread</Title>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <h3 className="text-lg font-semibold tracking-tight mb-2">Pipeline Spread</h3>
           <Subtitle>Deal value distributed by current stage</Subtitle>
           <div className="mt-6">
             <DonutChart
@@ -447,7 +480,7 @@ function SalesRepDashboard({ user, opps, activities }: {
               colors={['slate', 'blue', 'indigo', 'violet', 'fuchsia', 'emerald', 'rose']}
             />
           </div>
-          <Divider />
+          <hr className="my-4 border-t border-[var(--border)]" />
           <div className="mt-4 flex flex-col gap-3">
              {byStage.map(s => (
                <div key={s.name} className="flex justify-between items-center text-sm">
@@ -456,11 +489,11 @@ function SalesRepDashboard({ user, opps, activities }: {
                </div>
              ))}
           </div>
-        </Card>
+        </div>
 
-        <Card>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
           <Flex alignItems="center" className="mb-4">
-            <Title>Recent Activities</Title>
+            <h3 className="text-lg font-semibold tracking-tight mb-2">Recent Activities</h3>
             <Link href="/platform/crm" className="text-sm font-medium text-brand-500 hover:underline">Log New &rarr;</Link>
           </Flex>
           {myActivities.length === 0 ? (
@@ -473,12 +506,12 @@ function SalesRepDashboard({ user, opps, activities }: {
                 {a.type === 'call' ? '📞' : a.type === 'email' ? '📧' : a.type === 'meeting' ? '🤝' : '📝'}
               </div>
               <div className="flex-1">
-                <Text className="font-semibold text-tremor-content-strong">{a.subject}</Text>
-                <Text className="text-xs text-tremor-content mt-1">{a.orgName} &bull; {new Date(a.scheduledAt).toLocaleDateString()}</Text>
+                <div className="text-sm text-[var(--text-secondary)] font-semibold text-tremor-content-strong">{a.subject}</div>
+                <div className="text-sm text-[var(--text-secondary)] text-xs text-tremor-content mt-1">{a.orgName} &bull; {new Date(a.scheduledAt).toLocaleDateString()}</div>
               </div>
             </div>
           ))}
-        </Card>
+        </div>
       </Grid>
     </div>
   );
@@ -510,66 +543,66 @@ function CustomerSuccessDashboard({ user, opps, activities }: {
       />
       
       <Grid numItemsSm={2} numItemsLg={4} className="gap-6 mb-6">
-        <Card decoration="top" decorationColor="indigo">
-          <Text>Client Renewals</Text>
-          <Metric>{renewals.length}</Metric>
-          <Text className="mt-2 text-tremor-content">Tracked active cycles</Text>
-        </Card>
-        <Card decoration="top" decorationColor={atRisk.length > 0 ? "rose" : "emerald"}>
-          <Text>At Risk ≤30d</Text>
-          <Metric>{atRisk.length}</Metric>
-          <Text className="mt-2 text-tremor-content">Impending expirations</Text>
-        </Card>
-        <Card decoration="top" decorationColor="teal">
-          <Text>Total Engagements</Text>
-          <Metric>{activities.length}</Metric>
-          <Text className="mt-2 text-tremor-content">All client interactions</Text>
-        </Card>
-        <Card decoration="top" decorationColor="amber">
-          <Text>Accounts Map</Text>
-          <Metric>{opps.length}</Metric>
-          <Text className="mt-2 text-tremor-content">Managed in CRM</Text>
-        </Card>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <div className="text-sm text-[var(--text-secondary)]">Client Renewals</div>
+          <div className="text-3xl font-bold tracking-tight">{renewals.length}</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-2 text-tremor-content">Tracked active cycles</div>
+        </div>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <div className="text-sm text-[var(--text-secondary)]">At Risk ≤30d</div>
+          <div className="text-3xl font-bold tracking-tight">{atRisk.length}</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-2 text-tremor-content">Impending expirations</div>
+        </div>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <div className="text-sm text-[var(--text-secondary)]">Total Engagements</div>
+          <div className="text-3xl font-bold tracking-tight">{activities.length}</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-2 text-tremor-content">All client interactions</div>
+        </div>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <div className="text-sm text-[var(--text-secondary)]">Accounts Map</div>
+          <div className="text-3xl font-bold tracking-tight">{opps.length}</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-2 text-tremor-content">Managed in CRM</div>
+        </div>
       </Grid>
 
       <Grid numItemsSm={1} numItemsLg={2} className="gap-6">
-        <Card>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
            <Flex alignItems="center" className="mb-4">
-            <Title>Renewals at Risk</Title>
-            <Badge color={atRisk.length === 0 ? "emerald" : "rose"}>{atRisk.length} Urgent</Badge>
+            <h3 className="text-lg font-semibold tracking-tight mb-2">Renewals at Risk</h3>
+            <span className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-[var(--brand-500)] text-white shadow hover:bg-[var(--brand-600)]" color={atRisk.length === 0 ? "emerald" : "rose"}>{atRisk.length} Urgent</span>
           </Flex>
           {atRisk.length === 0 ? (
-            <Text>No renewals at risk in the next 30 days. 🎉</Text>
+            <div className="text-sm text-[var(--text-secondary)]">No renewals at risk in the next 30 days. 🎉</div>
           ) : (
             <div className="flex flex-col gap-3">
               {atRisk.map(o => (
                 <div key={o.id} className="flex justify-between items-center py-2 border-b border-tremor-border last:border-0 last:pb-0">
                   <div>
-                    <Text className="font-semibold text-tremor-content-strong text-sm">{o.orgName}</Text>
-                    <Text className="text-xs text-tremor-content">Closes {o.closeDate?.slice(0,10)}</Text>
+                    <div className="text-sm text-[var(--text-secondary)] font-semibold text-tremor-content-strong text-sm">{o.orgName}</div>
+                    <div className="text-sm text-[var(--text-secondary)] text-xs text-tremor-content">Closes {o.closeDate?.slice(0,10)}</div>
                   </div>
-                  <Text className="font-bold text-destructive">{fmtUsd(o.valueUsd ?? 0)}</Text>
+                  <div className="text-sm text-[var(--text-secondary)] font-bold text-destructive">{fmtUsd(o.valueUsd ?? 0)}</div>
                 </div>
               ))}
             </div>
           )}
-        </Card>
+        </div>
 
-        <Card>
-          <Title>Recent Engagements</Title>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <h3 className="text-lg font-semibold tracking-tight mb-2">Recent Engagements</h3>
           <Subtitle>Last noted client interactions</Subtitle>
           <div className="mt-4 flex flex-col gap-3">
             {activities.slice(0, 6).map(a => (
               <div key={a.id} className="flex items-center gap-4 py-2 border-b border-tremor-border last:border-0 last:pb-0">
                 <div className="text-xl w-8 text-center">{a.type === 'call' ? '📞' : a.type === 'email' ? '📧' : '🤝'}</div>
                 <div>
-                  <Text className="font-semibold text-tremor-content-strong text-sm">{a.subject}</Text>
-                  <Text className="text-xs text-tremor-content mt-0.5">{a.performedByName} &bull; {new Date(a.scheduledAt).toLocaleDateString()}</Text>
+                  <div className="text-sm text-[var(--text-secondary)] font-semibold text-tremor-content-strong text-sm">{a.subject}</div>
+                  <div className="text-sm text-[var(--text-secondary)] text-xs text-tremor-content mt-0.5">{a.performedByName} &bull; {new Date(a.scheduledAt).toLocaleDateString()}</div>
                 </div>
               </div>
             ))}
           </div>
-        </Card>
+        </div>
       </Grid>
     </div>
   );
@@ -585,25 +618,25 @@ function TenantUserDashboard({ user, roleLabel }: {
       <GreetingBar name={user?.name?.split(' ')[0] ?? 'there'} role={roleLabel} action={{ href: '/clients', label: 'Launch Workspace 🚀' }} />
       
       <Grid numItemsSm={1} numItemsLg={3} className="gap-6 mb-8">
-        <Card decoration="top" decorationColor="blue">
-          <Text>Client Families</Text>
-          <Metric>—</Metric>
-          <Text className="mt-2 text-tremor-content">Active wealth groups</Text>
-        </Card>
-        <Card decoration="top" decorationColor="emerald">
-          <Text>Active Tasks</Text>
-          <Metric>—</Metric>
-          <Text className="mt-2 text-tremor-content">Pending action items</Text>
-        </Card>
-        <Card decoration="top" decorationColor="amber">
-          <Text>Upcoming Events</Text>
-          <Metric>—</Metric>
-          <Text className="mt-2 text-tremor-content">Next 14 days</Text>
-        </Card>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <div className="text-sm text-[var(--text-secondary)]">Client Families</div>
+          <div className="text-3xl font-bold tracking-tight">—</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-2 text-tremor-content">Active wealth groups</div>
+        </div>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <div className="text-sm text-[var(--text-secondary)]">Active Tasks</div>
+          <div className="text-3xl font-bold tracking-tight">—</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-2 text-tremor-content">Pending action items</div>
+        </div>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+          <div className="text-sm text-[var(--text-secondary)]">Upcoming Events</div>
+          <div className="text-3xl font-bold tracking-tight">—</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-2 text-tremor-content">Next 14 days</div>
+        </div>
       </Grid>
       
-      <Card>
-        <Title>Workspace Navigation</Title>
+      <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5">
+        <h3 className="text-lg font-semibold tracking-tight mb-2">Workspace Navigation</h3>
         <Subtitle>Jump directly to your operational modules</Subtitle>
         <div className="mt-6 flex gap-3 flex-wrap">
           {[
@@ -619,7 +652,7 @@ function TenantUserDashboard({ user, roleLabel }: {
             </Link>
           ))}
         </div>
-      </Card>
+      </div>
     </div>
   );
 }
@@ -633,6 +666,7 @@ const ROLE_LABELS: Record<string, string> = {
   cio:                      'Chief Investment Officer',
   controller:               'Controller',
   compliance_officer:       'Compliance Officer',
+  ai_officer:               'AI Governance Officer',
   report_viewer:            'Report Viewer',
   external_advisor:         'External Advisor',
   sales_operations:         'Sales Operations',
@@ -690,11 +724,11 @@ export default function DashboardPage() {
     return (
       <div className="page-wrapper animate-fade-in mx-auto w-full px-4 lg:px-8">
         <GreetingBar name="Demo" role="Platform Demo Mode" />
-        <Card className="flex flex-col items-center justify-center py-24 text-center">
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 flex flex-col items-center justify-center py-24 text-center">
           <div className="text-6xl mb-6">🏛️</div>
-          <Title className="text-2xl font-bold">MFO Nexus Platform</Title>
-          <Text className="mt-2 max-w-sm mx-auto">Switch to Live Mode using the toggle in the header to view your actual database records and interactive Tremor charts.</Text>
-        </Card>
+          <h3 className="text-lg font-semibold tracking-tight mb-2 text-2xl font-bold">MFO Nexus Platform</h3>
+          <div className="text-sm text-[var(--text-secondary)] mt-2 max-w-sm mx-auto">Switch to Live Mode using the toggle in the header to view your actual database records and interactive Tremor charts.</div>
+        </div>
       </div>
     );
   }
@@ -704,7 +738,7 @@ export default function DashboardPage() {
       <div className="page flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
           <div className="w-8 h-8 border-4 border-brand-500/20 border-t-brand-500 rounded-full animate-spin mx-auto mb-4" />
-          <Text>Loading advanced analytics…</Text>
+          <div className="text-sm text-[var(--text-secondary)]">Loading advanced analytics…</div>
         </div>
       </div>
     );
@@ -725,5 +759,5 @@ export default function DashboardPage() {
   }
 
   // All tenant/advisor roles
-  return <TenantUserDashboard user={user} roleLabel={ROLE_LABELS[role] ?? 'User'} />;
+  return <DashboardHub user={user} platformRole={role} />;
 }

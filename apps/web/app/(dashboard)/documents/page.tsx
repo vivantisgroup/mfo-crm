@@ -6,7 +6,9 @@ import { Document, DocumentCategory } from '@/lib/types';
 import { formatDate } from '@/lib/utils';
 import { StatusBadge } from '@/components/StatusBadge';
 import { TagManager } from '@/components/TagManager';
-import { LiveModeGate, DocumentsEmptyState } from '@/components/LiveModeGate';
+import { useAuth } from '@/lib/AuthContext';
+import { useLiveMode } from '@/lib/useLiveMode';
+import { StorageExplorer } from './components/StorageExplorer';
 
 const CATEGORY_ICONS: Record<DocumentCategory, string> = {
   onboarding: '📝',
@@ -19,6 +21,9 @@ const CATEGORY_ICONS: Record<DocumentCategory, string> = {
 };
 
 export default function DocumentsPage() {
+  const { tenant } = useAuth();
+  const isLive = useLiveMode();
+  
   const [activeCategory, setActiveCategory] = useState<DocumentCategory | 'all'>('all');
   const [search, setSearch] = useState('');
   
@@ -44,8 +49,13 @@ export default function DocumentsPage() {
     setDocuments(prev => prev.map(d => d.id === docId ? { ...d, tags: newTags } : d));
   };
 
+  // Switch between fully functional Live Cloud Storage vs Mock UI
+  if (isLive) {
+    if (!tenant) return null;
+    return <StorageExplorer tenantId={tenant.id} />;
+  }
+
   return (
-    <LiveModeGate emptyState={<DocumentsEmptyState />}>
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -158,6 +168,5 @@ export default function DocumentsPage() {
       </div>
 
     </div>
-    </LiveModeGate>
   );
 }

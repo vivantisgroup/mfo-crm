@@ -153,6 +153,16 @@ export function getAdminAuth(): any {
   return _auth;
 }
 
+/** Returns an Admin Storage instance (lazy singleton). */
+let _storage: any = null;
+export function getAdminStorage(): any {
+  if (_storage) return _storage;
+  const admin = require('firebase-admin');
+  getAdminApp();
+  _storage = admin.storage();
+  return _storage;
+}
+
 /**
  * Returns true when the Admin SDK is available.
  * Use this to gracefully degrade rather than crash.

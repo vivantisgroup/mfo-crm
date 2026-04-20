@@ -6,14 +6,16 @@ import { Search, Users } from 'lucide-react';
 import { DataTable } from '@/components/DataTable';
 import { StatusBadge } from '@/components/StatusBadge';
 import { formatCurrency, getInitials, getTierBadgeColor, getRiskColor } from '@/lib/utils';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { usePageTitle } from '@/lib/PageTitleContext';
+import { NewFamilyGroupModal } from '@/components/NewFamilyGroupModal';
 
 export default function FamiliesPage() {
  const router = useRouter();
  const [families, setFamilies] = useState<any[]>([]);
  const [tenantId, setTenantId] = useState('');
+ const [createModalOpen, setCreateModalOpen] = useState(false);
  
  usePageTitle('Family Groups');
 
@@ -50,7 +52,43 @@ export default function FamiliesPage() {
    ),
  },
  { header: 'AUM', className: 'td-right', accessor: (f: any) => <div style={{ fontWeight: 600 }}>{formatCurrency(f.aum || 0, f.currency || 'USD')}</div> },
- { header: 'Tier', accessor: (f: any) => <span className="badge" style={{ background: getTierBadgeColor(f.serviceTier || 'standard').replace('text', 'bg'), color: getTierBadgeColor(f.serviceTier || 'standard') }}>{(f.serviceTier || 'standard').toUpperCase()}</span> },
+  { 
+    header: 'Tier', 
+    accessor: (f: any) => {
+      const updateTier = async (newTier: string) => {
+        if (!tenantId || !f.id) return;
+        try {
+          await updateDoc(doc(db, 'tenants', tenantId, 'organizations', f.id), {
+            serviceTier: newTier
+          });
+        } catch (e) {
+          console.error('Failed to update tier', e);
+        }
+      };
+
+      const tierColors: Record<string, string> = {
+        standard: 'bg-slate-100 text-slate-700 border-slate-200',
+        premium: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+        select: 'bg-amber-50 text-amber-700 border-amber-200'
+      };
+
+      const currentTier = (f.serviceTier || 'standard').toLowerCase();
+      const colorClass = tierColors[currentTier] || tierColors.standard;
+
+      return (
+        <select 
+          value={currentTier}
+          onChange={(e) => updateTier(e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          className={`text-[10px] font-extrabold uppercase tracking-wider px-2 py-1 rounded-md border outline-none cursor-pointer hover:opacity-80 transition-opacity ${colorClass}`}
+        >
+          <option value="standard">STANDARD</option>
+          <option value="premium">PREMIUM</option>
+          <option value="select">SELECT</option>
+        </select>
+      );
+    } 
+  },
  { header: 'Risk', accessor: (f: any) => <span style={{ color: getRiskColor(f.riskProfile || 'moderate'), fontWeight: 500, fontSize: 12, textTransform: 'capitalize' }}>• {f.riskProfile || 'moderate'}</span> },
  { header: 'Status', accessor: (f: any) => <div style={{ display: 'flex', gap: 6 }}><StatusBadge status={f.status || 'active'} /></div> },
  { header: 'Members', accessor: (f: any) => <div style={{ color: 'var(--text-secondary)' }}>{f.linkedContactIds?.length || 0} contacts</div> },
@@ -67,7 +105,7 @@ export default function FamiliesPage() {
            </h1>
            <p className="text-sm text-slate-500">Manage overarching family structures and their connected wealth.</p>
          </div>
-         <button className="btn btn-primary" onClick={() => router.push('/relationships/organizations')}>
+         <button className="btn btn-primary" onClick={() => setCreateModalOpen(true)}>
            + New Family Group
          </button>
        </div>
@@ -88,14 +126,16 @@ export default function FamiliesPage() {
        <div className="card text-center py-20 bg-slate-50 border-dashed">
          <Users size={48} className="mx-auto mb-4 opacity-20 text-slate-800" />
          <h3 className="text-macro mb-2" style={{ fontSize: 20 }}>No Family Groups Yet</h3>
-         <p className="mb-6 max-w-sm mx-auto text-slate-500">Register family groups through the Organizations framework to see them map here.</p>
-         <button className="btn btn-primary mt-6" onClick={() => router.push('/relationships/organizations')}>Go to Organizations</button>
+         <p className="mb-6 max-w-sm mx-auto text-slate-500">Register family groups natively to structure private wealth mapping.</p>
+         <button className="btn btn-primary mt-6" onClick={() => setCreateModalOpen(true)}>Create Family Group</button>
        </div>
      ) : (
        <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-0 overflow-hidden">
          <DataTable data={families} columns={columns} onRowClick={(row) => router.push(`/families/${row.id}`)} />
        </div>
      )}
+     <NewFamilyGroupModal open={createModalOpen} onOpenChange={setCreateModalOpen} />
    </div>
  );
 }
+

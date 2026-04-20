@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Title, Text, Button } from '@tremor/react';
 import { Tag, getAllTags, createTag, updateTag, deleteTag } from '@/lib/tagService';
 import { Plus, LayoutGrid, List } from 'lucide-react';
 import TagWheel from './components/TagWheel';
@@ -60,8 +59,8 @@ export default function TagsPage() {
     <div className="flex flex-col h-full w-full bg-slate-50/50 animate-fade-in relative z-0 overflow-hidden">
       <div className="flex justify-between items-end p-6 lg:px-8 border-b border-slate-200 bg-white/80 backdrop-blur-md shadow-sm flex-shrink-0 relative z-20">
         <div>
-          <Title className="text-2xl font-black text-slate-900 tracking-tight">Tag Management</Title>
-          <Text className="text-slate-500 mt-1">Organize and coordinate global platform tagging contexts.</Text>
+          <h3 className="text-lg font-semibold tracking-tight mb-2 text-2xl font-black text-slate-900 tracking-tight">Tag Management</h3>
+          <div className="text-sm text-[var(--text-secondary)] text-slate-500 mt-1">Organize and coordinate global platform tagging contexts.</div>
         </div>
         <div className="flex items-center gap-4 border border-slate-200 p-1 rounded-xl bg-slate-50 shadow-sm">
           <button 
@@ -77,9 +76,9 @@ export default function TagsPage() {
              <List size={16} />
           </button>
         </div>
-        <Button onClick={startNewTag} size="md" className="shadow-lg shadow-blue-500/20" icon={() => <Plus size={16} className="mr-2 inline" />}>
-          New Tag
-        </Button>
+        <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2 shadow-lg shadow-blue-500/20" onClick={startNewTag}>
+          <Plus size={16} className="mr-2 inline" />New Tag
+        </button>
       </div>
       
       <div className="flex-1 w-full relative overflow-hidden bg-slate-900 flex items-center justify-center">

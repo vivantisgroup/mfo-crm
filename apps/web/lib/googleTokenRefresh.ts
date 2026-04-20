@@ -86,15 +86,14 @@ export interface GoogleTokenInfo {
  * @param uid       Firebase UID of the user
  * @param idToken   Firebase ID token (for Firestore REST auth)
  */
-export async function getValidGoogleToken(tenantId: string, uid: string, idToken: string): Promise<string> {
-  if (!tenantId) throw new Error("tenantId is required for Google token refresh.");
+export async function getValidGoogleToken(uid: string, idToken: string, tenantId?: string): Promise<string> {
+  const effectiveTenant = tenantId || 'platform';
   
   // 0. Fetch config and guard
   const { clientId, clientSecret } = await getGoogleOAuthConfig();
   assertGoogleCredentials(clientId, clientSecret);
 
-  // 1. Read integration record from Firestore
-  const docRes = await fetch(fsUrl(`tenants/${tenantId}/members/${uid}/integrations/google`), {
+  const docRes = await fetch(fsUrl(`tenants/${effectiveTenant}/members/${uid}/integrations/google`), {
     headers: { Authorization: `Bearer ${idToken}` },
   });
 
@@ -153,7 +152,7 @@ export async function getValidGoogleToken(tenantId: string, uid: string, idToken
 
   // 5. Persist refreshed token back to Firestore (field-level update — never wipes refresh_token)
   const patchRes = await fetch(
-    `${fsUrl(`tenants/${tenantId}/members/${uid}/integrations/google`)}?updateMask.fieldPaths=_accessToken&updateMask.fieldPaths=_expiresAt`,
+    `${fsUrl(`tenants/${effectiveTenant}/members/${uid}/integrations/google`)}?updateMask.fieldPaths=_accessToken&updateMask.fieldPaths=_expiresAt`,
     {
       method:  'PATCH',
       headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },

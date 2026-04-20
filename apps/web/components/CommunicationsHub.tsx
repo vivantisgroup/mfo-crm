@@ -2,19 +2,21 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/lib/AuthContext';
-import { Button } from '@tremor/react';
 import { MessageSquare, Mail, AlertCircle, RefreshCcw, ArrowRight, Settings, Minimize2, Maximize2, Send, PhoneCall } from 'lucide-react';
 import { getFirestore, collection, onSnapshot, query, where, orderBy, limit } from 'firebase/firestore';
 import { firebaseApp } from '@mfo-crm/config';
 import { ReadingPane } from '@/app/(dashboard)/inbox/components/ReadingPane';
 import { Composer } from '@/app/(dashboard)/inbox/components/Composer';
 import { getAllMailConnections } from '@/lib/emailIntegrationService';
+import { usePathname } from 'next/navigation';
+import { toast } from 'sonner';
 
 const db = getFirestore(firebaseApp);
 
 type FilterType = 'all' | 'email' | 'teams' | 'whatsapp';
 
 export function CommunicationsHub() {
+  const pathname = usePathname();
   const [filter, setFilter] = useState<FilterType>('all');
   const [detached, setDetached] = useState(false);
   const [queryText, setQueryText] = useState('');
@@ -24,6 +26,7 @@ export function CommunicationsHub() {
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [outboundMessage, setOutboundMessage] = useState('');
   const [syncing, setSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState<Date | null>(null);
   const [composerState, setComposerState] = useState<{ to?: string; subject?: string; replyId?: string; threadId?: string; crmLinks?: any[] } | null>(null);
 
   const { user, firebaseUser, tenant } = useAuth();
@@ -48,9 +51,10 @@ export function CommunicationsHub() {
         const errText = await res.text();
         throw new Error(`Sync failed (${res.status}): ${errText}`);
       }
+      setLastSync(new Date());
     } catch (e: any) {
       console.error('[CommunicationsHub] Sync error:', e.message || e);
-      alert(`Sync failed: ${e.message || 'NetworkError'}`);
+      toast.error(`Sync failed: ${e.message || 'NetworkError'}`);
     } finally {
       setSyncing(false);
     }
@@ -76,6 +80,7 @@ export function CommunicationsHub() {
       const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       msgs.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       setFeed(msgs);
+      setLastSync(new Date());
     });
 
     return () => unsubscribe();
@@ -84,6 +89,19 @@ export function CommunicationsHub() {
   // Derived filtered feed
   const filteredFeed = useMemo(() => {
     let result = feed;
+
+    // Context / Route Filter
+    const pathParts = pathname?.split('/').filter(Boolean) || [];
+    // Only capture entity ID from the path if we are inside a specific module with an ID (e.g. /families/123)
+    const activeEntityId = (pathParts.length >= 2 && pathParts[1] !== 'new') ? pathParts[1] : null;
+
+    if (activeEntityId) {
+      // 1. Contextual Filter (filter related to active record)
+      result = result.filter(m => m.crm_entity_ids && m.crm_entity_ids.includes(activeEntityId));
+    } else {
+      // 2. Global Filter: Exclude items with no links if on a global view
+      result = result.filter(m => m.crm_entity_ids && m.crm_entity_ids.length > 0);
+    }
     
     // Type Filter
     if (filter === 'email') result = result.filter(m => m.type === 'email');
@@ -100,7 +118,7 @@ export function CommunicationsHub() {
       );
     }
     return result;
-  }, [feed, filter, queryText]);
+  }, [feed, filter, queryText, pathname]);
 
   const handleSend = async () => {
     if (!outboundMessage.trim() || !user || !firebaseUser) return;
@@ -124,7 +142,7 @@ export function CommunicationsHub() {
       }
     } catch (e: any) {
       console.error('[CommunicationsHub] Send error:', e.message || e);
-      alert(`Send failed: ${e.message || 'NetworkError'}`);
+      toast.error(`Send failed: ${e.message || 'NetworkError'}`);
     }
   };
 
@@ -172,11 +190,16 @@ export function CommunicationsHub() {
           <div className="flex items-center gap-2">
             <button 
               onClick={() => setComposerState({})}
-              className="flex items-center justify-center p-1.5 px-3 rounded-full bg-[var(--brand-primary)] text-white hover:bg-[var(--brand-600)] transition-colors text-xs font-bold"
+              className="flex items-center justify-center p-1.5 px-3 rounded-full bg-[var(--brand-primary)] text-white hover:bg-[var(--brand-600)] transition-colors text-xs font-bold whitespace-nowrap"
               title="Compose New Message"
             >
               Compose
             </button>
+            {lastSync && (
+               <span className="text-[9px] text-[var(--text-tertiary)] font-medium whitespace-nowrap ml-1">
+                 {lastSync.toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' })}
+               </span>
+            )}
             <button 
               onClick={handleSync}
               disabled={syncing}
@@ -320,6 +343,7 @@ export function CommunicationsHub() {
                       messageCount: 1,
                       isUnread: false,
                       isStarred: false,
+                      provider: selectedItem.provider || (selectedItem.id.startsWith('ms_') ? 'microsoft' : 'google'),
                    }}
                    uid={user?.uid ?? ''}
                    tenantId={tenant?.id}

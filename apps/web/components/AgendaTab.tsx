@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Title, Text, Badge } from '@tremor/react';
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, isSameMonth, isSameDay, eachDayOfInterval } from 'date-fns';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, RefreshCcw } from 'lucide-react';
 import useSWR from 'swr';
@@ -20,7 +19,7 @@ const EVENT_COLORS = {
 };
 
 export function AgendaTab() {
-  const { user, firebaseUser } = useAuth();
+  const { user, firebaseUser, tenant } = useAuth();
   
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -29,13 +28,13 @@ export function AgendaTab() {
   const [idToken, setIdToken] = useState<string>('');
 
   useEffect(() => {
-    if (user) {
-      getAllMailConnections(user.uid).then(conns => {
+    if (user && tenant) {
+      getAllMailConnections(tenant.id, user.uid).then(conns => {
          if (conns.microsoft) setActiveProvider('microsoft');
          else if (conns.google) setActiveProvider('google');
       });
     }
-  }, [user]);
+  }, [user, tenant]);
 
   useEffect(() => {
      if (firebaseUser) {
@@ -95,7 +94,7 @@ export function AgendaTab() {
       {/* Mini Calendar Header */}
       <div className="flex items-center justify-between p-4 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)] shrink-0">
         <div className="flex items-center gap-2">
-           <Title className="text-sm font-bold text-[var(--text-primary)]">{format(currentDate, 'MMMM yyyy')}</Title>
+           <h3 className="text-lg font-semibold tracking-tight mb-2 text-sm font-bold text-[var(--text-primary)]">{format(currentDate, 'MMMM yyyy')}</h3>
            {isValidating && <RefreshCcw size={12} className="animate-spin text-[var(--text-tertiary)]" />}
         </div>
         <div className="flex items-center gap-1">
@@ -145,8 +144,8 @@ export function AgendaTab() {
       {/* Events List for Selected Day */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
         <div className="flex items-center justify-between mb-1">
-          <Text className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-widest">{format(selectedDate, 'EEEE, MMM do')}</Text>
-          <Badge size="xs" color="slate">{selectedDayEvents.length}</Badge>
+          <div className="text-sm text-[var(--text-secondary)] text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-widest">{format(selectedDate, 'EEEE, MMM do')}</div>
+          <span className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-[var(--brand-500)] text-white shadow hover:bg-[var(--brand-600)]">{selectedDayEvents.length}</span>
         </div>
 
         {selectedDayEvents.length === 0 ? (

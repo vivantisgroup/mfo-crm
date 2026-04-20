@@ -3,11 +3,18 @@
 import { Search } from 'lucide-react';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+
 import { getAllUsers, updateUserProfile, type UserProfile, type PlatformRole } from '@/lib/platformService';
 import { getTenantMembers, addMemberToTenant, addPlaceholderMember, removeMemberFromTenant, updateMemberRole, setMemberStatus, createInvitation, getInvitationsForTenant, revokeInvitation, ROLE_LABELS, ROLE_DESCRIPTIONS, TENANT_ROLES, type TenantMember, type TenantInvitation } from '@/lib/tenantMemberService';
 import { getTenantGroups, getGroup, createGroup, updateGroup, deleteGroup, getGroupMembers, addMemberToGroup, removeMemberFromGroup, getGroupsForUser, type TenantGroup, type GroupMember } from '@/lib/groupService';
+import { getServiceTeams, saveServiceTeam, deleteServiceTeam, TEAM_ROLES, TEAM_ROLE_LABELS, type ServiceTeam, type ServiceTeamMember } from '@/lib/serviceTeamService';
 import { ROLE_PERMISSIONS, PERMISSION_META, PERMISSION_MODULES, permissionsByModule, effectivePermissions, setUserPermissionOverride, getUserPermissionOverride, type Permission, type AuthzContext } from '@/lib/rbacService';
 import { ConfirmDialog, type ConfirmOptions } from '@/components/ConfirmDialog';
+import { FolderPickerModal } from '../components/FolderPickerModal';
+import { ServiceTeamFormModal, ServiceTeamDetailModal } from '../components/ServiceTeamModals';
+import { ReassignContentModal } from './components/ReassignContentModal';
+import { useTaskQueue } from '@/lib/TaskQueueContext';
+import { toast } from 'sonner';
 
 // ─── Shared UI ────────────────────────────────────────────────────────────────
 
@@ -144,6 +151,121 @@ function PermissionsPanel({ uid, tenantId, role, performer, onClose }: {
  </div>
  </div>
  );
+}
+
+// ─── Workspace Admin Panel (inline) ───────────────────────────────────────
+
+function WorkspaceAdminPanel({ member, tenantId, onClose }: {
+  member: TenantMember; tenantId: string;
+  onClose: () => void;
+}) {
+  const [prefs, setPrefs] = useState<{ roleId: string; visible: boolean; order: number }[]>([]);
+  const [ready, setReady] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ type: 'ok'|'err', text: string } | null>(null);
+
+  useEffect(() => {
+    const roles = Array.from(new Set([member.role, ...(((member as any).additionalRoles) || [])])).filter(Boolean) as string[];
+    let p = (member as any).dashboardPreferences || [];
+    const newPrefs = roles.map((r, i) => {
+      const exist = p.find((x: any) => x.roleId === r);
+      if (exist) return exist;
+      return { roleId: r, visible: true, order: i };
+    });
+    newPrefs.sort((a,b) => a.order - b.order);
+    setPrefs(newPrefs);
+    setReady(true);
+  }, [member]);
+
+  const moveUp = (index: number) => {
+    if (index === 0) return;
+    const newPrefs = [...prefs];
+    [newPrefs[index-1], newPrefs[index]] = [newPrefs[index], newPrefs[index-1]];
+    newPrefs.forEach((p, i) => p.order = i);
+    setPrefs(newPrefs);
+  };
+
+  const moveDown = (index: number) => {
+    if (index === prefs.length - 1) return;
+    const newPrefs = [...prefs];
+    [newPrefs[index+1], newPrefs[index]] = [newPrefs[index], newPrefs[index+1]];
+    newPrefs.forEach((p, i) => p.order = i);
+    setPrefs(newPrefs);
+  };
+
+  const toggleVis = (index: number) => {
+    const newPrefs = [...prefs];
+    newPrefs[index].visible = !newPrefs[index].visible;
+    setPrefs(newPrefs);
+  };
+
+  async function save() {
+    setSaving(true); setMsg(null);
+    try {
+      const { getFirestore, updateDoc, doc } = await import('firebase/firestore');
+      const db = getFirestore();
+      await updateDoc(doc(db, 'tenants', tenantId, 'members', member.uid), {
+        dashboardPreferences: prefs,
+        updatedAt: new Date().toISOString()
+      });
+      setMsg({ type: 'ok', text: '✅ Saved user workspace preferences.' });
+      setTimeout(() => setMsg(null), 3000);
+    } catch (e: any) { setMsg({ type: 'err', text: '❌ ' + e.message }); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div className="animate-fade-in flex flex-col h-full">
+       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, fontSize: 13, color: 'var(--text-tertiary)', fontWeight: 600 }}>
+       <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--brand-400)', cursor: 'pointer', padding: 0, fontWeight: 600 }}>Users</button>
+       <span>/</span>
+       <span style={{ color: 'var(--text-primary)' }}>Workspace Hub ({member.displayName})</span>
+       </div>
+       <div style={{ padding: '0 0 16px', borderBottom: '1px solid var(--border)' }}>
+         <div style={{ fontWeight: 900, fontSize: 24 }}>🛠️ Command Center Setup</div>
+         <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
+           Configure the multi-role dashboard tabs for this user.
+         </div>
+       </div>
+
+       <div style={{ padding: '24px 0', flex: 1, overflowY: 'auto' }}>
+         {!ready ? <div>Loading...</div> : (
+           <div className="space-y-3">
+             {prefs.length === 0 && <div className="text-sm text-slate-500">No dashboard tabs available for the assigned roles.</div>}
+             {prefs.map((p, index) => (
+                <div key={p.roleId} className="flex items-center justify-between p-4 bg-white border border-slate-200 shadow-sm rounded-xl">
+                   <div>
+                      <div className="font-bold text-slate-800">{ROLE_LABELS[p.roleId as keyof typeof ROLE_LABELS] ?? p.roleId}</div>
+                      <div className="text-xs text-slate-500 mt-0.5">Role Identifier: {p.roleId}</div>
+                   </div>
+                   <div className="flex items-center gap-4">
+                      <button onClick={() => toggleVis(index)} className={`text-xs font-bold px-3 py-1 rounded-full ${p.visible ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                        {p.visible ? 'Visible' : 'Hidden'}
+                      </button>
+                      <div className="flex flex-col gap-1">
+                         <button disabled={index === 0} onClick={() => moveUp(index)} className="text-slate-400 hover:text-[var(--brand-primary)] disabled:opacity-30 transition">▲</button>
+                         <button disabled={index === prefs.length - 1} onClick={() => moveDown(index)} className="text-slate-400 hover:text-[var(--brand-primary)] disabled:opacity-30 transition">▼</button>
+                      </div>
+                   </div>
+                </div>
+             ))}
+           </div>
+         )}
+         {msg && (
+           <div className={`mt-4 px-4 py-3 rounded-lg text-sm font-medium ${msg.type === 'ok' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+             {msg.text}
+           </div>
+         )}
+       </div>
+
+       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+         <div style={{ display: 'flex', gap: 8 }}>
+         <button className="btn btn-ghost btn-sm" onClick={onClose}>Close</button>
+         <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>{saving ? '…' : '💾 Save Setup'}</button>
+         </div>
+       </div>
+    </div>
+  );
 }
 
 // ─── Group Form Modal ─────────────────────────────────────────────────────────
@@ -333,9 +455,10 @@ function GroupDetailModal({ group, tenantId, allMembers, performer, onClose, onR
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
-type Tab = 'members' | 'groups' | 'invitations' | 'permissions';
+type Tab = 'members' | 'advisors' | 'groups' | 'teams' | 'invitations' | 'permissions';
 
 export default function TenantUsersPage() {
+  const { getTimeByServiceTeam, tasks } = useTaskQueue();
  const { user: me, tenant } = useAuth();
  const tenantId = tenant?.id ?? '';
  const tenantName = tenant?.name ?? '';
@@ -345,6 +468,7 @@ export default function TenantUsersPage() {
  const [members, setMembers] = useState<TenantMember[]>([]);
  const [invitations, setInvitations] = useState<TenantInvitation[]>([]);
  const [groups, setGroups] = useState<TenantGroup[]>([]);
+ const [teams, setTeams] = useState<ServiceTeam[]>([]);
  const [allUsers, setAllUsers] = useState<any[]>([]);
  const [loading, setLoading] = useState(true);
  const [search, setSearch] = useState('');
@@ -364,7 +488,12 @@ export default function TenantUsersPage() {
  const [selectedMember, setSelectedMember] = useState<TenantMember | null>(null);
  const [selectedGroup, setSelectedGroup] = useState<TenantGroup | null>(null);
  const [showGroupForm, setShowGroupForm] = useState(false);
+ const [selectedTeam, setSelectedTeam] = useState<ServiceTeam | null>(null);
+ const [showTeamForm, setShowTeamForm] = useState(false);
  const [showPerms, setShowPerms] = useState<TenantMember | null>(null);
+ const [showWorkspace, setShowWorkspace] = useState<TenantMember | null>(null);
+ const [showFolderPick, setShowFolderPick] = useState<TenantMember | null>(null);
+ const [showReassign, setShowReassign] = useState<TenantMember | null>(null);
  const [memberInput, setMemberInput] = useState('');
  const [memberRole, setMemberRole] = useState<PlatformRole>('report_viewer');
  const [sendInvite, setSendInvite] = useState(true);
@@ -374,12 +503,13 @@ export default function TenantUsersPage() {
  if (!tenantId) return;
  setLoading(true);
  try {
- const [m, inv, g] = await Promise.all([
+ const [m, inv, g, t] = await Promise.all([
  getTenantMembers(tenantId),
  getInvitationsForTenant(tenantId),
  getTenantGroups(tenantId),
+ getServiceTeams(tenantId),
  ]);
- setMembers(m); setInvitations(inv); setGroups(g);
+ setMembers(m); setInvitations(inv); setGroups(g); setTeams(t);
  try { setAllUsers(await getAllUsers()); } catch { setAllUsers([]); }
  } catch {}
  finally { setLoading(false); }
@@ -596,16 +726,78 @@ export default function TenantUsersPage() {
      setLoading(false);
    }
  }
+
+  async function doImpersonate(m: TenantMember) {
+    if (!tenantId || m.uid === me?.uid) return;
+    setLoading(true); setMsg(null);
+    try {
+      const { getAuth } = await import('firebase/auth');
+      const { firebaseApp } = await import('@mfo-crm/config');
+      const auth = getAuth(firebaseApp);
+      const idToken = await new Promise<string | null>((resolve) => {
+        if (auth.currentUser) auth.currentUser.getIdToken(true).then(resolve).catch(() => resolve(null));
+        else resolve(null);
+      });
+      if (!idToken) throw new Error('Session expired');
+
+      const res = await fetch('/api/auth/impersonate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ targetUid: m.uid, targetEmail: m.email, tenantId })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      const { signInWithCustomToken } = await import('firebase/auth');
+      await signInWithCustomToken(auth, data.customToken);
+      
+      toast.success(`Now personifying ${m.displayName}. Redirecting...`);
+      window.location.href = '/dashboard';
+    } catch (e: any) {
+      setMsg(
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div>❌ Failed to impersonate: {e.message}</div>
+        </div>
+      );
+      setLoading(false);
+    }
+  }
+
  const TABS: { id: Tab; label: string }[] = [
  { id: 'members', label: `👤 Members (${members.length})` },
+ { id: 'advisors', label: `👔 Advisors (${members.filter(m => ['wealth_manager','external_advisor'].includes(m.role)).length})` },
+ { id: 'teams', label: `🛡️ Equipes de Atendimento (${teams.length})` },
  { id: 'groups', label: `👥 Groups (${groups.length})` },
  { id: 'invitations', label: `📧 Invitations (${invitations.filter(i => i.status === 'pending').length})` },
  { id: 'permissions', label: '🔐 Permissions' },
  ];
 
+  function doDeleteTeam(t: ServiceTeam) {
+    setConfirmOpts({
+      title: 'Delete Team',
+      message: `Are you sure you want to delete the team "${t.name}"? This cannot be undone.`,
+      confirmLabel: 'Delete Team',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await deleteServiceTeam(tenantId, t.id);
+          load();
+        } catch(e:any) { setMsg(e.message); }
+      },
+      onCancel: () => setConfirmOpts(null),
+    });
+  }
+
  return (
  <div className="page-wrapper animate-fade-in w-full px-4 lg:px-8">
  {confirmOpts && <ConfirmDialog {...confirmOpts} />}
+ {showWorkspace && (
+   <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+     <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl h-[80vh] overflow-hidden">
+       <WorkspaceAdminPanel member={showWorkspace} tenantId={tenantId} onClose={() => setShowWorkspace(null)} />
+     </div>
+   </div>
+ )}
  {showPerms && (
  <PermissionsPanel uid={showPerms.uid} tenantId={tenantId} role={showPerms.role}
  performer={performer} onClose={() => setShowPerms(null)} />
@@ -617,6 +809,40 @@ export default function TenantUsersPage() {
  {selectedGroup && (
  <GroupDetailModal group={selectedGroup} tenantId={tenantId} allMembers={members}
  performer={performer} onClose={() => setSelectedGroup(null)} onRefresh={load} />
+ )}
+ {showTeamForm && (
+ <ServiceTeamFormModal tenantId={tenantId} onClose={() => setShowTeamForm(false)} onSaved={() => { setShowTeamForm(false); load(); }} />
+ )}
+ {selectedTeam && (
+ <ServiceTeamDetailModal team={selectedTeam} tenantId={tenantId} allMembers={members} onClose={() => setSelectedTeam(null)} onRefresh={load} />
+ )}
+ {showFolderPick && (
+   <FolderPickerModal
+      tenantId={tenantId}
+      memberUid={showFolderPick.uid}
+      memberName={showFolderPick.displayName}
+      isOpen={true}
+      onClose={() => setShowFolderPick(null)}
+      onSelected={(id, name) => {
+         setShowFolderPick(null);
+         load(); 
+         setMsg(
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+               <div>✅ <strong>Workspace Set</strong></div>
+               <div style={{ fontSize: 12 }}>{showFolderPick.displayName} will now land in <b>{name}</b>.</div>
+            </div>
+         );
+      }}
+   />
+  )}
+ {showReassign && (
+   <ReassignContentModal
+     tenantId={tenantId}
+     fromMember={showReassign}
+     allMembers={members}
+     onClose={() => setShowReassign(null)}
+     onSuccess={() => { setShowReassign(null); load(); }}
+   />
  )}
 
  
@@ -645,8 +871,8 @@ export default function TenantUsersPage() {
  ))}
  </div>
 
- {/* ── MEMBERS ── */}
- {tab === 'members' && (
+ {/* ── MEMBERS & ADVISORS ── */}
+ {(tab === 'members' || tab === 'advisors') && (
  <>
  <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 16, marginBottom: 16 }}>
  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>➕ Add Member</div>
@@ -747,7 +973,7 @@ export default function TenantUsersPage() {
  <table>
  <thead><tr><th>Member</th><th>Role</th><th>Status</th><th>Joined</th><th>Actions</th></tr></thead>
  <tbody>
- {filteredMembers.map(m => (
+ {filteredMembers.filter(m => tab === 'advisors' ? ['wealth_manager','external_advisor'].includes(m.role) : true).map(m => (
  <tr key={m.uid} style={{ opacity: m.status === 'suspended' ? 0.6 : 1 }}>
  <td>
  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -771,19 +997,10 @@ export default function TenantUsersPage() {
  <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{new Date(m.joinedAt).toLocaleDateString()}</td>
  <td>
  <div style={{ display: 'flex', gap: 4 }}>
- <button onClick={() => setShowPerms(m)} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--brand-500)44', background: 'none', cursor: 'pointer', color: 'var(--brand-400)', fontWeight: 600 }}>🔐 Perms</button>
- {m.status === 'invited' ? (
-   <button onClick={() => doGenerateInviteLink(m.email)} disabled={loading} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--brand-500)44', background: 'none', cursor: 'pointer', color: 'var(--brand-400)', fontWeight: 600 }}>
-     {loading ? '…' : '📧 Link'}
-   </button>
- ) : (
-   <button onClick={() => doGenerateInviteLink(m.email)} disabled={loading} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontWeight: 600 }}>
-     {loading ? '…' : '🔑 Reset'}
-   </button>
- )}
- <button onClick={() => doSuspend(m)} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: m.status === 'suspended' ? '#22c55e' : '#f59e0b' }}>
- {m.status === 'suspended' ? '↩' : '⏸'}
- </button>
+ <button onClick={() => doImpersonate(m)} title="Personify" style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--brand-600)', fontWeight: 600 }}>🎭 Personify</button>
+ <button onClick={() => setShowReassign(m)} title="Transfer assets to another member" style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--brand-600)', fontWeight: 600 }}>🔄 Transfer</button>
+ <button onClick={() => setShowFolderPick(m)} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--brand-600)', fontWeight: 600 }}>📁 Home</button>
+ <button onClick={() => doSuspend(m)} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: m.status === 'suspended' ? '#22c55e' : '#f59e0b' }}>{m.status === 'suspended' ? '↩' : '⏸'}</button>
  <button onClick={() => doRemove(m)} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid #ef444444', background: 'none', cursor: 'pointer', color: '#ef4444' }}>🗑</button>
  </div>
  </td>
@@ -796,12 +1013,122 @@ export default function TenantUsersPage() {
  </>
  )}
 
- {/* ── GROUPS ── */}
- {tab === 'groups' && (
- <>
- <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
- <button className="btn btn-primary" onClick={() => setShowGroupForm(true)}>+ New Group</button>
- </div>
+  {/* ── TEAMS ── */}
+  {tab === 'teams' && (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, marginTop: 4 }}>
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+          Manage your Service Teams ("Equipes de Atendimento"). Assign members across operations, economists, and lead advisors to serve Family Groups.
+        </div>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <button onClick={async () => {
+            if (!confirm('Run migration?')) return;
+            try {
+              const { getFirestore, query, collection, getDocs, updateDoc, doc } = await import('firebase/firestore');
+              const db = getFirestore();
+              const teamsSnap = await getDocs(query(collection(db, 'tenants', 'mfo-root', 'serviceTeams')));
+              const teams = teamsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+              
+              const orgsSnap = await getDocs(query(collection(db, 'tenants', 'mfo-root', 'organizations')));
+              let updated = 0;
+              for (const org of orgsSnap.docs) {
+                const data = org.data();
+                if (data.assignedRmId && !data.serviceTeamId) {
+                  const matching = teams.find((t: any) => t.members?.some((m: any) => m.uid === data.assignedRmId)) as any;
+                  if (matching) {
+                    await updateDoc(doc(db, 'tenants', 'mfo-root', 'organizations', org.id), {
+                      serviceTeamId: matching.id,
+                      serviceTeamName: matching.name
+                    });
+                    updated++;
+                  }
+                }
+              }
+              toast.error(`Migration complete. Updated ${updated} families.`);
+            } catch (e: any) {
+              toast.error('Error: ' + e.message);
+            }
+          }} className="btn btn-secondary" style={{ padding: '0 16px', height: 36, fontSize: 13 }}>
+            Migrate Legacy RMs
+          </button>
+          <button onClick={() => setShowTeamForm(true)} className="btn btn-primary" style={{ padding: '0 16px', height: 36, fontSize: 13 }}>
+            ➕ New Team
+          </button>
+        </div>
+      </div>
+      
+      {teams.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 60, border: '1px dashed var(--border)', borderRadius: 16, color: 'var(--text-tertiary)' }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>🛡️</div>
+          <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--text-primary)' }}>No teams configured</div>
+          <div style={{ fontSize: 13, marginTop: 4, maxWidth: 350, margin: '4px auto 0' }}>Create multi-disciplinary service teams to take ownership of client families.</div>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
+          {teams.map(t => (
+            <div key={t.id} style={{ padding: 20, borderRadius: 16, background: 'var(--bg-surface)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
+                <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--brand-faint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>🛡️</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--text-primary)' }}>{t.name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{t.description || 'No description'}</div>
+                </div>
+              </div>
+              
+              <div style={{ flex: 1, marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 8 }}>Members ({t.members?.length || 0})</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {t.members?.slice(0, 5).map(m => (
+                    <div key={m.uid} title={`${m.name} (${TEAM_ROLE_LABELS[m.role]})`}>
+                      <Avatar name={m.name} size={32} />
+                    </div>
+                  ))}
+                  {(t.members?.length || 0) > 5 && (
+                    <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--bg-elevated)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)' }}>
+                      +{(t.members?.length || 0) - 5}
+                    </div>
+                  )}
+                  {(!t.members || t.members.length === 0) && (
+                     <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontStyle: 'italic' }}>No members assigned.</div>
+                  )}
+                </div>
+                
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 8 }}>Metrics</div>
+                  <div style={{ display: 'flex', gap: 16 }}>
+                    <div style={{ flex: 1, padding: 8, background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                       <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 600 }}>Time Logged</div>
+                       <div style={{ fontSize: 14, fontWeight: 800, color: '#3b82f6', marginTop: 2 }}>{Math.round((getTimeByServiceTeam().find(x => x.serviceTeamId === t.id)?.minutes || 0) / 60)}h {(getTimeByServiceTeam().find(x => x.serviceTeamId === t.id)?.minutes || 0) % 60}m</div>
+                    </div>
+                     <div style={{ flex: 1, padding: 8, background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                       <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 600 }}>Active Tasks</div>
+                       <div style={{ fontSize: 14, fontWeight: 800, color: '#f59e0b', marginTop: 2 }}>{tasks.filter(tsk => tsk.serviceTeamId === t.id && (tsk.status === 'open' || tsk.status === 'in_progress')).length}</div>
+                    </div>
+                    <div style={{ flex: 1, padding: 8, background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                       <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 600 }}>Completed Tasks</div>
+                       <div style={{ fontSize: 14, fontWeight: 800, color: '#22c55e', marginTop: 2 }}>{tasks.filter(tsk => tsk.serviceTeamId === t.id && tsk.status === 'completed').length}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+                <button onClick={() => setSelectedTeam(t)} className="btn btn-secondary" style={{ flex: 1 }}>⚙️ Manage Configuration</button>
+                <button onClick={() => doDeleteTeam(t)} style={{ width: 36, borderRadius: 8, border: '1px solid #ef444444', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>🗑</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  )}
+
+  {/* ── GROUPS ── */}
+  {tab === 'groups' && (
+  <>
+  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+  <button className="btn btn-primary" onClick={() => setShowGroupForm(true)}>+ New Group</button>
+  </div>
  {loading ? <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-tertiary)' }}>Loading…</div> :
  groups.length === 0 ? (
  <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ textAlign: 'center', padding: '60px 40px' }}>

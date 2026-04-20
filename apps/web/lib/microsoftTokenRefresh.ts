@@ -230,14 +230,14 @@ async function writeTokenViaRest(tenantId: string, uid: string, idToken: string,
  * @param uid     Firebase UID of the user
  * @param idToken Firebase ID token (used as REST fallback when Admin SDK unavailable)
  */
-export async function getValidMicrosoftToken(tenantId: string, uid: string, idToken?: string): Promise<string> {
-  if (!tenantId) throw new Error("tenantId is required for Microsoft token refresh.");
+export async function getValidMicrosoftToken(uid: string, idToken?: string, tenantId?: string): Promise<string> {
+  const effectiveTenant = tenantId || 'platform';
   let record: TokenRecord;
   let useAdmin = true;
 
   // ── Step 1: Read the stored token record ──────────────────────────────────
   try {
-    record = await readTokenViaAdmin(tenantId, uid);
+    record = await readTokenViaAdmin(effectiveTenant, uid);
   } catch (adminErr: any) {
     const isAdcErr =
       String(adminErr?.message ?? adminErr).includes('invalid_rapt') ||
@@ -248,7 +248,7 @@ export async function getValidMicrosoftToken(tenantId: string, uid: string, idTo
       console.warn('[microsoftTokenRefresh] Admin SDK unavailable (ADC), falling back to Firestore REST API');
       useAdmin = false;
       try {
-        record = await readTokenViaRest(tenantId, uid, idToken);
+        record = await readTokenViaRest(effectiveTenant, uid, idToken);
       } catch (restErr: any) {
         throw new Error(
           `Microsoft token read failed (both Admin SDK and REST API). ` +
@@ -301,9 +301,9 @@ export async function getValidMicrosoftToken(tenantId: string, uid: string, idTo
 
   // ── Step 4: Persist the refreshed tokens ──────────────────────────────────
   if (useAdmin) {
-    await writeTokenViaAdmin(tenantId, uid, newAccessToken, newRefresh, newExpiresAt);
+    await writeTokenViaAdmin(effectiveTenant, uid, newAccessToken, newRefresh, newExpiresAt);
   } else if (idToken) {
-    await writeTokenViaRest(tenantId, uid, idToken, newAccessToken, newRefresh, newExpiresAt);
+    await writeTokenViaRest(effectiveTenant, uid, idToken, newAccessToken, newRefresh, newExpiresAt);
   }
 
   return newAccessToken;

@@ -1,12 +1,12 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Title, Text, Button, Select, SelectItem, Switch, Divider, Badge } from '@tremor/react';
 import { getFirestore, collection, getDocs, query, orderBy } from 'firebase/firestore';
 import { firebaseApp } from '@mfo-crm/config';
 import { Calendar, Clock, Contact, X, Video, FileText } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
 
 interface ContactModel {
   id: string;
@@ -126,7 +126,7 @@ export default function EventComposer({ isOpen, onClose, eventToEdit, selectedDa
       onClose();
     } catch (err: any) {
       console.error(err);
-      alert(`Failed to save event: ${err.message}`);
+      toast.error(`Failed to save event: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -159,8 +159,8 @@ export default function EventComposer({ isOpen, onClose, eventToEdit, selectedDa
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 bg-slate-50 border-b border-slate-200">
           <div>
-            <Title>{eventToEdit ? 'Edit Event' : 'New Event'}</Title>
-            <Text className="text-xs">{provider === 'microsoft' ? 'Microsoft 365' : 'Google Workspace'} Sync</Text>
+            <h3 className="text-lg font-semibold tracking-tight mb-2">{eventToEdit ? 'Edit Event' : 'New Event'}</h3>
+            <div className="text-sm text-[var(--text-secondary)] text-xs">{provider === 'microsoft' ? 'Microsoft 365' : 'Google Workspace'} Sync</div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
             <X size={18} className="text-slate-500" />
@@ -201,7 +201,7 @@ export default function EventComposer({ isOpen, onClose, eventToEdit, selectedDa
              </div>
           </div>
 
-          <Divider className="my-2" />
+          <hr className="my-4 border-t border-[var(--border)] my-2" />
 
           {/* CRM Contacts Invitee list - One per line */}
           <div>
@@ -284,14 +284,14 @@ export default function EventComposer({ isOpen, onClose, eventToEdit, selectedDa
             </div>
           </div>
 
-          <Divider className="my-2" />
+          <hr className="my-4 border-t border-[var(--border)] my-2" />
           
           <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
              <div className="flex items-center gap-3 text-sm font-medium text-slate-700">
                <Video size={18} className={isOnline ? 'text-indigo-600' : 'text-slate-400'}/>
                {provider === 'microsoft' ? 'Teams Meeting' : 'Google Meet'}
              </div>
-             <Switch checked={isOnline} onChange={setIsOnline} color="indigo" />
+             <input type="checkbox" checked={isOnline} onChange={e => setIsOnline(e.target.checked)} className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer" />
           </div>
 
           <div>
@@ -311,12 +311,12 @@ export default function EventComposer({ isOpen, onClose, eventToEdit, selectedDa
 
         {/* Footer */}
         <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3 shrink-0">
-          <Button variant="light" color="slate" onClick={onClose} disabled={loading}>
+          <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-transparent hover:bg-slate-100 h-9 px-4 py-2 text-slate-700" onClick={onClose} disabled={loading}>
             Cancel
-          </Button>
-          <Button color="indigo" onClick={handleSave} loading={loading}>
-            {eventToEdit ? 'Save Changes' : 'Create Event'}
-          </Button>
+          </button>
+          <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2" onClick={handleSave} disabled={loading}>
+            {loading ? 'Saving...' : (eventToEdit ? 'Save Changes' : 'Create Event')}
+          </button>
         </div>
 
       </div>

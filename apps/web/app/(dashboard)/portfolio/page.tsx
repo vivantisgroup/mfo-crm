@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { StatCard } from '@/components/StatCard';
 import { DataTable } from '@/components/DataTable';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -11,18 +12,23 @@ import { ACCOUNTS, PRIVATE_INVESTMENTS, BALANCE_SHEETS, getPerformanceHistory, H
 import { LiveModeGate, PortfolioEmptyState } from '@/components/LiveModeGate';
 import { SecondaryDock } from '@/components/SecondaryDock';
 
-export default function PortfolioPage() {
- const [activeTab, setActiveTab] = useState('accounts');
+function PortfolioPageContent() {
+  const searchParams = useSearchParams();
+  const targetFamilyId = searchParams?.get('familyId') || 'fam-001';
 
- const stats = {
- totalValue: BALANCE_SHEETS[0].totalNetWorth,
- liquid: BALANCE_SHEETS[0].liquidityProfile.dailyLiquid,
- illiquid: BALANCE_SHEETS[0].liquidityProfile.locked,
- ytd: BALANCE_SHEETS[0].twrYtd,
- };
+  const [activeTab, setActiveTab] = useState('accounts');
 
- const allocs = BALANCE_SHEETS[0].allocation;
- const history = getPerformanceHistory('fam-001');
+  const bs = BALANCE_SHEETS.find(b => b.familyId === targetFamilyId) || BALANCE_SHEETS[0];
+
+  const stats = {
+    totalValue: bs.totalNetWorth,
+    liquid: bs.liquidityProfile.dailyLiquid,
+    illiquid: bs.liquidityProfile.locked,
+    ytd: bs.twrYtd,
+  };
+
+  const allocs = bs.allocation;
+  const history = getPerformanceHistory(targetFamilyId);
 
  return (
  <LiveModeGate emptyState={<PortfolioEmptyState />}>
@@ -71,7 +77,7 @@ export default function PortfolioPage() {
  <div className="card mt-2 border border-slate-200 shadow-sm bg-white">
  {activeTab === 'accounts' && (
  <DataTable
- data={ACCOUNTS.filter(a => a.familyId === 'fam-001')}
+ data={ACCOUNTS.filter(a => a.familyId === targetFamilyId)}
  columns={[
  { header: 'Account Name', accessor: a => <span className="fw-600">{a.accountName}</span> },
  { header: 'Number', accessor: a => <span className="td-mono">{a.accountNumber}</span> },
@@ -84,7 +90,7 @@ export default function PortfolioPage() {
 
  {activeTab === 'holdings' && (
  <DataTable
- data={HOLDINGS.filter(h => h.familyId === 'fam-001')}
+ data={HOLDINGS.filter(h => h.familyId === targetFamilyId)}
  columns={[
  { header: 'Security', accessor: h => (
  <div>
@@ -107,7 +113,7 @@ export default function PortfolioPage() {
 
  {activeTab === 'private investments' && (
  <DataTable
- data={PRIVATE_INVESTMENTS.filter(p => p.familyId === 'fam-001')}
+ data={PRIVATE_INVESTMENTS.filter(p => p.familyId === targetFamilyId)}
  columns={[
  { header: 'Fund Name', accessor: p => <span className="fw-600">{p.investmentName}</span> },
  { header: 'Manager', accessor: p => <span className="text-secondary">{p.fundManager}</span> },
@@ -129,4 +135,12 @@ export default function PortfolioPage() {
  </div>
  </LiveModeGate>
  );
+}
+
+export default function PortfolioPage() {
+  return (
+    <Suspense fallback={<div className="p-10 text-center text-slate-400">Loading Portfolio framework...</div>}>
+      <PortfolioPageContent />
+    </Suspense>
+  );
 }

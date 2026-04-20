@@ -44,6 +44,7 @@ let localChartOfAccounts: ChartAccount[] = [
   { id: 'coa-501', code: '5.1.1', name: 'Cost of Goods Sold', type: 'EXPENSE', isGroup: false, parentId: 'coa-5', isSystem: true },
   { id: 'coa-510', code: '5.2.1', name: 'Operating Expenses', type: 'EXPENSE', isGroup: false, parentId: 'coa-5', isSystem: true },
   { id: 'coa-520', code: '5.2.2', name: 'Payroll Expenses', type: 'EXPENSE', isGroup: false, parentId: 'coa-5', isSystem: true },
+  { id: 'coa-530', code: '5.2.3', name: 'Marketing & Advertising', type: 'EXPENSE', isGroup: false, parentId: 'coa-5', isSystem: true },
 ];
 
 // Generate some sample data locally if Firestore is empty
@@ -78,4 +79,30 @@ export async function getChartOfAccounts(): Promise<ChartAccount[]> {
 export async function addChartAccount(entry: Omit<ChartAccount, 'id'>): Promise<ChartAccount> {
   const docRef = await addDoc(collection(db, 'platform_chart_accounts'), entry);
   return { id: docRef.id, ...entry };
+}
+
+export async function postMarketingExpenseToLedger(amount: number, description: string, campaignId?: string): Promise<void> {
+  const date = new Date().toISOString();
+  
+  // Debit Marketing Expenses
+  await addLedgerEntry({
+    date,
+    accountId: '530',
+    accountName: 'Marketing & Advertising',
+    type: 'EXPENSE',
+    description: `[MKT${campaignId ? ` - ${campaignId}` : ''}] ${description}`,
+    debit: amount,
+    credit: 0
+  });
+
+  // Credit Accounts Payable
+  await addLedgerEntry({
+    date,
+    accountId: '201',
+    accountName: 'Accounts Payable',
+    type: 'LIABILITY',
+    description: `[MKT${campaignId ? ` - ${campaignId}` : ''}] ${description}`,
+    debit: 0,
+    credit: amount 
+  });
 }

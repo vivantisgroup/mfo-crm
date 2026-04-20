@@ -10,9 +10,8 @@ import {
 import { TenantSubscription } from '@/lib/subscriptionService';
 import { CommunicationPanel } from '@/components/CommunicationPanel';
 import { getEmployees, Employee } from '@/lib/hrService';
-import { Search, Plus, Building2, UserCircle2, Mail, Trash2, Edit2, Settings, Landmark, Target, MessageSquare, ChevronRight, Lock, List, LayoutGrid, Tag as TagIcon, Hash, X, Phone, Archive, HelpCircle, MapPin, Globe } from 'lucide-react';
+import { Search, Plus, Building2, UserCircle2, Mail, Trash2, Edit2, Settings, Landmark, Target, MessageSquare, ChevronRight, Lock, List, LayoutGrid, Tag as TagIcon, Hash, X, Phone, Archive, HelpCircle, MapPin, Globe, Edit3 } from 'lucide-react';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
-import { Button, TextInput, Card, Metric, Badge, Title, Text, TabGroup, TabList, Tab, TabPanels, TabPanel, Table, TableHead, TableHeaderCell, TableBody, TableRow, TableCell, DonutChart, BarList, Flex, Callout } from '@tremor/react';
 import { useAuth } from '@/lib/AuthContext';
 import { ROLE_PERMISSIONS } from '@/lib/rbacService';
 import Link from 'next/link';
@@ -20,6 +19,9 @@ import { ConfirmDialog, type ConfirmOptions } from '@/components/ConfirmDialog';
 import { getAllTags, type Tag } from '@/lib/tagService';
 import { usePageTitle } from '@/lib/PageTitleContext';
 import { useTranslation } from '@/lib/i18n/context';
+import { RichTextEditor } from '@/components/ui/RichTextEditor';
+import { RichTextRenderer } from '@/components/RichTextRenderer';
+import { toast } from 'sonner';
 
 const COLOR_MAP: Record<string, string> = {
   slate: '#64748b', gray: '#6b7280', zinc: '#717f8b', neutral: '#737373', stone: '#78716c',
@@ -52,11 +54,22 @@ function InlineEdit({ value, onSave, multiline = false, textClass = "", inputCla
   };
 
   const handleKeyDown = (e: any) => {
-    if (e.key === 'Enter' && !multiline && !selectOptions) save();
+    if (e.key === 'Enter' && !multiline && type !== 'richtext' && !selectOptions) save();
     if (e.key === 'Escape') { setIsEditing(false); setCurrentVal(value); }
   };
 
   if (isEditing) {
+    if (type === 'richtext') {
+       return (
+          <div className="w-full relative z-40 bg-white rounded-lg shadow-sm border border-indigo-300">
+             <RichTextEditor value={currentVal || ''} onChange={(html) => setCurrentVal(html)} />
+             <div className="flex gap-2 justify-end p-2 bg-slate-50 border-t border-slate-100 rounded-b-lg">
+                <button onClick={() => { setIsEditing(false); setCurrentVal(value); }} className="px-3 py-1 bg-slate-200 text-slate-700 hover:bg-slate-300 transition-colors rounded text-xs font-bold">Cancel</button>
+                <button onClick={save} className="px-3 py-1 bg-indigo-600 text-white hover:bg-indigo-700 transition-colors rounded text-xs font-bold shadow hover:shadow-md">Save Changes</button>
+             </div>
+          </div>
+       );
+    }
     if (selectOptions) {
       return (
         <select autoFocus value={currentVal} onChange={e=>setCurrentVal(e.target.value)} onBlur={()=>{setIsEditing(false); if(currentVal!==value) onSave(currentVal);}} className={`bg-slate-50 border border-indigo-300 text-slate-800 rounded focus:outline-none focus:ring-2 ring-indigo-500/20 px-1 py-0.5 -ml-1 ${inputClass}`}>
@@ -71,6 +84,16 @@ function InlineEdit({ value, onSave, multiline = false, textClass = "", inputCla
   }
 
   const displayVal = selectOptions ? (selectOptions.find((o:any)=>o.value===value)?.label || value) : value;
+  
+  if (type === 'richtext') {
+     return (
+       <div onClick={() => setIsEditing(true)} className={`cursor-text hover:bg-slate-50 rounded transition-colors border border-transparent hover:border-slate-200 outline-none w-full group relative ${textClass}`}>
+         <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-indigo-500 transition-opacity bg-indigo-50 p-1.5 rounded-lg border border-indigo-100 shadow-sm"><Edit3 size={14}/></div>
+         {value ? <RichTextRenderer content={value} /> : <span className="text-slate-300 italic text-xs block py-2">Click here to add formatting, images, or paste HTML...</span>}
+       </div>
+     );
+  }
+  
   return <span onClick={() => setIsEditing(true)} className={`cursor-text hover:bg-slate-100/80 rounded px-1.5 py-0.5 -ml-1.5 transition-colors border border-transparent hover:border-slate-200 outline-none ${textClass}`}>{displayVal || <span className="text-slate-300 italic text-xs px-1">Empty</span>}</span>;
 }
 
@@ -222,56 +245,57 @@ export function EntitiesTab({ orgs, contacts, opps, subscriptions, performer, on
         <div className="flex-1 flex flex-col p-8 lg:px-12 overflow-hidden animate-fade-in bg-slate-50">
            {/* KPI Header Row */}
            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 shrink-0">
-              <Card decoration="top" decorationColor="indigo">
-                <Text>Directory Size</Text>
+              <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 border-t-4 border-t-indigo-500">
+                <div className="text-sm text-[var(--text-secondary)]">Directory Size</div>
                 <div className="mt-4 flex flex-col gap-4">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                    <div className="flex items-center gap-2"><Building2 size={16} className="text-indigo-400"/><Text className="font-bold text-slate-700">Organizations</Text></div>
+                    <div className="flex items-center gap-2"><Building2 size={16} className="text-indigo-400"/><div className="text-sm text-[var(--text-secondary)] font-bold text-slate-700">Organizations</div></div>
                     <span className="font-black text-xl text-slate-800">{orgs.length}</span>
                   </div>
                   <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                    <div className="flex items-center gap-2"><UserCircle2 size={16} className="text-emerald-400"/><Text className="font-bold text-slate-700">Contacts</Text></div>
+                    <div className="flex items-center gap-2"><UserCircle2 size={16} className="text-emerald-400"/><div className="text-sm text-[var(--text-secondary)] font-bold text-slate-700">Contacts</div></div>
                     <span className="font-black text-xl text-slate-800">{contacts.length}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2"><Target size={16} className="text-amber-400"/><Text className="font-bold text-slate-700">Open Deals</Text></div>
+                    <div className="flex items-center gap-2"><Target size={16} className="text-amber-400"/><div className="text-sm text-[var(--text-secondary)] font-bold text-slate-700">Open Deals</div></div>
                     <span className="font-black text-xl text-slate-800">{(opps||[]).filter(o=>['lead','qualification','demo','proposal','negotiation'].includes(o.stage)).length}</span>
                   </div>
                 </div>
-              </Card>
+              </div>
 
-              <Card decoration="top" decorationColor="blue">
-                <Text>Entity Composition</Text>
-                <Flex className="mt-4 gap-4 h-full pb-4">
-                  <DonutChart
-                    data={entityDist}
-                    category="value"
-                    index="name"
-                    colors={["indigo", "emerald", "amber", "blue"]}
-                    className="w-24 h-24"
-                    showLabel={true}
-                    showTooltip={true}
-                  />
-                  <div className="flex-1">
-                    <BarList 
-                      data={entityDist} 
-                      className="w-full" 
-                      color="blue"
-                    />
-                  </div>
-                </Flex>
-              </Card>
-
-              <Card decoration="top" decorationColor="emerald">
-                <Text>Geographic Spread</Text>
-                <div className="mt-4 w-full px-2">
-                   <BarList 
-                     data={geoSpread}
-                     color="emerald"
-                     className="w-full"
-                   />
+              <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 border-t-4 border-t-blue-500">
+                <div className="text-sm text-[var(--text-secondary)]">Entity Composition</div>
+                <div className="mt-4 flex flex-col gap-4 h-full pb-4">
+                  {entityDist.map(item => (
+                    <div key={item.name} className="flex flex-col gap-1 w-full">
+                        <div className="flex justify-between items-center text-sm">
+                            <span className="text-slate-600">{item.name}</span>
+                            <span className="font-bold text-slate-800">{item.value}</span>
+                        </div>
+                        <div className="w-full bg-slate-100 rounded-full h-2">
+                            <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${Math.min(100, Math.max(5, (item.value / Math.max(1, ...entityDist.map(d=>d.value))) * 100))}%` }}></div>
+                        </div>
+                    </div>
+                  ))}
                 </div>
-              </Card>
+              </div>
+
+              <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 border-t-4 border-t-emerald-500">
+                <div className="text-sm text-[var(--text-secondary)]">Geographic Spread</div>
+                <div className="mt-4 w-full px-2 flex flex-col gap-4">
+                  {geoSpread.map(item => (
+                    <div key={item.name} className="flex flex-col gap-1 w-full">
+                        <div className="flex justify-between items-center text-sm">
+                            <span className="text-slate-600">{item.name}</span>
+                            <span className="font-bold text-slate-800">{item.value}</span>
+                        </div>
+                        <div className="w-full bg-slate-100 rounded-full h-2">
+                            <div className="bg-emerald-500 h-2 rounded-full" style={{ width: `${Math.min(100, Math.max(5, (item.value / Math.max(1, ...geoSpread.map(d=>d.value))) * 100))}%` }}></div>
+                        </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
            </div>
            
            {/* TabGroup */}
@@ -284,7 +308,10 @@ export function EntitiesTab({ orgs, contacts, opps, subscriptions, performer, on
            {/* Actions Bar */}
            <div className="flex justify-between items-center mb-6 bg-white p-3 rounded-xl border border-slate-200 shadow-sm shrink-0">
              <div className="flex gap-4 items-center">
-               <TextInput icon={() => <Search size={16} className="text-slate-400 ml-2" />} placeholder={`Search ${activeSubTab}...`} value={search} onChange={e => setSearch(e.target.value)} className="w-[350px]" />
+               <div className="relative w-[350px]">
+                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                 <input className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 pl-9 py-1 text-sm shadow-sm transition-colors placeholder:text-slate-400 focus-visible:outline-none focus-visible:border-indigo-500 focus-visible:ring-1 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50" placeholder={`Search ${activeSubTab}...`} value={search} onChange={e => setSearch(e.target.value)} />
+               </div>
                {['all', 'organizations'].includes(activeSubTab) && (
                  <select value={typeFilter} onChange={e => setTypeFilter(e.target.value as any)} className="bg-slate-50 border border-slate-200 text-slate-600 text-sm font-bold rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2 outline-none">
                    <option value="all">All Types</option>
@@ -298,8 +325,8 @@ export function EntitiesTab({ orgs, contacts, opps, subscriptions, performer, on
                  <button onClick={()=>setViewMode('kanban')} className={`p-1 rounded-md transition-all ${viewMode==='kanban'?'bg-white shadow-sm text-indigo-600':'text-slate-400 hover:text-slate-600'}`} title="Card View"><LayoutGrid size={16} /></button>
                </div>
                <div className="h-6 w-px bg-slate-200"></div>
-               <Button size="xs" className="shadow-sm shadow-indigo-500/20" icon={() => <Plus size={14} className="-ml-1 mr-1" />} onClick={() => { setActiveSubTab('organizations'); setIsCreatingOrg(true); }}>New Org</Button>
-               <Button size="xs" variant="secondary" className="shadow-sm" icon={() => <Plus size={14} className="-ml-1 mr-1" />} onClick={() => { setActiveSubTab('contacts'); setIsCreatingContact(true); }}>New Contact</Button>
+               <button className="inline-flex items-center gap-1.5 justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500 disabled:pointer-events-none disabled:opacity-50 bg-indigo-600 text-white shadow-sm shadow-indigo-500/20 hover:bg-indigo-700 h-9 px-4 py-2" onClick={() => { setActiveSubTab('organizations'); setIsCreatingOrg(true); }}><Plus size={14} className="-ml-1" /> New Org</button>
+               <button className="inline-flex items-center gap-1.5 justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500 disabled:pointer-events-none disabled:opacity-50 bg-white border border-slate-200 text-slate-700 shadow-sm hover:bg-slate-50 h-9 px-4 py-2" onClick={() => { setActiveSubTab('contacts'); setIsCreatingContact(true); }}><Plus size={14} className="-ml-1" /> New Contact</button>
              </div>
            </div>
            
@@ -311,17 +338,17 @@ export function EntitiesTab({ orgs, contacts, opps, subscriptions, performer, on
                   {filteredOrgs.length > 0 ? (
                     viewMode === 'list' ? (
                       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-6">
-                        <Table>
-                          <TableHead className="bg-slate-50/50">
-                            <TableRow>
-                              <TableHeaderCell className="font-bold text-slate-500 py-3.5 pl-6">Organization</TableHeaderCell>
-                              <TableHeaderCell className="font-bold text-slate-500 py-3.5">Type</TableHeaderCell>
-                              <TableHeaderCell className="font-bold text-slate-500 py-3.5">Location</TableHeaderCell>
-                              <TableHeaderCell className="font-bold text-slate-500 py-3.5">Open Deals</TableHeaderCell>
-                              <TableHeaderCell className="font-bold text-slate-500 py-3.5 text-right pr-6">Tags</TableHeaderCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
+                        <table className="w-full text-left text-sm border-collapse">
+                          <thead className="bg-slate-50/50">
+                            <tr>
+                              <th className="font-bold text-slate-500 py-3.5 pl-6 border-b border-slate-200 text-left">Organization</th>
+                              <th className="font-bold text-slate-500 py-3.5 border-b border-slate-200 text-left">Type</th>
+                              <th className="font-bold text-slate-500 py-3.5 border-b border-slate-200 text-left">Location</th>
+                              <th className="font-bold text-slate-500 py-3.5 border-b border-slate-200 text-left">Open Deals</th>
+                              <th className="font-bold text-slate-500 py-3.5 text-right pr-6 border-b border-slate-200">Tags</th>
+                            </tr>
+                          </thead>
+                          <tbody>
                             {filteredOrgs.map(org => {
                               const lock = !canReadOrg;
                               const stageC = pipelineStages.find(s=>s.id===org.stage);
@@ -330,34 +357,34 @@ export function EntitiesTab({ orgs, contacts, opps, subscriptions, performer, on
                               const oppsValue = activeOpps.reduce((s,o) => s + o.valueUsd, 0);
                               
                               return (
-                                <TableRow key={org.id} onClick={() => { if(!lock) { setSelectedContactId(null); setSelectedOrgId(org.id); } }} className={`transition-colors border-t border-slate-100 ${lock ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'cursor-pointer hover:bg-slate-50/80'}`}>
-                                  <TableCell className="pl-6 w-1/4 py-3">
+                                <tr key={org.id} onClick={() => { if(!lock) { setSelectedContactId(null); setSelectedOrgId(org.id); } }} className={`transition-colors border-t border-slate-100 ${lock ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'cursor-pointer hover:bg-slate-50/80'}`}>
+                                  <td className="pl-6 w-1/4 py-3 align-middle">
                                     <div className="flex items-center gap-3">
                                       {org.logoUrl ? <img src={org.logoUrl} className="w-8 h-8 rounded-lg object-cover border border-slate-200 shadow-sm" /> : <div className="w-8 h-8 rounded-lg flex items-center justify-center font-black bg-indigo-50 text-indigo-500 text-sm border border-indigo-100">{org.name.charAt(0)}</div>}
                                       <div className="font-bold text-slate-800 flex items-center gap-2">{org.name} {lock && <Lock size={12} className="text-slate-400"/>}</div>
                                     </div>
-                                  </TableCell>
-                                  <TableCell className="py-3">
+                                  </td>
+                                  <td className="py-3 align-middle">
                                     <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md text-[10px] font-bold border border-slate-200 shadow-sm uppercase tracking-wide">{org.orgType ? ORG_TYPE_LABELS[org.orgType] : 'Client'}</span>
-                                  </TableCell>
-                                  <TableCell className="text-slate-500 text-sm font-medium py-3">{org.country || 'Global'}</TableCell>
-                                  <TableCell className="py-3">
+                                  </td>
+                                  <td className="text-slate-500 text-sm font-medium py-3 align-middle">{org.country || 'Global'}</td>
+                                  <td className="py-3 align-middle">
                                     <div className="flex flex-col w-fit cursor-pointer hover:bg-slate-50 p-1.5 -ml-1.5 rounded-lg transition-colors group" onClick={(e) => { if(onOpenPipeline) { e.stopPropagation(); onOpenPipeline(org.id); } }}>
                                        <span className="text-slate-700 font-bold text-sm tracking-tight group-hover:text-indigo-600 transition-colors">{activeOpps.length} Deal{activeOpps.length===1?'':'s'}</span>
                                        {activeOpps.length > 0 && <span className="text-emerald-600 text-[10px] font-black">{fmtM(oppsValue)}</span>}
                                     </div>
-                                  </TableCell>
-                                  <TableCell className="text-right pr-6 py-3">
+                                  </td>
+                                  <td className="text-right pr-6 py-3 align-middle">
                                     <div className="flex gap-1.5 justify-end">
                                       {!(org.tags?.length > 0) ? <span className="text-xs text-slate-400 italic">None</span> : org.tags.slice(0, 3).map(t => <span key={t} className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-bold border border-slate-200">{t}</span>)}
                                       {org.tags?.length > 3 && <span className="px-1.5 py-0.5 bg-slate-50 text-slate-400 rounded text-[10px] font-bold border border-slate-100">+{org.tags.length - 3}</span>}
                                     </div>
-                                  </TableCell>
-                                </TableRow>
+                                  </td>
+                                </tr>
                               );
                             })}
-                          </TableBody>
-                        </Table>
+                          </tbody>
+                        </table>
                       </div>
                     ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
@@ -408,22 +435,22 @@ export function EntitiesTab({ orgs, contacts, opps, subscriptions, performer, on
                   {filteredContacts.length > 0 ? (
                     viewMode === 'list' ? (
                       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-6">
-                        <Table>
-                          <TableHead className="bg-slate-50/50">
-                            <TableRow>
-                              <TableHeaderCell className="font-bold text-slate-500 py-3.5 pl-6">Contact Name</TableHeaderCell>
-                              <TableHeaderCell className="font-bold text-slate-500 py-3.5">Role</TableHeaderCell>
-                              <TableHeaderCell className="font-bold text-slate-500 py-3.5">Organization</TableHeaderCell>
-                              <TableHeaderCell className="font-bold text-slate-500 py-3.5">Email</TableHeaderCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
+                        <table className="w-full text-left text-sm border-collapse">
+                          <thead className="bg-slate-50/50">
+                            <tr>
+                              <th className="font-bold text-slate-500 py-3.5 pl-6 border-b border-slate-200 text-left">Contact Name</th>
+                              <th className="font-bold text-slate-500 py-3.5 border-b border-slate-200 text-left">Role</th>
+                              <th className="font-bold text-slate-500 py-3.5 border-b border-slate-200 text-left">Organization</th>
+                              <th className="font-bold text-slate-500 py-3.5 border-b border-slate-200 text-left">Email</th>
+                            </tr>
+                          </thead>
+                          <tbody>
                             {filteredContacts.map(contact => {
                               const org = orgs.find(o => o.id === contact.orgId);
                               const lock = !canReadContact;
                               return (
-                                <TableRow key={contact.id} onClick={() => { if(!lock) { setSelectedOrgId(null); setSelectedContactId(contact.id); } }} className={`transition-colors border-t border-slate-100 ${lock ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'cursor-pointer hover:bg-slate-50/80'}`}>
-                                  <TableCell className="pl-6 w-1/3 py-3">
+                                <tr key={contact.id} onClick={() => { if(!lock) { setSelectedOrgId(null); setSelectedContactId(contact.id); } }} className={`transition-colors border-t border-slate-100 ${lock ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'cursor-pointer hover:bg-slate-50/80'}`}>
+                                  <td className="pl-6 w-1/3 py-3 align-middle">
                                     <div className="flex items-center gap-3">
                                       {contact.logoUrl ? <img src={contact.logoUrl} className="w-8 h-8 rounded-full object-cover border border-slate-200 shadow-sm" /> : <div className="w-8 h-8 rounded-full flex items-center justify-center font-black bg-slate-100 text-slate-500 text-sm border border-slate-200 shrink-0">{contact.name.charAt(0)}</div>}
                                       <div className="font-bold text-slate-800 flex items-center gap-2">
@@ -431,15 +458,15 @@ export function EntitiesTab({ orgs, contacts, opps, subscriptions, performer, on
                                         {contact.isPrimary && <span className="text-[9px] font-black px-1.5 py-0.5 rounded-sm uppercase tracking-wider bg-emerald-100 text-emerald-700 ml-1">Primary</span>}
                                       </div>
                                     </div>
-                                  </TableCell>
-                                  <TableCell className="text-slate-500 text-sm font-medium py-3">{contact.role || '—'}</TableCell>
-                                  <TableCell className="text-slate-600 font-bold py-3"><span className="flex items-center gap-1.5"><Building2 size={12} className="text-slate-300"/>{org?.name || 'Independent'}</span></TableCell>
-                                  <TableCell className="text-brand-600 font-medium text-sm py-3"><span className="flex items-center gap-1.5"><Mail size={12} className="text-brand-300"/>{contact.email}</span></TableCell>
-                                </TableRow>
+                                  </td>
+                                  <td className="text-slate-500 text-sm font-medium py-3 align-middle">{contact.role || '—'}</td>
+                                  <td className="text-slate-600 font-bold py-3 align-middle"><span className="flex items-center gap-1.5"><Building2 size={12} className="text-slate-300"/>{org?.name || 'Independent'}</span></td>
+                                  <td className="text-brand-600 font-medium text-sm py-3 align-middle"><span className="flex items-center gap-1.5"><Mail size={12} className="text-brand-300"/>{contact.email}</span></td>
+                                </tr>
                               );
                             })}
-                          </TableBody>
-                        </Table>
+                          </tbody>
+                        </table>
                       </div>
                     ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
@@ -564,7 +591,11 @@ function NewOrgForm({ onBack, onCreated, performer, employees }: any) {
             <div className="col-span-2"><FieldLabel>Invoice Address</FieldLabel><textarea className="input w-full text-sm" rows={2} value={form.invoiceAddress} onChange={f('invoiceAddress')} placeholder="Billing Dept..." /></div>
             <div className="col-span-2"><FieldLabel>Shipping Address</FieldLabel><textarea className="input w-full text-sm" rows={2} value={form.shippingAddress} onChange={f('shippingAddress')} placeholder="Receiving Dept..." /></div>
             <div className="col-span-2"><FieldLabel>Tags (Comma Separated)</FieldLabel><input className="input w-full" value={form.tags} onChange={f('tags')} placeholder="hot, crypto" /></div>
-            <div className="col-span-2"><FieldLabel>Notes</FieldLabel><textarea className="input w-full text-sm" rows={3} value={form.notes} onChange={f('notes')} /></div>
+            <div className="col-span-2"><FieldLabel>Notes</FieldLabel>
+               <div className="bg-slate-50 border border-slate-300 rounded focus-within:ring-2 ring-indigo-500/20">
+                 <RichTextEditor value={form.notes || ''} onChange={(html) => setForm(p => ({ ...p, notes: html }))} placeholder="Add detailed notes..." />
+               </div>
+            </div>
           </div>
         </div>
         <div className="bg-white rounded-2xl border border-slate-200 p-6 mb-8 shadow-sm">
@@ -577,9 +608,9 @@ function NewOrgForm({ onBack, onCreated, performer, employees }: any) {
             <div><FieldLabel>WhatsApp</FieldLabel><input className="input w-full" value={form.contactWhatsapp} onChange={f('contactWhatsapp')} /></div>
           </div>
         </div>
-        <div className="flex gap-4">
-          <Button variant="secondary" onClick={onBack} className="flex-1">Cancel</Button>
-          <Button variant="primary" type="submit" disabled={loading || !form.name} className="flex-2">{loading ? 'Creating...' : 'Create Organization'}</Button>
+        <div className="flex gap-4 mt-6">
+          <button className="flex-1 inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-400 disabled:pointer-events-none disabled:opacity-50 bg-white text-slate-700 border border-slate-200 shadow-sm hover:bg-slate-50 h-9 px-4 py-2" type="button" onClick={onBack}>Cancel</button>
+          <button className="flex-[2] inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500 disabled:pointer-events-none disabled:opacity-50 bg-indigo-600 text-white shadow-sm hover:bg-indigo-700 h-9 px-4 py-2" type="submit" disabled={loading || !form.name}>{loading ? 'Creating...' : 'Create Organization'}</button>
         </div>
       </form>
     </div>
@@ -688,7 +719,7 @@ function OrgDetailView({ org, contacts, subscriptions, onRefresh, performer, emp
                 {c.phone && <div className="text-[11px] flex items-center gap-2 text-slate-500"><MessageSquare size={12}/> <a href={`https://wa.me/${c.phone.replace(/\D/g,'')}`} target="_blank" rel="noreferrer" className="text-emerald-600 font-semibold hover:underline">WhatsApp</a> <span className="text-slate-400">{c.phone}</span></div>}
              </div>
           ))}
-          {canDelOrg && <Button variant="light" size="sm" color="red" onClick={del} icon={() => <Trash2 size={14} className="text-red-500 mr-2"/>}>Delete</Button>}
+          {canDelOrg && <button className="inline-flex items-center gap-1.5 justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500 disabled:pointer-events-none disabled:opacity-50 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 border border-red-100 shadow-sm h-8 px-3 py-1.5" onClick={del}><Trash2 size={14} className="text-red-500"/> Delete</button>}
         </div>
       </div>
 
@@ -854,36 +885,36 @@ function OrgDetailView({ org, contacts, subscriptions, onRefresh, performer, emp
                </div>
             ) : contactViewMode === 'list' ? (
                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                 <Table>
-                   <TableHead className="bg-slate-50 border-b border-slate-200">
-                     <TableRow>
-                       <TableHeaderCell className="text-xs font-black uppercase text-slate-400 py-3">Name</TableHeaderCell>
-                       <TableHeaderCell className="text-xs font-black uppercase text-slate-400 py-3">Role</TableHeaderCell>
-                       <TableHeaderCell className="text-xs font-black uppercase text-slate-400 py-3">Contact</TableHeaderCell>
-                       <TableHeaderCell className="text-xs font-black uppercase text-slate-400 py-3 text-right">Status</TableHeaderCell>
-                     </TableRow>
-                   </TableHead>
-                   <TableBody>
+                 <table className="w-full text-left text-sm border-collapse">
+                   <thead className="bg-slate-50 border-b border-slate-200">
+                     <tr>
+                       <th className="text-xs font-black uppercase text-slate-400 py-3 pl-4">Name</th>
+                       <th className="text-xs font-black uppercase text-slate-400 py-3">Role</th>
+                       <th className="text-xs font-black uppercase text-slate-400 py-3">Contact</th>
+                       <th className="text-xs font-black uppercase text-slate-400 py-3 text-right pr-4">Status</th>
+                     </tr>
+                   </thead>
+                   <tbody>
                      {contacts.map((c:any) => (
-                       <TableRow key={c.id} onClick={() => onContactClick?.(c.id)} className="cursor-pointer hover:bg-slate-50 transition-colors group">
-                         <TableCell className="font-bold text-slate-800 flex items-center gap-3 py-4">
+                       <tr key={c.id} onClick={() => onContactClick?.(c.id)} className="cursor-pointer hover:bg-slate-50 transition-colors group border-b border-slate-100 last:border-0">
+                         <td className="font-bold text-slate-800 flex items-center gap-3 py-4 pl-4 align-middle">
                            <div className={`w-8 h-8 rounded-full flex justify-center items-center text-xs font-black ${c.isPrimary ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
                              {c.logoUrl ? <img src={c.logoUrl} className="w-full h-full object-cover rounded-full" /> : c.name.charAt(0)}
                            </div>
                            {c.name}
-                         </TableCell>
-                         <TableCell className="text-slate-500 text-sm font-medium">{c.role || <span className="opacity-40 italic">Unassigned</span>}</TableCell>
-                         <TableCell className="text-sm text-slate-500 space-y-1">
+                         </td>
+                         <td className="text-slate-500 text-sm font-medium align-middle">{c.role || <span className="opacity-40 italic">Unassigned</span>}</td>
+                         <td className="text-sm text-slate-500 space-y-1 align-middle">
                            <div className="flex items-center gap-1.5"><Mail size={12} className="text-indigo-400"/> {c.email}</div>
                            {c.phone && <div className="flex items-center gap-1.5"><Phone size={12} className="text-emerald-400"/> {c.phone}</div>}
-                         </TableCell>
-                         <TableCell className="text-right">
+                         </td>
+                         <td className="text-right pr-4 align-middle">
                            {c.isPrimary && <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-1 rounded font-black tracking-widest uppercase shadow-sm">Primary</span>}
-                         </TableCell>
-                       </TableRow>
+                         </td>
+                       </tr>
                      ))}
-                   </TableBody>
-                 </Table>
+                   </tbody>
+                 </table>
                </div>
             ) : (
               <div className="grid grid-cols-2 gap-4">
@@ -950,7 +981,7 @@ function NewContactForm({ orgs, onCreated, performer, onBack }: any) {
       const parsedTags = nc.tags.split(',').map(t=>t.trim()).filter(Boolean);
       await createContact({ ...nc, tags: parsedTags, createdBy:performer.uid }, performer);
       onCreated();
-    } catch(err) { alert('Failed'); } finally { setLoading(false); }
+    } catch(err) { toast.error('Failed'); } finally { setLoading(false); }
   }
   return (
     <div className="p-8 max-w-2xl mx-auto">
@@ -970,6 +1001,11 @@ function NewContactForm({ orgs, onCreated, performer, onBack }: any) {
             <div className="col-span-2"><FieldLabel>Role</FieldLabel><input className="input w-full" value={nc.role} onChange={e=>setNc(p=>({...p,role:e.target.value}))}/></div>
             <div><FieldLabel>Phone</FieldLabel><input className="input w-full" value={nc.phone} onChange={e=>setNc(p=>({...p,phone:e.target.value}))}/></div>
             <div><FieldLabel>WhatsApp</FieldLabel><input className="input w-full" value={nc.whatsapp} onChange={e=>setNc(p=>({...p,whatsapp:e.target.value}))}/></div>
+            <div className="col-span-2"><FieldLabel>Notes</FieldLabel>
+              <div className="border border-slate-200 mt-1 rounded-xl overflow-hidden bg-slate-50">
+                <RichTextEditor value={nc.notes || ''} onChange={(html) => setNc(p => ({ ...p, notes: html }))} />
+              </div>
+            </div>
             <div className="col-span-2">
               <FieldLabel>Preferred Contact Method</FieldLabel>
               <select className="input w-full" value={nc.preferredContactMethod} onChange={e=>setNc(p=>({...p,preferredContactMethod:e.target.value as any}))}>
@@ -983,8 +1019,8 @@ function NewContactForm({ orgs, onCreated, performer, onBack }: any) {
             <div className="col-span-2"><FieldLabel>Logo URL</FieldLabel><input className="input w-full" value={nc.logoUrl} onChange={e=>setNc(p=>({...p,logoUrl:e.target.value}))} placeholder="https://..."/></div>
          </div>
          <div className="flex gap-4 mt-8">
-            <Button variant="secondary" onClick={onBack} className="flex-1">Cancel</Button>
-            <Button variant="primary" type="submit" disabled={loading||!nc.name||!nc.email} className="flex-2">{loading?'Saving...':'Add Contact'}</Button>
+            <button className="flex-1 inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--bg-canvas)] text-[var(--text-secondary)] shadow-sm border border-[var(--border-subtle)] hover:bg-[var(--bg-surface)] h-9 px-4 py-2" type="button" onClick={onBack}>Cancel</button>
+            <button className="flex-2 inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2" type="submit" disabled={loading||!nc.name||!nc.email}>{loading?'Saving...':'Add Contact'}</button>
          </div>
       </form>
     </div>
@@ -1114,7 +1150,7 @@ function ContactDetailView({ contact, orgs, onRefresh, performer, internalAddres
               </div>
             </div>
             <div className="flex gap-2 shrink-0">
-               {canDelContact && <Button variant="light" color="red" size="sm" onClick={() => {
+               {canDelContact && <button className="inline-flex items-center gap-1.5 justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500 disabled:pointer-events-none disabled:opacity-50 bg-red-50 text-red-600 hover:bg-red-100 border border-red-100 shadow-sm h-8 px-3 py-1.5" onClick={() => {
                   setConfirm({
                     title: 'Delete Contact',
                     message: 'Are you sure you want to delete this contact permanently? This action cannot be undone.',
@@ -1123,20 +1159,20 @@ function ContactDetailView({ contact, orgs, onRefresh, performer, internalAddres
                     onConfirm: async () => { await deleteContact(contact.id); onRefresh(); },
                     onCancel: () => setConfirm(null)
                   });
-               }} icon={()=><Trash2 size={14} className="mr-2"/>}>Delete</Button>}
+               }}><Trash2 size={14} className="text-red-500" /> Delete</button>}
             </div>
          </div>
        </div>
 
-       <TabGroup>
-         <TabList className="mb-6">
-           <Tab icon={() => <UserCircle2 size={16} className="mr-2 inline"/>}>Overview</Tab>
-           <Tab icon={() => <MapPin size={16} className="mr-2 inline"/>}>Addresses ({addresses.length})</Tab>
-           <Tab icon={() => <Archive size={16} className="mr-2 inline"/>}>Identifications ({identifications.length})</Tab>
-           <Tab icon={() => <Building2 size={16} className="mr-2 inline"/>}>Relationships ({relationships.length})</Tab>
-         </TabList>
-         <TabPanels>
-            <TabPanel>
+       <div className="w-full">
+         <div className="inline-flex h-9 flex-wrap gap-2 items-center justify-start rounded-lg bg-[var(--bg-muted)] text-[var(--text-tertiary)] mb-6">
+           <button className="inline-flex items-center gap-2 justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-500)] disabled:pointer-events-none disabled:opacity-50 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-slate-50"><UserCircle2 size={16} className="inline"/> Overview</button>
+           <button className="inline-flex items-center gap-2 justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-500)] disabled:pointer-events-none disabled:opacity-50 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-slate-50"><MapPin size={16} className="inline"/> Addresses ({addresses.length})</button>
+           <button className="inline-flex items-center gap-2 justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-500)] disabled:pointer-events-none disabled:opacity-50 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-slate-50"><Archive size={16} className="inline"/> Identifications ({identifications.length})</button>
+           <button className="inline-flex items-center gap-2 justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-500)] disabled:pointer-events-none disabled:opacity-50 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-slate-50"><Building2 size={16} className="inline"/> Relationships ({relationships.length})</button>
+         </div>
+         <div className="mt-2">
+            <div className="mt-2 ring-offset-background">
                <div className="grid grid-cols-3 gap-6 animate-fade-in">
                  <div className="col-span-1 space-y-6">
                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col gap-4">
@@ -1148,7 +1184,7 @@ function ContactDetailView({ contact, orgs, onRefresh, performer, internalAddres
                          <div className="flex items-center"><strong className="w-24 block text-slate-500 text-xs uppercase tracking-wider">Channel</strong> <div className="font-medium text-slate-800"><InlineEdit value={contact.preferredContactMethod || 'email'} selectOptions={[{value:'email',label:'Email'},{value:'phone',label:'Phone Call'},{value:'whatsapp',label:'WhatsApp'}]} onSave={(v:string)=>updateField('preferredContactMethod',v)} canEdit={canEditContact} /></div></div>
                          <div className="mt-4 border-t border-slate-100 pt-4">
                             <strong className="block text-slate-500 text-xs uppercase tracking-wider mb-2">Profile Notes</strong> 
-                            <div className="whitespace-pre-wrap"><InlineEdit textClass="block w-full" multiline value={contact.notes} onSave={(v:string)=>updateField('notes',v)} canEdit={canEditContact} /></div>
+                            <div className="w-full"><InlineEdit textClass="block w-full" type="richtext" value={contact.notes} onSave={(v:string)=>updateField('notes',v)} canEdit={canEditContact} /></div>
                          </div>
                       </div>
                    </div>
@@ -1159,7 +1195,7 @@ function ContactDetailView({ contact, orgs, onRefresh, performer, internalAddres
                       <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col gap-4">
                          <h3 className="text-sm font-extrabold text-slate-400 tracking-wider uppercase mb-2 flex justify-between items-center">
                             <span>Emails</span>
-                            {canEditContact && <Button size="xs" variant="light" onClick={()=>addArr('emails', {value:''})} icon={()=><Plus size={14}/>}>Add</Button>}
+                            {canEditContact && <button className="inline-flex items-center gap-1.5 justify-center rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--brand-500)] disabled:pointer-events-none disabled:opacity-50 bg-[var(--bg-muted)] text-[var(--text-secondary)] hover:bg-slate-100 hover:text-[var(--text-primary)] border border-slate-200 shadow-sm h-7 px-2.5 py-1" onClick={()=>addArr('emails', {value:''})}><Plus size={14}/> Add</button>}
                          </h3>
                          {emails.length === 0 && <div className="text-xs text-slate-400 italic">No emails configured.</div>}
                          {emails.map(e => (
@@ -1179,7 +1215,7 @@ function ContactDetailView({ contact, orgs, onRefresh, performer, internalAddres
                       <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col gap-4">
                          <h3 className="text-sm font-extrabold text-slate-400 tracking-wider uppercase mb-2 flex justify-between items-center">
                             <span>Phone Numbers</span>
-                            {canEditContact && <Button size="xs" variant="light" onClick={()=>addArr('phones', {type:'Tel', value:''})} icon={()=><Plus size={14}/>}>Add</Button>}
+                            {canEditContact && <button className="inline-flex items-center gap-1.5 justify-center rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--brand-500)] disabled:pointer-events-none disabled:opacity-50 bg-[var(--bg-muted)] text-[var(--text-secondary)] hover:bg-slate-100 hover:text-[var(--text-primary)] border border-slate-200 shadow-sm h-7 px-2.5 py-1" onClick={()=>addArr('phones', {type:'Tel', value:''})}><Plus size={14}/> Add</button>}
                          </h3>
                          {phones.length === 0 && <div className="text-xs text-slate-400 italic">No phones configured.</div>}
                          {phones.map(p => (
@@ -1201,9 +1237,9 @@ function ContactDetailView({ contact, orgs, onRefresh, performer, internalAddres
                    </div>
                  </div>
                </div>
-            </TabPanel>
+            </div>
 
-            <TabPanel>
+            <div className="mt-2 ring-offset-background">
                <div className="animate-fade-in space-y-6">
                  <div className="flex justify-between items-center mb-2">
                     <h3 className="text-sm font-extrabold text-slate-400 tracking-wider uppercase">Saved Addresses</h3>
@@ -1212,8 +1248,8 @@ function ContactDetailView({ contact, orgs, onRefresh, performer, internalAddres
                          <button onClick={()=>setViewModeAddr('list')} className={`px-2 py-1 rounded text-[10px] uppercase tracking-wider font-extrabold transition-all duration-300 ${viewModeAddr==='list'?'bg-white shadow text-slate-800 shadow-sm ring-1 ring-slate-900/5':'text-slate-400 hover:text-slate-600'}`}>List</button>
                          <button onClick={()=>setViewModeAddr('kanban')} className={`px-2 py-1 rounded text-[10px] uppercase tracking-wider font-extrabold transition-all duration-300 ${viewModeAddr==='kanban'?'bg-white shadow text-slate-800 shadow-sm ring-1 ring-slate-900/5':'text-slate-400 hover:text-slate-600'}`}>Card</button>
                        </div>
-                       {org && <Button size="sm" variant="secondary" onClick={copyOrgAddress} icon={()=><Building2 size={14} className="mr-2"/>}>Copy from Org</Button>}
-                       <Button size="sm" variant="primary" onClick={()=>addArr('addresses', {street:'', number:'', city:'', state:'', zip:'', country:''})} icon={()=><Plus size={14}/>}>Add Address</Button>
+                       {org && <button className="inline-flex items-center gap-1.5 justify-center rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--brand-500)] disabled:pointer-events-none disabled:opacity-50 bg-white text-slate-700 hover:bg-slate-50 border border-slate-200 shadow-sm h-8 px-3 py-1.5" onClick={copyOrgAddress}><Building2 size={14}/> Copy from Org</button>}
+                       <button className="inline-flex items-center gap-1.5 justify-center rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--brand-500)] disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-8 px-3 py-1.5" onClick={()=>addArr('addresses', {street:'', number:'', city:'', state:'', zip:'', country:''})}><Plus size={14}/> Add Address</button>
                     </div>
                  </div>
                  {addresses.length === 0 && <div className="text-center p-12 bg-white rounded-3xl border border-dashed border-slate-300"><MapPin size={40} className="mx-auto text-slate-300 mb-4" /><p className="font-medium text-slate-500">No addresses linked.</p></div>}
@@ -1258,9 +1294,9 @@ function ContactDetailView({ contact, orgs, onRefresh, performer, internalAddres
                     )}
                  </div>
                </div>
-            </TabPanel>
+            </div>
 
-            <TabPanel>
+            <div className="mt-2 ring-offset-background">
                <div className="animate-fade-in space-y-6">
                  <div className="flex justify-between items-center mb-2">
                     <h3 className="text-sm font-extrabold text-slate-400 tracking-wider uppercase">Identifications</h3>
@@ -1269,7 +1305,7 @@ function ContactDetailView({ contact, orgs, onRefresh, performer, internalAddres
                          <button onClick={()=>setViewModeIds('list')} className={`px-2 py-1 rounded text-[10px] uppercase tracking-wider font-extrabold transition-all duration-300 ${viewModeIds==='list'?'bg-white shadow text-slate-800 shadow-sm ring-1 ring-slate-900/5':'text-slate-400 hover:text-slate-600'}`}>List</button>
                          <button onClick={()=>setViewModeIds('kanban')} className={`px-2 py-1 rounded text-[10px] uppercase tracking-wider font-extrabold transition-all duration-300 ${viewModeIds==='kanban'?'bg-white shadow text-slate-800 shadow-sm ring-1 ring-slate-900/5':'text-slate-400 hover:text-slate-600'}`}>Card</button>
                        </div>
-                       <Button size="sm" variant="primary" onClick={()=>addArr('identifications', {idType:'CPF', value:'', issueDate:'', expirationDate:'', country:'Brazil'})} icon={()=><Plus size={14}/>}>Add Document</Button>
+                       <button className="inline-flex items-center gap-1.5 justify-center rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--brand-500)] disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-8 px-3 py-1.5" onClick={()=>addArr('identifications', {idType:'CPF', value:'', issueDate:'', expirationDate:'', country:'Brazil'})}><Plus size={14}/> Add Document</button>
                     </div>
                  </div>
                  {identifications.length === 0 && <div className="text-center p-12 bg-white rounded-3xl border border-dashed border-slate-300"><Archive size={40} className="mx-auto text-slate-300 mb-4" /><p className="font-medium text-slate-500">No IDs documented.</p></div>}
@@ -1311,9 +1347,9 @@ function ContactDetailView({ contact, orgs, onRefresh, performer, internalAddres
                     )}
                  </div>
                </div>
-            </TabPanel>
+            </div>
 
-            <TabPanel>
+            <div className="mt-2 ring-offset-background">
                <div className="animate-fade-in space-y-6">
                  <div className="flex justify-between items-center mb-2">
                     <h3 className="text-sm font-extrabold text-slate-400 tracking-wider uppercase">Relationships</h3>
@@ -1322,7 +1358,7 @@ function ContactDetailView({ contact, orgs, onRefresh, performer, internalAddres
                          <button onClick={()=>setViewModeRels('list')} className={`px-2 py-1 rounded text-[10px] uppercase tracking-wider font-extrabold transition-all duration-300 ${viewModeRels==='list'?'bg-white shadow text-slate-800 shadow-sm ring-1 ring-slate-900/5':'text-slate-400 hover:text-slate-600'}`}>List</button>
                          <button onClick={()=>setViewModeRels('kanban')} className={`px-2 py-1 rounded text-[10px] uppercase tracking-wider font-extrabold transition-all duration-300 ${viewModeRels==='kanban'?'bg-white shadow text-slate-800 shadow-sm ring-1 ring-slate-900/5':'text-slate-400 hover:text-slate-600'}`}>Card</button>
                        </div>
-                       <Button size="sm" variant="primary" onClick={()=>addArr('relationships', {name:'', type:'Family Member', isNoCrm:true})} icon={()=><Plus size={14}/>}>Add Connection</Button>
+                       <button className="inline-flex items-center gap-1.5 justify-center rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--brand-500)] disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-8 px-3 py-1.5" onClick={()=>addArr('relationships', {name:'', type:'Family Member', isNoCrm:true})}><Plus size={14}/> Add Connection</button>
                     </div>
                  </div>
                  {relationships.length === 0 && <div className="text-center p-12 bg-white rounded-3xl border border-dashed border-slate-300"><UserCircle2 size={40} className="mx-auto text-slate-300 mb-4" /><p className="font-medium text-slate-500">No relationships mapped.</p></div>}
@@ -1350,36 +1386,49 @@ function ContactDetailView({ contact, orgs, onRefresh, performer, internalAddres
                             </div>
                           )}
                           
+                          <div>
+                             <FieldLabel>Notes / Background</FieldLabel>
+                             <div className="mt-1 border border-slate-200 rounded-xl bg-slate-50 max-h-[200px] overflow-y-auto">
+                               <RichTextEditor value={r.notes || ''} onChange={(html) => updateArr('relationships', r.id, 'notes', html)} />
+                             </div>
+                          </div>
+                          
                           <div className="flex gap-4 justify-end mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
                              <button onClick={() => removeArr('relationships', r.id)} className="text-[10px] font-black uppercase tracking-widest text-red-500 hover:text-red-600">Remove Connection</button>
                           </div>
                        </div>
                        ) : (
-                       <div key={r.id} className="bg-white px-3 py-2 rounded-xl border border-slate-200 flex items-center gap-4 relative group text-sm shadow-sm transition-all hover:border-slate-300 overflow-hidden">
-                          <div className="font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded text-[11px] whitespace-nowrap"><InlineEdit selectOptions={relOpts} value={r.type} onSave={(v:string)=>updateArr('relationships', r.id, 'type', v)} canEdit={canEditContact} /></div>
-                          <div className="font-bold text-slate-800 w-1/3 truncate"><InlineEdit value={r.name} onSave={(v:string)=>updateArr('relationships', r.id, 'name', v)} canEdit={canEditContact} placeholder="Full Name" /></div>
-                          
-                          <div className="flex-1 flex items-center gap-3">
-                             <label className="flex items-center gap-1 cursor-pointer text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 px-2 py-0.5 rounded">
-                               <input type="checkbox" className="w-3 h-3 text-slate-400 rounded" checked={r.isNoCrm||false} onChange={e=>updateArr('relationships', r.id, 'isNoCrm', e.target.checked)} /> No CRM
-                             </label>
-                             {!r.isNoCrm && (
-                               <div className="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded w-full truncate border border-indigo-100/50">
-                                 <InlineEdit value={r.crmContactId} onSave={(v:string)=>updateArr('relationships', r.id, 'crmContactId', v)} canEdit={canEditContact} placeholder="Enter Contact ID..." />
-                               </div>
-                             )}
+                       <div key={r.id} className="bg-white px-3 py-2 rounded-xl border border-slate-200 flex flex-col gap-2 relative group text-sm shadow-sm transition-all hover:border-slate-300 overflow-hidden">
+                          <div className="flex items-center gap-4 w-full">
+                             <div className="font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded text-[11px] whitespace-nowrap"><InlineEdit selectOptions={relOpts} value={r.type} onSave={(v:string)=>updateArr('relationships', r.id, 'type', v)} canEdit={canEditContact} /></div>
+                             <div className="font-bold text-slate-800 w-1/3 truncate"><InlineEdit value={r.name} onSave={(v:string)=>updateArr('relationships', r.id, 'name', v)} canEdit={canEditContact} placeholder="Full Name" /></div>
+                             
+                             <div className="flex-1 flex items-center gap-3">
+                                <label className="flex items-center gap-1 cursor-pointer text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 px-2 py-0.5 rounded">
+                                  <input type="checkbox" className="w-3 h-3 text-slate-400 rounded" checked={r.isNoCrm||false} onChange={e=>updateArr('relationships', r.id, 'isNoCrm', e.target.checked)} /> No CRM
+                                </label>
+                                {!r.isNoCrm && (
+                                  <div className="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded w-full truncate border border-indigo-100/50">
+                                    <InlineEdit value={r.crmContactId} onSave={(v:string)=>updateArr('relationships', r.id, 'crmContactId', v)} canEdit={canEditContact} placeholder="Enter Contact ID..." />
+                                  </div>
+                                )}
+                             </div>
+                             <div className="flex flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onClick={() => removeArr('relationships', r.id)} className="text-[10px] font-black uppercase tracking-widest text-red-500 hover:text-red-600 bg-red-50 px-2 py-1 rounded">Del</button>
+                             </div>
                           </div>
-                          <div className="flex flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                             <button onClick={() => removeArr('relationships', r.id)} className="text-[10px] font-black uppercase tracking-widest text-red-500 hover:text-red-600 bg-red-50 px-2 py-1 rounded">Del</button>
+                          <div className="mt-1 border border-slate-200 rounded-md min-h-[50px] w-full max-h-[150px] overflow-y-auto">
+                             <RichTextEditor value={r.notes || ''} onChange={(html) => updateArr('relationships', r.id, 'notes', html)} />
                           </div>
                        </div>
+
                        )
                     )}
                  </div>
                </div>
-            </TabPanel>
-         </TabPanels>
-       </TabGroup>
+            </div>
+         </div>
+       </div>
        {confirm && <ConfirmDialog {...confirm} />}
     </div>
   );
@@ -1463,7 +1512,7 @@ function AccountPlanDock({ org, updateField, canEditOrg, performer, activeTab, e
       {activeTab === 'background' && (
          <div className="bg-white p-6 md:p-8 rounded-3xl border border-slate-200 shadow-sm min-h-[400px] animate-fade-in">
             <h3 className="text-sm font-extrabold text-slate-400 tracking-wider uppercase mb-5 flex items-center gap-2"><LayoutGrid size={16} /> Historical Context</h3>
-            <div className="text-[14px] text-slate-600 leading-relaxed whitespace-pre-wrap"><InlineEdit textClass="block w-full" multiline value={org.notes||''} onSave={(v:string)=>updateField('notes',v)} canEdit={canEditOrg} /></div>
+            <div className="w-full"><InlineEdit textClass="block w-full" type="richtext" value={org.notes||''} onSave={(v:string)=>updateField('notes',v)} canEdit={canEditOrg} /></div>
          </div>
       )}
 
@@ -1484,7 +1533,7 @@ function AccountPlanDock({ org, updateField, canEditOrg, performer, activeTab, e
                             canEdit={canEditOrg}
                          />
                        ) : 'No Active Plan'}
-                       {currentPlan && <Badge color={currentPlan.reviewDate ? 'emerald' : 'amber'} size="xs">{currentPlan.reviewDate ? 'Reviewed' : 'Pending Review'}</Badge>}
+                       {currentPlan && <span className={`inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold shadow-sm ${currentPlan.reviewDate ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>{currentPlan.reviewDate ? 'Reviewed' : 'Pending Review'}</span>}
                      </h2>
                    </div>
                    
@@ -1530,9 +1579,9 @@ function AccountPlanDock({ org, updateField, canEditOrg, performer, activeTab, e
 
                  <div className="shrink-0 ml-4">
                    {currentPlan ? (
-                      <Button size="xs" variant="secondary" onClick={startNewPlan} className="shadow-sm truncate" icon={()=><Plus size={14} className="mr-1 inline"/>}>New Version</Button>
+                      <button className="inline-flex items-center gap-1.5 justify-center rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--brand-500)] disabled:pointer-events-none disabled:opacity-50 bg-white text-slate-700 hover:bg-slate-50 border border-slate-200 shadow-sm truncate h-8 px-3 py-1.5" onClick={startNewPlan}><Plus size={14}/> New Version</button>
                    ) : (
-                      <Button size="sm" onClick={startNewPlan} className="shadow-lg shadow-indigo-500/20" icon={()=><Plus size={14} className="mr-1 inline"/>}>Generate First Plan</Button>
+                      <button className="inline-flex items-center gap-1.5 justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--brand-500)] disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white hover:bg-[var(--brand-700)] shadow-lg shadow-indigo-500/20 h-9 px-4 py-2" onClick={startNewPlan}><Plus size={14}/> Generate First Plan</button>
                    )}
                  </div>
                </div>
@@ -1542,12 +1591,12 @@ function AccountPlanDock({ org, updateField, canEditOrg, performer, activeTab, e
 
                     <div className="w-full max-w-full">
                        <h4 className="text-[11px] font-black tracking-widest uppercase text-slate-400 mb-3 border-b border-slate-100 pb-2 flex justify-between w-full">Executive Summary</h4>
-                       <div className="text-sm text-slate-700 leading-relaxed max-w-full whitespace-pre-wrap border border-transparent hover:border-slate-200 p-2 -m-2 rounded transition-colors"><InlineEdit textClass="block w-full max-w-full" multiline value={currentPlan.executiveSummary} onSave={(v:any)=>updatePlanInfo('executiveSummary',v)} canEdit={canEditOrg} /></div>
+                       <div className="w-full"><InlineEdit textClass="block w-full max-w-full" type="richtext" value={currentPlan.executiveSummary} onSave={(v:any)=>updatePlanInfo('executiveSummary',v)} canEdit={canEditOrg} /></div>
                     </div>
 
                     <div className="w-full max-w-full">
                        <h4 className="text-[11px] font-black tracking-widest uppercase text-slate-400 mb-3 border-b border-slate-100 pb-2">Strategic Goals</h4>
-                       <div className="text-sm text-slate-700 leading-relaxed max-w-full whitespace-pre-wrap border border-transparent hover:border-slate-200 p-2 -m-2 rounded transition-colors"><InlineEdit textClass="block w-full max-w-full" multiline value={currentPlan.goals} onSave={(v:any)=>updatePlanInfo('goals',v)} canEdit={canEditOrg} /></div>
+                       <div className="w-full"><InlineEdit textClass="block w-full max-w-full" type="richtext" value={currentPlan.goals} onSave={(v:any)=>updatePlanInfo('goals',v)} canEdit={canEditOrg} /></div>
                     </div>
                  </div>
                ) : (

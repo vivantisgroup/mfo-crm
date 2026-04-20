@@ -13,7 +13,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getValidGoogleToken, googleOAuthConfigured } from '@/lib/googleTokenRefresh';
 
 export async function POST(req: NextRequest) {
-  const { ok, missing } = googleOAuthConfigured();
+  const { ok, missing } = await googleOAuthConfigured();
   if (!ok) {
     return NextResponse.json(
       { error: `Google OAuth not configured. Missing: ${missing.join(', ')}` },

@@ -1,0 +1,2 @@
+ WARN  Cannot switch to pnpm@9: "9" is not a valid version
+app/(dashboard)/communications/page.tsx(428,97): error TS1005: ',' expected.

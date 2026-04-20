@@ -1,0 +1,289 @@
+[parse-pdf] InvalidPDFException: Invalid PDF structure.
+    at async POST (app\api\tools\parse-pdf\route.ts:19:5)
+  17 |     // PDFParse 2.4.5+ uses a class-based ESM structure
+  18 |     const parser = new PDFParse({ data: buffer });
+> 19 |     await parser.load();
+     |     ^
+  20 |     
+  21 |     const data = await parser.getText();
+  22 | {
+  [cause]: InvalidPDFException: Invalid PDF structure.
+      at BaseExceptionClosure (webpack://pdf.js/src/shared/util.js:502:29)
+      at <unknown> (webpack://pdf.js/src/shared/util.js:506:2)
+      at async POST (app\api\tools\parse-pdf\route.ts:14:28)
+    500 |     this.name = name;
+    501 |   }
+  > 502 |   BaseException.prototype = new Error();
+        |                             ^
+    503 |   BaseException.constructor = BaseException;
+    504 |
+    505 |   return BaseException;
+}
+
+[1m[33mwarn[39m[22m - The class `duration-[0.35s]` is ambiguous and matches multiple utilities.
+[1m[33mwarn[39m[22m - If this is content and not a class, replace it with `duration-&lsqb;0.35s&rsqb;` to silence this warning.
+
+[1m[33mwarn[39m[22m - The class `ease-[cubic-bezier(0.22,1,0.36,1)]` is ambiguous and matches multiple utilities.
+[1m[33mwarn[39m[22m - If this is content and not a class, replace it with `ease-&lsqb;cubic-bezier(0.22,1,0.36,1)&rsqb;` to silence this warning.
+[browser] [switchTenant] Failed to update profile: FirebaseError: Missing or insufficient permissions.
+FirebaseError: Missing or insufficient permissions. (lib/AuthContext.tsx:443:15)
+[browser] ⨯ unhandledRejection: TypeError: n.indexOf is not a function
+    at getTenant (lib/platformService.ts:315:42)
+    at AuthProvider.useCallback[switchTenant] (lib/AuthContext.tsx:446:36)
+  313 |
+  314 | export async function getTenant(id: string): Promise<TenantRecord | null> {
+> 315 |   const snap = await getDocFromServer(doc(db, 'tenants', id));
+      |                                          ^
+  316 |   if (!snap.exists()) return null;
+  317 |   return snap.data() as TenantRecord;
+  318 | }
+Persisting failed: Unable to write SST file 00000116.sst
+
+Caused by:
+    The system cannot find the path specified. (os error 3)
+
+thread 'tokio-runtime-worker' (50348) panicked at turbopack\crates\turbo-tasks-backend\src\backend\operation\mod.rs:196:17:
+Failed to restore task data (corrupted database or bug): Meta for TaskId 2207)
+
+Caused by:
+    0: Looking up task storage for TaskId 2207 from database failed
+    1: Unable to open static sorted file referenced from 00000006.meta
+    2: Unable to open static sorted file 00000001.sst
+    3: Failed to open SST file C:\MFO-CRM\apps\web\.next\dev\cache/turbopack\0ca967b8\00000001.sst
+    4: The system cannot find the path specified. (os error 3)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'tokio-runtime-worker' (13880) panicked at turbopack\crates\turbo-tasks-backend\src\backend\operation\mod.rs:196:17:
+Failed to restore task data (corrupted database or bug): Meta for TaskId 2207)
+
+Caused by:
+    0: Looking up task storage for TaskId 2207 from database failed
+    1: Unable to open static sorted file referenced from 00000006.meta
+    2: Unable to open static sorted file 00000001.sst
+    3: Failed to open SST file C:\MFO-CRM\apps\web\.next\dev\cache/turbopack\0ca967b8\00000001.sst
+    4: The system cannot find the path specified. (os error 3)
+
+-----
+[1m[31mFATAL[39m[0m: An unexpected Turbopack error occurred. A panic log has been written to C:\Users\marce\AppData\Local\Temp\next-panic-111b11506d58103fe088a584e1c94446.log.
+
+To help make Turbopack better, report this error by clicking here: https://bugs.nextjs.org/search?category=turbopack-error-report&title=Turbopack%20Error%3A%20Failed%20to%20restore%20task%20data%20%28corrupted%20database%20or%20bug%29%3A%20Meta%20for%20TaskId%202207%29&body=Turbopack%20version%3A%20%600ca967b8%60%0ANext.js%20version%3A%20%600.0.0%60%0A%0AError%20message%3A%0A%60%60%60%0AFailed%20to%20restore%20task%20data%20%28corrupted%20database%20or%20bug%29%3A%20Meta%20for%20TaskId%202207%29%0A%0ADebug%20info%3A%0A-%20Execution%20of%20get_written_endpoint_with_issues_operation%20failed%0A-%20Failed%20to%20restore%20task%20data%20%28corrupted%20database%20or%20bug%29%3A%20Meta%20for%20TaskId%202207%29%0A%20%20%0A%20%20Caused%20by%3A%0A%20%20%20%20%20%200%3A%20Looking%20up%20task%20storage%20for%20TaskId%202207%20from%20database%20failed%0A%20%20%20%20%20%201%3A%20Unable%20to%20open%20static%20sorted%20file%20referenced%20from%2000000006.meta%0A%20%20%20%20%20%202%3A%20Unable%20to%20open%20static%20sorted%20file%2000000001.sst%0A%20%20%20%20%20%203%3A%20Failed%20to%20open%20SST%20file%20C%3A%5CMFO-CRM%5Capps%5Cweb%5C.next%5Cdev%5Ccache%2Fturbopack%5C0ca967b8%5C00000001.sst%0A%20%20%20%20%20%204%3A%20The%20system%20cannot%20find%20the%20path%20specified.%20%28os%20error%203%29%0A%60%60%60&labels=Turbopack,Turbopack%20Panic%20Backtrace
+-----
+
+
+thread 'tokio-runtime-worker' (13880) panicked at turbopack\crates\turbo-tasks-backend\src\backend\operation\mod.rs:196:17:
+Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)
+
+Caused by:
+    0: Looking up task storage for TaskId 2214 from database failed
+    1: Unable to open static sorted file referenced from 00000006.meta
+    2: Unable to open static sorted file 00000001.sst
+    3: Failed to open SST file C:\MFO-CRM\apps\web\.next\dev\cache/turbopack\0ca967b8\00000001.sst
+    4: The system cannot find the path specified. (os error 3)
+
+thread 'tokio-runtime-worker' (24056) panicked at turbopack\crates\turbo-tasks-backend\src\backend\operation\mod.rs:196:17:
+Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)
+
+Caused by:
+    0: Looking up task storage for TaskId 2214 from database failed
+    1: Unable to open static sorted file referenced from 00000006.meta
+    2: Unable to open static sorted file 00000001.sst
+    3: Failed to open SST file C:\MFO-CRM\apps\web\.next\dev\cache/turbopack\0ca967b8\00000001.sst
+    4: The system cannot find the path specified. (os error 3)
+⨯ Error [TurbopackInternalError]: Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)
+
+Debug info:
+- Execution of get_written_endpoint_with_issues_operation failed
+- Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)
+  
+  Caused by:
+      0: Looking up task storage for TaskId 2214 from database failed
+      1: Unable to open static sorted file referenced from 00000006.meta
+      2: Unable to open static sorted file 00000001.sst
+      3: Failed to open SST file C:\MFO-CRM\apps\web\.next\dev\cache/turbopack\0ca967b8\00000001.sst
+      4: The system cannot find the path specified. (os error 3)
+    at <unknown> (TurbopackInternalError: Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)) {
+  location: 'turbopack\\crates\\turbo-tasks-backend\\src\\backend\\operation\\mod.rs:196:17'
+}
+Error [TurbopackInternalError]: Failed to restore task data (corrupted database or bug): Meta for TaskId 2207)
+
+Debug info:
+- Execution of get_written_endpoint_with_issues_operation failed
+- Failed to restore task data (corrupted database or bug): Meta for TaskId 2207)
+  
+  Caused by:
+      0: Looking up task storage for TaskId 2207 from database failed
+      1: Unable to open static sorted file referenced from 00000006.meta
+      2: Unable to open static sorted file 00000001.sst
+      3: Failed to open SST file C:\MFO-CRM\apps\web\.next\dev\cache/turbopack\0ca967b8\00000001.sst
+      4: The system cannot find the path specified. (os error 3)
+    at <unknown> (TurbopackInternalError: Failed to restore task data (corrupted database or bug): Meta for TaskId 2207)) {
+  location: 'turbopack\\crates\\turbo-tasks-backend\\src\\backend\\operation\\mod.rs:196:17'
+}
+⨯ Error [TurbopackInternalError]: Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)
+
+Debug info:
+- Execution of get_written_endpoint_with_issues_operation failed
+- Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)
+  
+  Caused by:
+      0: Looking up task storage for TaskId 2214 from database failed
+      1: Unable to open static sorted file referenced from 00000006.meta
+      2: Unable to open static sorted file 00000001.sst
+      3: Failed to open SST file C:\MFO-CRM\apps\web\.next\dev\cache/turbopack\0ca967b8\00000001.sst
+      4: The system cannot find the path specified. (os error 3)
+    at <unknown> (TurbopackInternalError: Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)) {
+  location: 'turbopack\\crates\\turbo-tasks-backend\\src\\backend\\operation\\mod.rs:196:17'
+}
+Error [TurbopackInternalError]: Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)
+
+Debug info:
+- Execution of get_written_endpoint_with_issues_operation failed
+- Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)
+  
+  Caused by:
+      0: Looking up task storage for TaskId 2214 from database failed
+      1: Unable to open static sorted file referenced from 00000006.meta
+      2: Unable to open static sorted file 00000001.sst
+      3: Failed to open SST file C:\MFO-CRM\apps\web\.next\dev\cache/turbopack\0ca967b8\00000001.sst
+      4: The system cannot find the path specified. (os error 3)
+    at <unknown> (TurbopackInternalError: Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)) {
+  location: 'turbopack\\crates\\turbo-tasks-backend\\src\\backend\\operation\\mod.rs:196:17'
+}
+⨯ Error [TurbopackInternalError]: Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)
+
+Debug info:
+- Execution of get_written_endpoint_with_issues_operation failed
+- Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)
+  
+  Caused by:
+      0: Looking up task storage for TaskId 2214 from database failed
+      1: Unable to open static sorted file referenced from 00000006.meta
+      2: Unable to open static sorted file 00000001.sst
+      3: Failed to open SST file C:\MFO-CRM\apps\web\.next\dev\cache/turbopack\0ca967b8\00000001.sst
+      4: The system cannot find the path specified. (os error 3)
+    at <unknown> (TurbopackInternalError: Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)) {
+  location: 'turbopack\\crates\\turbo-tasks-backend\\src\\backend\\operation\\mod.rs:196:17'
+}
+Error [TurbopackInternalError]: Failed to restore task data (corrupted database or bug): Meta for TaskId 2207)
+
+Debug info:
+- Execution of get_written_endpoint_with_issues_operation failed
+- Failed to restore task data (corrupted database or bug): Meta for TaskId 2207)
+  
+  Caused by:
+      0: Looking up task storage for TaskId 2207 from database failed
+      1: Unable to open static sorted file referenced from 00000006.meta
+      2: Unable to open static sorted file 00000001.sst
+      3: Failed to open SST file C:\MFO-CRM\apps\web\.next\dev\cache/turbopack\0ca967b8\00000001.sst
+      4: The system cannot find the path specified. (os error 3)
+    at <unknown> (TurbopackInternalError: Failed to restore task data (corrupted database or bug): Meta for TaskId 2207)) {
+  location: 'turbopack\\crates\\turbo-tasks-backend\\src\\backend\\operation\\mod.rs:196:17'
+}
+⨯ Error [TurbopackInternalError]: Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)
+
+Debug info:
+- Execution of get_written_endpoint_with_issues_operation failed
+- Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)
+  
+  Caused by:
+      0: Looking up task storage for TaskId 2214 from database failed
+      1: Unable to open static sorted file referenced from 00000006.meta
+      2: Unable to open static sorted file 00000001.sst
+      3: Failed to open SST file C:\MFO-CRM\apps\web\.next\dev\cache/turbopack\0ca967b8\00000001.sst
+      4: The system cannot find the path specified. (os error 3)
+    at <unknown> (TurbopackInternalError: Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)) {
+  location: 'turbopack\\crates\\turbo-tasks-backend\\src\\backend\\operation\\mod.rs:196:17'
+}
+Error [TurbopackInternalError]: Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)
+
+Debug info:
+- Execution of get_written_endpoint_with_issues_operation failed
+- Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)
+  
+  Caused by:
+      0: Looking up task storage for TaskId 2214 from database failed
+      1: Unable to open static sorted file referenced from 00000006.meta
+      2: Unable to open static sorted file 00000001.sst
+      3: Failed to open SST file C:\MFO-CRM\apps\web\.next\dev\cache/turbopack\0ca967b8\00000001.sst
+      4: The system cannot find the path specified. (os error 3)
+    at <unknown> (TurbopackInternalError: Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)) {
+  location: 'turbopack\\crates\\turbo-tasks-backend\\src\\backend\\operation\\mod.rs:196:17'
+}
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+Persisting failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+
+-----
+[1m[31mFATAL[39m[0m: An unexpected Turbopack error occurred. A panic log has been written to C:\Users\marce\AppData\Local\Temp\next-panic-111b11506d58103fe088a584e1c94446.log.
+
+To help make Turbopack better, report this error by clicking here: https://bugs.nextjs.org/search?category=turbopack-error-report&title=Turbopack%20Error%3A%20Failed%20to%20restore%20task%20data%20%28corrupted%20database%20or%20bug%29%3A%20Meta%20for%20TaskId%202207%29&body=Turbopack%20version%3A%20%600ca967b8%60%0ANext.js%20version%3A%20%600.0.0%60%0A%0AError%20message%3A%0A%60%60%60%0AFailed%20to%20restore%20task%20data%20%28corrupted%20database%20or%20bug%29%3A%20Meta%20for%20TaskId%202207%29%0A%0ADebug%20info%3A%0A-%20Execution%20of%20get_written_endpoint_with_issues_operation%20failed%0A-%20Failed%20to%20restore%20task%20data%20%28corrupted%20database%20or%20bug%29%3A%20Meta%20for%20TaskId%202207%29%0A%20%20%0A%20%20Caused%20by%3A%0A%20%20%20%20%20%200%3A%20Looking%20up%20task%20storage%20for%20TaskId%202207%20from%20database%20failed%0A%20%20%20%20%20%201%3A%20Unable%20to%20open%20static%20sorted%20file%20referenced%20from%2000000006.meta%0A%20%20%20%20%20%202%3A%20Unable%20to%20open%20static%20sorted%20file%2000000001.sst%0A%20%20%20%20%20%203%3A%20Failed%20to%20open%20SST%20file%20C%3A%5CMFO-CRM%5Capps%5Cweb%5C.next%5Cdev%5Ccache%2Fturbopack%5C0ca967b8%5C00000001.sst%0A%20%20%20%20%20%204%3A%20The%20system%20cannot%20find%20the%20path%20specified.%20%28os%20error%203%29%0A%60%60%60&labels=Turbopack,Turbopack%20Panic%20Backtrace
+-----
+
+⨯ Error [TurbopackInternalError]: Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)
+
+Debug info:
+- Execution of get_written_endpoint_with_issues_operation failed
+- Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)
+  
+  Caused by:
+      0: Looking up task storage for TaskId 2214 from database failed
+      1: Unable to open static sorted file referenced from 00000006.meta
+      2: Unable to open static sorted file 00000001.sst
+      3: Failed to open SST file C:\MFO-CRM\apps\web\.next\dev\cache/turbopack\0ca967b8\00000001.sst
+      4: The system cannot find the path specified. (os error 3)
+    at <unknown> (TurbopackInternalError: Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)) {
+  location: 'turbopack\\crates\\turbo-tasks-backend\\src\\backend\\operation\\mod.rs:196:17'
+}
+Error [TurbopackInternalError]: Failed to restore task data (corrupted database or bug): Meta for TaskId 2207)
+
+Debug info:
+- Execution of get_written_endpoint_with_issues_operation failed
+- Failed to restore task data (corrupted database or bug): Meta for TaskId 2207)
+  
+  Caused by:
+      0: Looking up task storage for TaskId 2207 from database failed
+      1: Unable to open static sorted file referenced from 00000006.meta
+      2: Unable to open static sorted file 00000001.sst
+      3: Failed to open SST file C:\MFO-CRM\apps\web\.next\dev\cache/turbopack\0ca967b8\00000001.sst
+      4: The system cannot find the path specified. (os error 3)
+    at <unknown> (TurbopackInternalError: Failed to restore task data (corrupted database or bug): Meta for TaskId 2207)) {
+  location: 'turbopack\\crates\\turbo-tasks-backend\\src\\backend\\operation\\mod.rs:196:17'
+}
+⨯ Error [TurbopackInternalError]: Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)
+
+Debug info:
+- Execution of get_written_endpoint_with_issues_operation failed
+- Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)
+  
+  Caused by:
+      0: Looking up task storage for TaskId 2214 from database failed
+      1: Unable to open static sorted file referenced from 00000006.meta
+      2: Unable to open static sorted file 00000001.sst
+      3: Failed to open SST file C:\MFO-CRM\apps\web\.next\dev\cache/turbopack\0ca967b8\00000001.sst
+      4: The system cannot find the path specified. (os error 3)
+    at <unknown> (TurbopackInternalError: Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)) {
+  location: 'turbopack\\crates\\turbo-tasks-backend\\src\\backend\\operation\\mod.rs:196:17'
+}
+Error [TurbopackInternalError]: Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)
+
+Debug info:
+- Execution of get_written_endpoint_with_issues_operation failed
+- Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)
+  
+  Caused by:
+      0: Looking up task storage for TaskId 2214 from database failed
+      1: Unable to open static sorted file referenced from 00000006.meta
+      2: Unable to open static sorted file 00000001.sst
+      3: Failed to open SST file C:\MFO-CRM\apps\web\.next\dev\cache/turbopack\0ca967b8\00000001.sst
+      4: The system cannot find the path specified. (os error 3)
+    at <unknown> (TurbopackInternalError: Failed to restore task data (corrupted database or bug): Meta for TaskId 2214)) {
+  location: 'turbopack\\crates\\turbo-tasks-backend\\src\\backend\\operation\\mod.rs:196:17'
+}
+Compaction failed: Another write batch or compaction is already active (Only a single write operations is allowed at a time)
+npm error Lifecycle script `dev` failed with error:
+npm error code 4294967295
+npm error path C:\MFO-CRM\apps\web
+npm error workspace @mfo-crm/web
+npm error location C:\MFO-CRM\apps\web
+npm error command failed
+npm error command C:\WINDOWS\system32\cmd.exe /d /s /c cross-env NODE_OPTIONS=--max-old-space-size=4096 next dev -p 3000

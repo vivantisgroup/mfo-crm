@@ -738,3 +738,43 @@ export const ORG_TYPE_LABELS: Record<OrgType, string> = {
   supplier: 'Vendor',
   partner: 'Partner',
 };
+
+// ─── Unified CRM Search ───────────────────────────────────────────────────────
+
+export interface CrmMentionResult {
+  id: string;
+  label: string;
+  type: 'organization' | 'contact' | 'user';
+  subtitle?: string;
+  icon?: string;
+}
+
+export async function searchCrmRecords(queryStr: string): Promise<CrmMentionResult[]> {
+  const normQuery = queryStr.toLowerCase().trim();
+  const results: CrmMentionResult[] = [];
+  
+  const [orgs, contacts, users] = await Promise.all([
+    getAllOrgs(),
+    getAllContacts(),
+    getPlatformSalesUsers()
+  ]);
+
+  if (!normQuery) {
+    results.push(...orgs.slice(0, 4).map(o => ({ id: o.id, label: o.name, type: 'organization' as const, subtitle: 'Organization', icon: 'Building2' })));
+    results.push(...contacts.slice(0, 4).map(c => ({ id: c.id, label: c.name, type: 'contact' as const, subtitle: c.role || 'Contact', icon: 'User' })));
+    results.push(...users.slice(0, 4).map(u => ({ id: u.uid, label: u.displayName, type: 'user' as const, subtitle: u.role || 'User', icon: 'BriefcaseBusiness' })));
+    return results;
+  }
+
+  const match = (str?: string) => str?.toLowerCase().includes(normQuery);
+
+  const matchedOrgs = orgs.filter(o => match(o.name));
+  const matchedContacts = contacts.filter(c => match(c.name) || match(c.email) || match(c.role));
+  const matchedUsers = users.filter(u => match(u.displayName) || match(u.email));
+
+  results.push(...matchedOrgs.slice(0, 8).map(o => ({ id: o.id, label: o.name, type: 'organization' as const, subtitle: 'Organization', icon: 'Building2' })));
+  results.push(...matchedContacts.slice(0, 8).map(c => ({ id: c.id, label: c.name, type: 'contact' as const, subtitle: c.role || 'Contact', icon: 'User' })));
+  results.push(...matchedUsers.slice(0, 8).map(u => ({ id: u.uid, label: u.displayName, type: 'user' as const, subtitle: u.role || 'User', icon: 'BriefcaseBusiness' })));
+
+  return results.slice(0, 15);
+}

@@ -194,9 +194,9 @@ export async function POST(req: NextRequest) {
     let accessToken = '';
     try {
       if (provider === 'microsoft') {
-        accessToken = await getValidMicrosoftToken(uid, idToken);
+        accessToken = await getValidMicrosoftToken(uid, idToken, tenantId);
       } else {
-        accessToken = await getValidGoogleToken(uid, idToken);
+        accessToken = await getValidGoogleToken(uid, idToken, tenantId);
       }
     } catch (err: any) {
        console.error(`Token refresh failed for ${provider}`, err);
@@ -310,7 +310,7 @@ export async function POST(req: NextRequest) {
               receivedAt: record.timestamp,
               gmailMessageId: msg.id,
               labelIds: labelIds,
-              hasAttachments: (attachments && attachments.length > 0) ? true : false,
+              hasAttachments: (detail.payload?.parts?.some((p: any) => p.filename && p.filename.length > 0)) ? true : false,
               loggedToCrm: match ? true : false,
             }, { merge: true });
 

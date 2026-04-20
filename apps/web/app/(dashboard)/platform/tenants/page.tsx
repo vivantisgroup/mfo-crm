@@ -9,20 +9,23 @@ import { CommunicationPanel } from '@/components/CommunicationPanel';
 import { SecondaryDock, type SecondaryDockTab } from '@/components/SecondaryDock';
 import { 
   SUBSCRIPTION_PLANS, trialDaysLeft, planMonthlyTotal, 
-  TenantSubscription, Invoice, SubscriptionEvent, PlanId, BillingCycle,
+  TenantSubscription, Invoice, SubscriptionEvent, PlanId, BillingCycle, SubscriptionStatus,
   extendTrial, changePlan, updateSeats, generateInvoice, markInvoicePaid,
   getInvoices, getSubscriptionEvents, formatUsd, formatAum,
-  getAllSubscriptions, getAllInvoices, getAllSubscriptionEvents
+  getAllSubscriptions, getAllInvoices, getAllSubscriptionEvents, upsertSubscription
 } from '@/lib/subscriptionService';
-import { buildSeedManifest, generateDemoCredentials } from '@/lib/demoSeed';
+import { buildSeedManifest, generateDemoCredentials, DemoTenant, totalDemoRecords, totalDemoCollections } from '@/lib/demoSeed';
 import { 
   getTenantMembers, getInvitationsForTenant, addMemberToTenant, 
   updateMemberRole, setMemberStatus, removeMemberFromTenant, revokeInvitation,
-  ROLE_LABELS, TENANT_ROLES
+  ROLE_LABELS, TENANT_ROLES, TenantMember, TenantInvitation
 } from '@/lib/tenantMemberService';
-import { getAllUsers } from '@/lib/platformService';
-import { UserProfile, TenantMember, TenantInvitation, PlatformOrg, PlatformContact } from '@/lib/types';
+import { getAllUsers, UserProfile, updateTenant, deleteTenant, createTenant } from '@/lib/platformService';
+import { PlatformOrg, PlatformContact, getAllOrgs, getContactsForOrg, linkTenantToOrg } from '@/lib/crmService';
+import { OrgCombobox, ContactCombobox } from '../crm/page';
 import { SUPPORTED_LANGUAGES } from '@/lib/emailTemplateService';
+import { IndustryVerticalId, VERTICAL_REGISTRY } from '@/lib/verticalRegistry';
+import { toast } from 'sonner';
 const PLAN_ICONS: Record<string, React.ElementType> = {
   FlaskConical, Sprout, Star, Gem, Building2
 };
@@ -1687,7 +1690,7 @@ function NewSubscriptionModal({ onClose, onCreated, performer }: {
  await linkTenantToOrg(form.crmOrgId, form.tenantId);
  }
  onCreated(sub);
- } catch (e: any) { alert(e.message); }
+ } catch (e: any) { toast.error(e.message); }
  finally { setLoading(false); }
  }
 
@@ -1873,7 +1876,7 @@ export default function TenantManagementPage() {
      setAllPlatformUsers(u);
      setGlobalMemberships(m);
    } catch (err: any) {
-     alert('Failed to remove member: ' + err.message);
+     toast.error('Failed to remove member: ' + err.message);
    } finally {
      setLoading(false);
    }

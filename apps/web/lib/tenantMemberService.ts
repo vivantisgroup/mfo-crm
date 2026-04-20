@@ -40,6 +40,8 @@ export interface TenantMember {
   invitedBy?:  string;   // uid of the inviter
   lastSeenAt?: string;
   photoURL?:   string;
+  homeFolderId?: string;
+  homeFolderDisplayName?: string;
 }
 
 export interface TenantInvitation {
@@ -74,6 +76,11 @@ export const ROLE_LABELS: Record<PlatformRole, string> = {
   sdr:                        '📞 SDR',
   customer_success_manager:   '🤝 Customer Success Manager',
   data_analyst:               '📊 Data Analyst',
+  data_designer:              '🗄️ Data Designer',
+  app_designer:               '🎨 App Designer',
+  integration_architect:      '🔌 Integration Architect',
+  security_officer:           '🛡️ Security Officer',
+  ai_officer:                 '🤖 AI Officer',
 };
 
 export const ROLE_DESCRIPTIONS: Record<PlatformRole, string> = {
@@ -93,6 +100,11 @@ export const ROLE_DESCRIPTIONS: Record<PlatformRole, string> = {
   sdr:                        'Sales Development Rep — lead generation, cold outreach, and qualification',
   customer_success_manager:   'Post-sale health, onboarding, renewals, and expansion revenue',
   data_analyst:               'Business intelligence, platform metrics, and ECharts reporting',
+  data_designer:              'Define custom schema fields and entity extensions',
+  app_designer:               'Customize user interface layouts and dynamic field rendering',
+  integration_architect:      'Configure external API connections, Webhooks, and secure integration Vault endpoints',
+  security_officer:           'Oversee platform governance, mapping security roles to users, and managing platform access audits',
+  ai_officer:                 'Manage and audit global system AI prompts, model configuration and LLM usage telemetry',
 };
 
 const TENANT_ROLES: PlatformRole[] = [
@@ -100,6 +112,7 @@ const TENANT_ROLES: PlatformRole[] = [
   'controller', 'compliance_officer', 'report_viewer', 'external_advisor',
   'sales_operations', 'business_manager',
   'sales_manager', 'revenue_manager', 'account_executive', 'sdr', 'customer_success_manager', 'data_analyst',
+  'data_designer', 'app_designer', 'integration_architect', 'security_officer', 'ai_officer'
 ];
 
 export { TENANT_ROLES };

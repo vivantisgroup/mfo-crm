@@ -57,6 +57,7 @@ const ALL_ROLES = [
   { id: 'cio',                     name: 'CIO / Investment Officer', description: 'Manages investment strategies and portfolio analytics.',                        level: 50,  color: '#0284c7', icon: '📈', group: 'Tenant' },
   { id: 'controller',              name: 'Controller',              description: 'Financial oversight: billing, expense tracking, accounting reconciliation.',     level: 50,  color: '#0369a1', icon: '🧾', group: 'Tenant' },
   { id: 'compliance_officer',      name: 'Compliance Officer',      description: 'Manages regulatory compliance, audit trails, and risk assessments.',             level: 50,  color: '#0c4a6e', icon: '⚖️', group: 'Tenant' },
+  { id: 'ai_officer',              name: 'AI Officer',              description: 'Manages AI Keys and system prompts for the tenant.',                             level: 75,  color: '#10b981', icon: '🤖', group: 'Tenant' },
   { id: 'report_viewer',           name: 'Report Viewer',           description: 'Read-only access to reports and dashboards within their tenant.',                level: 20,  color: '#64748b', icon: '📋', group: 'Tenant' },
   { id: 'external_advisor',        name: 'External Advisor',        description: 'Limited read-only view of permitted client data.',                               level: 10,  color: '#94a3b8', icon: '👁️', group: 'External' },
 ];

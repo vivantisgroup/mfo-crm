@@ -15,10 +15,11 @@ import { useAuth } from '@/lib/AuthContext';
 import { ExternalLink, RefreshCw, Plus, Search, MessageSquare, Mail, PhoneCall, Paperclip, Loader2, Handshake, FileText, MessageSquareOff } from 'lucide-react';
 import { uploadMultipleAttachments } from '@/lib/attachmentService';
 import { useRouter } from 'next/navigation';
+
 import { ReadingPane } from '@/app/(dashboard)/inbox/components/ReadingPane';
 import { Composer } from '@/app/(dashboard)/inbox/components/Composer';
 import { TeamsChatPane } from '@/app/(dashboard)/inbox/components/TeamsChatPane';
-import { RichTextEditor } from '@/components/RichTextEditor';
+import { RichTextEditor } from '@/components/ui/RichTextEditor';
 import { COLOR_MAP } from '@/components/TagManager';
 
 interface UnifiedCommunication {
@@ -43,6 +44,8 @@ interface CommunicationPanelProps {
   familyName?:      string;
   contactId?:       string;
   orgId?:           string;
+  ticketId?:        string;
+  relatedIds?:      string[];
   primaryTag?:      string;
   systemTags?:      any[];
 }
@@ -55,13 +58,15 @@ const TYPE_META: Record<string, { icon: React.ReactNode; color: string; label: s
   meeting:  { icon: <Handshake size={13} />,     color: '#f59e0b', label: 'Meeting' },
 };
 
-export function CommunicationPanel({ familyId, familyName, contactId, orgId, systemTags = [] }: CommunicationPanelProps) {
+export function CommunicationPanel({ familyId, familyName, contactId, orgId, ticketId, relatedIds = [], systemTags = [] }: CommunicationPanelProps) {
   const { user, tenant }    = useAuth();
   const router              = useRouter();
   const [timeline, setTimeline] = useState<UnifiedCommunication[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [selected, setSelected] = useState<UnifiedCommunication | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterType, setFilterType] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'context' | 'global'>('context');
 
   const [isComposing, setIsComposing] = useState(false);
   const [composeType, setComposeType] = useState('note');
@@ -73,13 +78,15 @@ export function CommunicationPanel({ familyId, familyName, contactId, orgId, sys
   const [editActivityId, setEditActivityId] = useState<string | null>(null);
   
   const [composer, setComposer] = useState<{ to?: string; subject?: string; replyId?: string; threadId?: string } | null>(null);
-  const targetId = familyId || contactId || orgId;
+  const targetId = ticketId || familyId || contactId || orgId;
 
   const loadTimeline = useCallback(async () => {
     if (!tenant?.id || !targetId) return;
     setLoading(true);
 
     try {
+      const allFilterIds = Array.from(new Set([targetId, ...relatedIds]));
+
       // Query the new unified collection
       // We look for any communication where crm_entity_ids contains our Client/Family ID
       const commsRef = collection(db, 'communications');
@@ -87,10 +94,8 @@ export function CommunicationPanel({ familyId, familyName, contactId, orgId, sys
       
       const snap = await getDocs(q);
       
-      // Memory filter for array contents (safest for sandbox missing composite indexes)
-      let results = snap.docs
-          .map(d => ({ id: d.id, ...d.data() } as UnifiedCommunication))
-          .filter(d => (d.crm_entity_ids || []).includes(targetId) || d.crm_entity_links?.some(l => l.id === targetId));
+      // Map everything
+      let results = snap.docs.map(d => ({ id: d.id, ...d.data() } as UnifiedCommunication));
 
       // Append any legacy activities that haven't been migrated yet (for backwards compatibility if desired, 
       // but sticking strictly to HubSpot architecture we'd rely primarily on communications).
@@ -121,17 +126,36 @@ export function CommunicationPanel({ familyId, familyName, contactId, orgId, sys
     } finally {
       setLoading(false);
     }
-  }, [tenant?.id, targetId]);
+  }, [tenant?.id, targetId, relatedIds.join(',')]);
 
   useEffect(() => { loadTimeline(); }, [loadTimeline]);
 
   const filteredTimeline = timeline.filter(t => {
     const q = searchQuery.toLowerCase();
-    return (
+    const matchSearch = (
       (t.subject || '').toLowerCase().includes(q) || 
       (t.snippet || '').toLowerCase().includes(q) ||
       (t.from || '').toLowerCase().includes(q)
     );
+    if (!matchSearch) return false;
+
+    // Type filter
+    if (filterType !== 'all' && t.type !== filterType) return false;
+
+    // Context filter
+    if (viewMode === 'context' && targetId) {
+       const allFilterIds = [targetId, ...relatedIds];
+       // Check if message has exact targetId or any related member ID
+       const hasContext = (t.crm_entity_ids || []).some(id => allFilterIds.includes(id)) || 
+                          t.crm_entity_links?.some(l => allFilterIds.includes(l.id)) || 
+                          allFilterIds.includes((t as any).linkedFamilyId) || 
+                          allFilterIds.includes((t as any).linkedContactId) || 
+                          allFilterIds.includes((t as any).linkedOrgId) ||
+                          allFilterIds.includes((t as any).linkedTicketId);
+       if (!hasContext) return false;
+    }
+
+    return true;
   });
 
   const getProviderIcon = (provider?: string, type?: string) => {
@@ -181,6 +205,32 @@ export function CommunicationPanel({ familyId, familyName, contactId, orgId, sys
               onBlur={e => e.target.style.borderColor = 'var(--border)'}
             />
           </div>
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+             <select 
+               value={filterType} 
+               onChange={e => setFilterType(e.target.value)}
+               style={{ padding: '4px 8px', fontSize: 11, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-canvas)', color: 'var(--text-secondary)' }}
+             >
+                <option value="all">All Types</option>
+                <option value="note">Notes</option>
+                <option value="email">Emails</option>
+                <option value="chat">Chats</option>
+                <option value="call">Calls</option>
+                <option value="meeting">Meetings</option>
+             </select>
+
+             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontStyle: 'normal', fontSize: 11, color: 'var(--text-secondary)' }}>
+                <input 
+                  type="checkbox"
+                  id="global-toggle" 
+                  checked={viewMode === 'global'} 
+                  onChange={(e) => setViewMode(e.target.checked ? 'global' : 'context')} 
+                  style={{ cursor: 'pointer', accentColor: 'var(--brand-500)' }}
+                />
+                <label htmlFor="global-toggle" style={{ cursor: 'pointer' }}>Show Global Timeline</label>
+             </div>
+          </div>
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-canvas)' }}>
@@ -209,7 +259,7 @@ export function CommunicationPanel({ familyId, familyName, contactId, orgId, sys
                   <div style={{ padding: 4, background: 'var(--bg-elevated)', borderRadius: 4, display: 'flex' }}>
                     {getProviderIcon(t.provider, t.type)}
                   </div>
-                  <span style={{ fontWeight: active ? 700 : 600, fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-primary)' }}>
+                  <span style={{ fontWeight: active ? 800 : 600, fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: active ? 'var(--brand-600)' : 'var(--text-primary)' }}>
                     {t.subject || (t.type === 'chat' ? 'Chat Message' : 'Note')}
                   </span>
                 </div>
@@ -264,7 +314,7 @@ export function CommunicationPanel({ familyId, familyName, contactId, orgId, sys
 
               <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
                  <RichTextEditor 
-                 content={composeContent}
+                 value={composeContent}
                  onChange={(html) => setComposeContent(html)}
                  placeholder="Detailed notes or minutes from the interaction (supports rich text)..."
                  />

@@ -30,8 +30,15 @@ function extractBody(payload: any): { html: string; text: string; attachments: a
 
   function walk(part: any) {
     if (!part) return;
-    if (part.mimeType === 'text/html'  && (!part.filename) && part.body?.data) html  = decodeBase64(part.body.data);
-    if (part.mimeType === 'text/plain' && (!part.filename) && part.body?.data) text  = decodeBase64(part.body.data);
+    const mime = part.mimeType?.toLowerCase() || '';
+    if (mime === 'text/html'  && (!part.filename) && part.body?.data) {
+      if (html) html += '<br/>';
+      html += decodeBase64(part.body.data);
+    }
+    if (mime === 'text/plain' && (!part.filename) && part.body?.data) {
+      if (text) text += '\n\n';
+      text += decodeBase64(part.body.data);
+    }
     
     if (part.filename && part.filename.trim().length > 0) {
       attachments.push({
@@ -73,12 +80,12 @@ export async function GET(
     }
 
     if (provider === 'microsoft') {
-        const accessToken = await getValidMicrosoftToken(tenantId, uid, idToken);
+        const accessToken = await getValidMicrosoftToken(uid, idToken, tenantId);
         
         // Use $filter on conversationId to fetch the thread messages.
         const queryParams = new URLSearchParams({
           $filter: `conversationId eq '${threadId}'`,
-          $orderby: 'receivedDateTime asc'
+          $top: '100'
         });
         const url = `https://graph.microsoft.com/v1.0/me/messages?${queryParams.toString()}`;
         const res = await fetch(url, {
@@ -92,6 +99,9 @@ export async function GET(
         
         const data = await res.json();
         let threadMsgs = data.value || [];
+
+        // Sort locally since $orderby with $filter=conversationId is an InefficientFilter
+        threadMsgs.sort((a: any, b: any) => new Date(a.receivedDateTime).getTime() - new Date(b.receivedDateTime).getTime());
 
         // If filtering by conversationId yields empty array, it means threadId was just a single message ID
         if (threadMsgs.length === 0) {

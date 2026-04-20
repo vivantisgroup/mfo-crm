@@ -69,18 +69,21 @@ export type Permission =
   | 'concierge:read'     | 'concierge:write'
   // ─ Tenant Admin ─
   | 'admin:users'        | 'admin:groups'         | 'admin:roles'
-  | 'admin:settings'     | 'admin:integrations'   | 'admin:branding'
-  | 'admin:billing'      | 'admin:audit'
+  | 'admin:settings'     | 'admin:integrations'   | 'admin:credentials' | 'admin:branding'
+  | 'admin:billing'      | 'admin:audit'          | 'admin:data_model' | 'admin:app_layout'
+  | 'admin:automations'
   // ─ Platform (SaaS Master) ─
   | 'platform:tenants'   | 'platform:billing'     | 'platform:config'
   | 'platform:users'     | 'platform:audit'       | 'platform:crm'
   | 'platform:support'
   // ─ Email Templates ─
-  | 'email_templates:manage';
+  | 'email_templates:manage'
+  // ─ BPM / Processes ─
+  | 'processes:read'     | 'processes:write'      | 'processes:design';
 
 // ─── Role Permission Maps ──────────────────────────────────────────────────────
 
-const ALL_PERMISSIONS: Permission[] = [
+export const ALL_PERMISSIONS: Permission[] = [
   'families:read','families:write','families:delete','families:export','families:import',
   'contacts:read','contacts:write','contacts:delete',
   'activities:read','activities:write','activities:delete',
@@ -95,11 +98,12 @@ const ALL_PERMISSIONS: Permission[] = [
   'suitability:read','suitability:write','suitability:approve',
   'audit:read','audit:export',
   'concierge:read','concierge:write',
-  'admin:users','admin:groups','admin:roles','admin:settings','admin:integrations',
-  'admin:branding','admin:billing','admin:audit',
+  'admin:users','admin:groups','admin:roles','admin:settings','admin:integrations','admin:credentials',
+  'admin:branding','admin:billing','admin:audit','admin:data_model','admin:app_layout','admin:automations',
   'platform:tenants','platform:billing','platform:config','platform:users',
   'platform:audit','platform:crm','platform:support',
   'email_templates:manage',
+  'processes:read','processes:write','processes:design',
 ];
 
 export const ROLE_PERMISSIONS: Record<PlatformRole, Permission[]> = {
@@ -121,9 +125,10 @@ export const ROLE_PERMISSIONS: Record<PlatformRole, Permission[]> = {
     'suitability:read','suitability:write','suitability:approve',
     'audit:read','audit:export',
     'concierge:read','concierge:write',
-    'admin:users','admin:groups','admin:roles','admin:settings',
-    'admin:integrations','admin:branding','admin:billing','admin:audit',
+    'admin:users','admin:groups','admin:roles','admin:settings','admin:integrations','admin:credentials',
+    'admin:branding','admin:billing','admin:audit','admin:data_model','admin:app_layout',
     'email_templates:manage',
+    'processes:read','processes:write','processes:design',
   ],
 
   relationship_manager: [
@@ -140,6 +145,7 @@ export const ROLE_PERMISSIONS: Record<PlatformRole, Permission[]> = {
     'compliance:read','suitability:read','suitability:write',
     'concierge:read','concierge:write',
     'audit:read',
+    'processes:read','processes:write',
   ],
 
   cio: [
@@ -344,6 +350,38 @@ export const ROLE_PERMISSIONS: Record<PlatformRole, Permission[]> = {
     // Concierge (full — CS is the service team)
     'concierge:read','concierge:write',
   ],
+
+  data_designer: [
+    'admin:data_model',
+  ],
+
+  app_designer: [
+    'admin:app_layout',
+  ],
+
+  integration_architect: [
+    'admin:integrations',
+    'admin:credentials',
+    'admin:data_model', // Also needs schema access to bind lookups
+  ],
+
+  security_officer: [
+    'admin:users',
+    'admin:roles',
+    'admin:groups',
+    'admin:audit',
+    'governance:read',
+    'compliance:read',
+    'audit:read',
+  ],
+
+  ai_officer: [
+    'admin:settings',
+    'admin:integrations',
+    'admin:automations',
+    'admin:credentials',
+    'audit:read',
+  ],
 };
 
 // ─── Permission metadata (human-readable) ─────────────────────────────────────
@@ -423,9 +461,13 @@ export const PERMISSION_META: Record<Permission, PermissionMeta> = {
   'admin:roles':        { id: 'admin:roles',        module: 'Admin', action: 'admin', label: 'Manage Roles',        description: 'Assign and modify user roles', sensitive: true },
   'admin:settings':     { id: 'admin:settings',     module: 'Admin', action: 'admin', label: 'Tenant Settings',     description: 'Manage tenant configuration' },
   'admin:integrations': { id: 'admin:integrations', module: 'Admin', action: 'admin', label: 'Integrations',        description: 'Configure third-party integrations' },
+  'admin:credentials':  { id: 'admin:credentials',  module: 'Admin', action: 'admin', label: 'Credentials',         description: 'Manage API keys and integration credentials', sensitive: true },
   'admin:branding':     { id: 'admin:branding',     module: 'Admin', action: 'admin', label: 'Branding',            description: 'Configure logos, colors, and identity' },
   'admin:billing':      { id: 'admin:billing',      module: 'Admin', action: 'admin', label: 'Billing Access',      description: 'View and manage billing information', sensitive: true },
   'admin:audit':        { id: 'admin:audit',        module: 'Admin', action: 'admin', label: 'Admin Audit Log',     description: 'Access admin-level audit records' },
+  'admin:data_model':   { id: 'admin:data_model',   module: 'Admin', action: 'admin', label: 'Data Model Admin',    description: 'Create and modify custom CRM schema fields', sensitive: true },
+  'admin:app_layout':   { id: 'admin:app_layout',   module: 'Admin', action: 'admin', label: 'App Layout Customizer',description: 'Dynamically customize front-end layouts and field visibility' },
+  'admin:automations':  { id: 'admin:automations',  module: 'Admin', action: 'admin', label: 'Automations Admin',   description: 'Create and configure tenant automations and triggers' },
   // Platform
   'platform:tenants': { id: 'platform:tenants', module: 'Platform', action: 'admin', label: 'Manage Tenants',    description: 'Full tenant lifecycle management', sensitive: true },
   'platform:billing': { id: 'platform:billing', module: 'Platform', action: 'admin', label: 'Platform Billing',  description: 'Manage SaaS subscriptions and invoices', sensitive: true },
@@ -436,6 +478,10 @@ export const PERMISSION_META: Record<Permission, PermissionMeta> = {
   'platform:support': { id: 'platform:support', module: 'Platform', action: 'admin', label: 'Platform Support',  description: 'Manage support tickets platform-wide' },
   // Email Templates
   'email_templates:manage': { id: 'email_templates:manage', module: 'Email Templates', action: 'admin', label: 'Manage Email Templates', description: 'Edit and customize tenant email notification templates' },
+  // BPM / Processes
+  'processes:read':   { id: 'processes:read',   module: 'Processes', action: 'read',   label: 'View Processes',   description: 'View workflows and process instances' },
+  'processes:write':  { id: 'processes:write',  module: 'Processes', action: 'write',  label: 'Manage Processes', description: 'Start and interact with workflows' },
+  'processes:design': { id: 'processes:design', module: 'Processes', action: 'admin',  label: 'Design Processes', description: 'Access the Process Builder to define templates', sensitive: true },
 };
 
 // ─── Grouped permission modules (for UI rendering) ───────────────────────────
@@ -443,7 +489,7 @@ export const PERMISSION_META: Record<Permission, PermissionMeta> = {
 export const PERMISSION_MODULES = [
   'Families','Contacts','Activities','Tasks','Calendar','Portfolio',
   'Documents','Reports','Estate','Governance','Compliance','Suitability',
-  'Audit','Concierge','Admin','Platform','Email Templates',
+  'Audit','Concierge','Admin','Platform','Email Templates','Processes',
 ] as const;
 
 export type PermissionModule = typeof PERMISSION_MODULES[number];
@@ -605,12 +651,14 @@ export async function buildAuthzContext(
  * Main authorization check.
  * Returns true if the permission is granted, false otherwise.
  */
-export function can(ctx: AuthzContext, permission: Permission): boolean {
+export function can(ctx: AuthzContext | null | undefined, permission: Permission): boolean {
+  if (!ctx) return false;
+
   // 1. Explicit deny at user level — always wins
-  if (ctx.denies.includes(permission)) return false;
+  if (ctx.denies?.includes(permission)) return false;
 
   // 2. Explicit grant at user level
-  if (ctx.grants.includes(permission)) return true;
+  if (ctx.grants?.includes(permission)) return true;
 
   // 3. Group permissions (union)
   if (ctx.groupPerms.includes(permission)) return true;
@@ -621,12 +669,14 @@ export function can(ctx: AuthzContext, permission: Permission): boolean {
 }
 
 /** Check multiple permissions simultaneously (all must pass = AND). */
-export function canAll(ctx: AuthzContext, permissions: Permission[]): boolean {
+export function canAll(ctx: AuthzContext | null | undefined, permissions: Permission[]): boolean {
+  if (!ctx) return false;
   return permissions.every(p => can(ctx, p));
 }
 
 /** Check multiple permissions simultaneously (any must pass = OR). */
-export function canAny(ctx: AuthzContext, permissions: Permission[]): boolean {
+export function canAny(ctx: AuthzContext | null | undefined, permissions: Permission[]): boolean {
+  if (!ctx) return false;
   return permissions.some(p => can(ctx, p));
 }
 
@@ -634,7 +684,8 @@ export function canAny(ctx: AuthzContext, permissions: Permission[]): boolean {
  * Compute the full effective permission list for a user  
  * (role defaults + group additions - denies + grants).
  */
-export function effectivePermissions(ctx: AuthzContext): Permission[] {
+export function effectivePermissions(ctx: AuthzContext | null | undefined): Permission[] {
+  if (!ctx) return [];
   const base = new Set<Permission>([
     ...(ROLE_PERMISSIONS[ctx.role] ?? []),
     ...ctx.groupPerms,

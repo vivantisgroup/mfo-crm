@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { doc, onSnapshot, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Users, User, Building2, Ticket, CheckSquare, Briefcase, Landmark, FileText, BadgeDollarSign, Scale, Lock, ShieldCheck, Map, Search as SearchIcon, Umbrella, Ruler, Handshake, Heart, Sprout, Pin, Building, LayoutDashboard, Share2, MessageSquare, ClipboardList, Send, Folder } from 'lucide-react';
+import { ArrowLeft, Users, User, Building2, Ticket, CheckSquare, Briefcase, Landmark, FileText, BadgeDollarSign, Scale, Lock, ShieldCheck, Map, Search as SearchIcon, Umbrella, Ruler, Handshake, Heart, Sprout, Pin, Building, LayoutDashboard, Share2, MessageSquare, ClipboardList, Send, Folder, UserCog } from 'lucide-react';
 import { ContactRelationshipGraph } from '@/components/ContactRelationshipGraph';
 import { SecondaryDock } from '@/components/SecondaryDock';
 import { DocumentVault } from '@/components/DocumentVault';
@@ -14,6 +14,7 @@ import { addDoc, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '@/lib/AuthContext';
 import { uploadAttachment } from '@/lib/attachmentService';
 import { ProfileBanner } from '@/components/ProfileBanner';
+import { RichTextEditor } from '@/components/ui/RichTextEditor';
 
 interface Organization {
   id:                string;
@@ -60,8 +61,25 @@ const TYPE_LABELS: Record<string, string> = {
   governance_consultant: 'Consultor de Governança',
   philanthropic_consultant: 'Consultor Filantrópico',
   foundation: 'Fundação',
+  corporate_service_provider: 'Corporate Service Provider',
+  corporate_administrator: 'Corporate Administrator',
+  offshore_provider: 'Offshore Provider',
+  insurance_manager: 'Insurance Manager',
+  registered_agent: 'Registered Agent',
+  nominee_director: 'Nominee Director',
+  registered_office: 'Registered Office',
   other: 'Outros'
 };
+
+const ORG_TYPES = [
+  'family_group', 'financial_institution', 'accountant', 'tax_consultant', 'lawyer',
+  'trustee', 'fiduciary_admin', 'offshore_admin', 'corporate_provider', 'auditor',
+  'insurance_company', 'insurance_consultant', 'real_estate_admin', 'appraiser',
+  'governance_consultant', 'philanthropic_consultant', 'foundation', 
+  'corporate_service_provider', 'corporate_administrator', 'offshore_provider', 
+  'insurance_manager', 'registered_agent', 'nominee_director', 'registered_office',
+  'other'
+];
 
 const TYPE_COLORS: Record<string, string> = {
   family_group: '#6366f1',
@@ -81,6 +99,13 @@ const TYPE_COLORS: Record<string, string> = {
   governance_consultant: '#0ea5e9',
   philanthropic_consultant: '#84cc16',
   foundation: '#10b981',
+  corporate_service_provider: '#6366f1',
+  corporate_administrator: '#64748b',
+  offshore_provider: '#06b6d4',
+  insurance_manager: '#f43f5e',
+  registered_agent: '#8b5cf6',
+  nominee_director: '#f59e0b',
+  registered_office: '#71717a',
   other: '#64748b',
 };
 
@@ -102,10 +127,18 @@ const TYPE_ICONS: Record<string, any> = {
   governance_consultant: Handshake, 
   philanthropic_consultant: Heart, 
   foundation: Sprout, 
+  corporate_service_provider: Building2,
+  corporate_administrator: Users,
+  offshore_provider: Map,
+  insurance_manager: Umbrella,
+  registered_agent: ShieldCheck,
+  nominee_director: UserCog,
+  registered_office: Pin,
   other: Pin,
 };
 
 import { CommunicationPanel } from '@/components/CommunicationPanel';
+import { toast } from 'sonner';
 
 export default function OrgClientPage() {
   const { id }   = useParams<{ id: string }>();
@@ -118,8 +151,13 @@ export default function OrgClientPage() {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDesc, setNewTaskDesc] = useState('');
   const [showLinkModal, setShowLinkModal] = useState<'contact'|'organization'|null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editForm, setEditForm] = useState({ name: '', type: '', jurisdiction: '', status: '' });
+  const [savingEdit, setSavingEdit] = useState(false);
+  
   const [availableContacts, setAvailableContacts] = useState<any[]>([]);
   const [availableOrgs, setAvailableOrgs] = useState<any[]>([]);
+  const [jurisdictions, setJurisdictions] = useState<string[]>(['N/A', 'Delaware', 'Cayman Islands', 'BVI', 'Brazil', 'Switzerland']);
   const [linkSelectedId, setLinkSelectedId] = useState('');
   
   const { user } = useAuth();
@@ -138,7 +176,16 @@ export default function OrgClientPage() {
     if (!tenantId || !id) return;
     const ref = doc(db, 'tenants', tenantId, 'organizations', id);
     const unsub1 = onSnapshot(ref, snap => {
-      if (snap.exists()) setOrg({ id: snap.id, ...snap.data() } as Organization);
+      if (snap.exists()) {
+        const data = { id: snap.id, ...snap.data() } as Organization;
+        setOrg(data);
+        setEditForm({ 
+          name: data.name || '', 
+          type: data.type || '', 
+          jurisdiction: data.jurisdiction || '', 
+          status: data.status || 'active' 
+        });
+      }
     });
     
     // Fetch settings to hide specific tabs dynamically
@@ -151,7 +198,15 @@ export default function OrgClientPage() {
        }
     });
 
-    return () => { unsub1(); unsub2(); };
+    // Fetch custom jurisdictions
+    const juriRef = doc(db, 'tenants', tenantId, 'settings', 'jurisdictions');
+    const unsub3 = onSnapshot(juriRef, snap => {
+      if (snap.exists() && snap.data().list) {
+        setJurisdictions(snap.data().list);
+      }
+    });
+
+    return () => { unsub1(); unsub2(); unsub3(); };
   }, [tenantId, id]);
 
   useEffect(() => {
@@ -183,7 +238,7 @@ export default function OrgClientPage() {
       if (showLinkModal === 'contact') {
          const c = availableContacts.find(x => x.id === linkSelectedId);
          if (!c) return;
-         if ((org.linkedContactIds || []).includes(c.id)) { alert('Contact already linked'); return; }
+         if ((org.linkedContactIds || []).includes(c.id)) { toast.error('Contact already linked'); return; }
          const cRef = doc(db, 'tenants', tenantId, 'contacts', c.id);
          const cName = `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.name || 'Unknown Contact';
          
@@ -198,7 +253,7 @@ export default function OrgClientPage() {
       } else {
          const o = availableOrgs.find(x => x.id === linkSelectedId);
          if (!o) return;
-         if ((org.linkedOrgIds || []).includes(o.id)) { alert('Organization already connected'); return; }
+         if ((org.linkedOrgIds || []).includes(o.id)) { toast.error('Organization already connected'); return; }
          const oRef = doc(db, 'tenants', tenantId, 'organizations', o.id);
          
          await updateDoc(orgRef, {
@@ -214,7 +269,7 @@ export default function OrgClientPage() {
       setLinkSelectedId('');
     } catch (e) {
       console.error(e);
-      alert('Failed to establish connection.');
+      toast.error('Failed to establish connection.');
     }
   };
 
@@ -277,14 +332,22 @@ export default function OrgClientPage() {
           </div>
         </div>
         
-        <button 
-          onClick={() => isClockRunningHere ? null : startClock({ id: org.id, type: 'org', name: org.name, title: `Collaborating with ${org.name}` })}
-          disabled={isClockRunningHere}
-          className={`shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ml-4 ${isClockRunningHere ? 'bg-indigo-100 text-indigo-500 cursor-not-allowed border border-indigo-200' : 'bg-slate-50 border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-300 hover:bg-white shadow-sm'}`}
-        >
-          <div className={isClockRunningHere ? 'animate-pulse' : ''}>⏱️</div>
-          {isClockRunningHere ? 'Recording Time...' : 'Start Timer'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => setShowEditModal(true)}
+            className="shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-300 shadow-sm"
+          >
+            Edit Details
+          </button>
+          <button 
+            onClick={() => isClockRunningHere ? null : startClock({ id: org.id, type: 'org', name: org.name, title: `Collaborating with ${org.name}` })}
+            disabled={isClockRunningHere}
+            className={`shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${isClockRunningHere ? 'bg-indigo-100 text-indigo-500 cursor-not-allowed border border-indigo-200' : 'bg-slate-50 border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-300 hover:bg-white shadow-sm'}`}
+          >
+            <div className={isClockRunningHere ? 'animate-pulse' : ''}>⏱️</div>
+            {isClockRunningHere ? 'Recording Time...' : 'Start Timer'}
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -308,14 +371,20 @@ export default function OrgClientPage() {
 
       {activeTab === 'overview' && (
         <div className="rounded-tremor-default border border-tremor-border bg-tremor-background shadow-tremor-card p-6" style={{ padding: 24 }}>
-          {org.notes ? (
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 6 }}>Notes</div>
-              <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0 }}>{org.notes}</p>
-            </div>
-          ) : (
-             <div className="text-center text-sm text-slate-400 py-10">No specific notes available for this organization.</div>
-          )}
+          <div className="flex justify-between items-center mb-4">
+             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Internal Notes</div>
+          </div>
+          <div className="min-h-[200px] border border-slate-200 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-transparent transition-all">
+             <RichTextEditor
+               value={org.notes || ''}
+               onChange={(val) => {
+                 updateDoc(doc(db, 'tenants', tenantId, 'organizations', id), { notes: val }).catch(console.error);
+               }}
+               placeholder="Add qualitative notes and context here..."
+               tenantId={tenantId}
+               contextRecord={{ type: 'organizations', id }}
+             />
+          </div>
         </div>
       )}
 
@@ -471,7 +540,7 @@ export default function OrgClientPage() {
                      setNewTaskDesc('');
                    } catch (err) {
                      console.error('Failed to create task/ticket', err);
-                     alert('Action failed.');
+                     toast.error('Action failed.');
                    }
                 }}>
                    {showTaskModal === 'task' ? 'Create Task' : 'Submit Ticket'}
@@ -520,6 +589,62 @@ export default function OrgClientPage() {
                 <button className="btn btn-ghost" onClick={() => setShowLinkModal(null)}>Cancel</button>
                 <button className="btn btn-primary" disabled={!linkSelectedId} onClick={commitLink}>
                    Establish Link
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Organization Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg border border-slate-200 overflow-hidden">
+             <div className="p-4 border-b border-slate-100 font-bold text-slate-800 flex items-center gap-2">
+                <Building2 size={18} className="text-indigo-500" /> Edit Organization Settings
+             </div>
+             <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Entity Name</label>
+                  <input className="input w-full" value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Entity Type (Promotion)</label>
+                  <select className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-[var(--bg-surface)] px-3 py-2 text-sm shadow-sm ring-offset-background" value={editForm.type} onChange={e => setEditForm(p => ({ ...p, type: e.target.value }))}>
+                    {ORG_TYPES.map(t => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Jurisdiction</label>
+                    <select className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-[var(--bg-surface)] px-3 py-2 text-sm shadow-sm ring-offset-background" value={editForm.jurisdiction} onChange={e => setEditForm(p => ({ ...p, jurisdiction: e.target.value }))}>
+                      <option value="">Select Jurisdiction</option>
+                      {jurisdictions.map(j => <option key={j} value={j}>{j}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Status</label>
+                    <select className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-[var(--bg-surface)] px-3 py-2 text-sm shadow-sm ring-offset-background" value={editForm.status} onChange={e => setEditForm(p => ({ ...p, status: e.target.value }))}>
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                      <option value="archived">Archived</option>
+                    </select>
+                  </div>
+                </div>
+             </div>
+             <div className="p-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50">
+                <button className="btn btn-ghost" onClick={() => setShowEditModal(false)}>Cancel</button>
+                <button className="btn btn-primary" disabled={savingEdit || !editForm.name.trim()} onClick={async () => {
+                  setSavingEdit(true);
+                  try {
+                    await updateDoc(doc(db, 'tenants', tenantId, 'organizations', id), editForm);
+                    setShowEditModal(false);
+                  } catch (err) {
+                    console.error(err);
+                    toast.error("Failed to update organization");
+                  }
+                  setSavingEdit(false);
+                }}>
+                  {savingEdit ? 'Saving...' : 'Save Changes'}
                 </button>
              </div>
           </div>

@@ -32,12 +32,15 @@ import {
   bootstrapPlatform,
   ensureUserProfile,
   updateUserProfile,
+  addTenantToUser,
   getTenant,
   getTenantsForUser,
   type UserProfile,
   type TenantRecord,
   type PlatformRole,
 } from './platformService';
+import { getGroupsForUser } from './groupService';
+import { buildAuthzContext, type AuthzContext } from './rbacService';
 
 // ─── Public shape ─────────────────────────────────────────────────────────────
 
@@ -58,6 +61,7 @@ export interface ActiveTenant {
   isSuperadmin?: boolean;
   brandColor?:  string;
   industryVertical?: string;
+  aiAssistantName?: string;
 }
 
 export type AuthStage =
@@ -80,11 +84,13 @@ interface AuthContextType {
   isAuthenticated:   boolean;
   isHydrated:        boolean;
   isSaasMasterAdmin: boolean;
+  isImpersonating:   boolean;
   error:             string | null;
   /** Tenants available for selection (populated when stage === 'select_tenant') */
   availableTenants:  TenantRecord[];
   /** Tenant the user has chosen but not yet MFA-verified */
   pendingTenantId:   string | null;
+  authzContext:      AuthzContext | null;
 
   signIn:            (email: string, password: string) => Promise<void>;
   signUp:            (email: string, password: string, displayName: string) => Promise<void>;
@@ -114,6 +120,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [pendingTenantId,  setPendingTenantId]  = useState<string | null>(null);
   const [error,            setError]            = useState<string | null>(null);
   const [isHydrated,       setIsHydrated]       = useState(false);
+  const [isImpersonating,  setIsImpersonating]  = useState(false);
+  const [authzContext,     setAuthzContext]     = useState<AuthzContext | null>(null);
   // Ref holds the cleanup function for the live profile listener
   const profileListenerRef = useRef<(() => void) | null>(null);
 
@@ -135,6 +143,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isSuperadmin: userProfile?.role === 'saas_master_admin',
     brandColor:  tenantRecord.brandColor,
     industryVertical: tenantRecord.industryVertical,
+    aiAssistantName: tenantRecord.aiAssistantName,
   } : null;
 
   const isSaasMasterAdmin = userProfile?.role === 'saas_master_admin';
@@ -245,10 +254,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // ── AuthzContext builder ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (stage === 'authenticated' && userProfile && tenantRecord) {
+      getGroupsForUser(tenantRecord.id, userProfile.uid)
+        .then(groups => {
+          const groupIds = groups.map((g: any) => g.groupId);
+          return buildAuthzContext(userProfile.uid, tenantRecord.id, userProfile.role, groupIds);
+        })
+        .then(setAuthzContext)
+        .catch(console.error);
+    } else {
+      setAuthzContext(null);
+    }
+  }, [stage, userProfile, tenantRecord]);
+
   // ── Firebase Auth observer ────────────────────────────────────────────────
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (fbU) => {
       if (fbU) {
+        try {
+          const idTokenResult = await fbU.getIdTokenResult(true);
+          setIsImpersonating(!!idTokenResult.claims.isImpersonating);
+        } catch (e) {
+          console.error('Failed to get parsed JWT claims', e);
+        }
         setFbUser(fbU);
         await loadProfile(fbU);
       } else {
@@ -262,6 +292,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setTenantRecord(null);
         setAvailableTenants([]);
         setPendingTenantId(null);
+        setIsImpersonating(false);
         setStage('unauthenticated');
       }
       setIsHydrated(true);
@@ -412,16 +443,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [userProfile, tenantRecord, pendingTenantId]);
 
   const switchTenant = useCallback(async (tenantId: string) => {
-    if (!userProfile) return;
+    if (!userProfile || !tenantId) return;
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(`lastTenantId_${userProfile.uid}`, tenantId);
     }
     try {
-      await updateUserProfile(userProfile.uid, { tenantId });
+      // addTenantToUser uses arrayUnion so tenantId is in tenantIds BEFORE
+      // getTenant() is called — Firestore rules check userTenantIds().hasAny([tenantId])
+      await addTenantToUser(userProfile.uid, tenantId);
     } catch (err) {
       console.error('[switchTenant] Failed to update profile:', err);
     }
-    setUserProfile(prev => prev ? { ...prev, tenantId } : prev);
+    setUserProfile(prev => prev ? { ...prev, tenantId, tenantIds: Array.from(new Set([...(prev.tenantIds ?? []), tenantId])) } : prev);
     const tRecord = await getTenant(tenantId);
     setTenantRecord(tRecord);
   }, [userProfile]);
@@ -443,9 +476,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isAuthenticated: stage === 'authenticated',
       isHydrated,
       isSaasMasterAdmin,
+      isImpersonating,
       error,
       availableTenants,
       pendingTenantId,
+      authzContext,
       signIn, signUp, logout, switchTenant, selectTenant, completeMfa, completeMfaEnroll,
       retryProfile, clearError, login,
     }}>

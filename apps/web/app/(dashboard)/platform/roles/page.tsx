@@ -22,6 +22,7 @@ const ROLE_COLOR: Record<string, { bg: string; fg: string; border: string }> = {
  cio: { bg: '#0ea5e912', fg: '#38bdf8', border: '#0ea5e933' },
  controller: { bg: '#a78bfa12', fg: '#a78bfa', border: '#a78bfa33' },
  compliance_officer: { bg: '#ef444412', fg: '#f87171', border: '#ef444433' },
+ ai_officer: { bg: '#10b98112', fg: '#34d399', border: '#10b98133' },
  report_viewer: { bg: '#64748b12', fg: '#94a3b8', border: '#64748b33' },
  external_advisor: { bg: '#f9731612', fg: '#fb923c', border: '#f9731633' },
  sales_operations: { bg: '#10b98112', fg: '#34d399', border: '#10b98133' },
@@ -35,7 +36,7 @@ const ROLE_COLOR: Record<string, { bg: string; fg: string; border: string }> = {
 
 const ALL_ROLES: PlatformRole[] = [
  'saas_master_admin', 'tenant_admin', 'relationship_manager',
- 'cio', 'controller', 'compliance_officer', 'report_viewer', 'external_advisor',
+ 'cio', 'controller', 'compliance_officer', 'ai_officer', 'report_viewer', 'external_advisor',
  'sales_operations', 'business_manager',
  'sales_manager', 'revenue_manager', 'account_executive', 'sdr', 'customer_success_manager',
 ];

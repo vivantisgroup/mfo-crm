@@ -25,6 +25,7 @@ export type ModuleId =
   | 'families'         // Client family management (MFO core)
   | 'contacts_crm'     // Contacts directory (people)
   | 'organizations'    // Organizations (companies, trusts, entities)
+  | 'screener'         // Market Screener (yahoo-finance2)
   | 'portfolio'        // Portfolio monitoring and analytics
   | 'wealth'           // Wealth planning and reports
   | 'documents'        // Document vault
@@ -37,6 +38,8 @@ export type ModuleId =
   | 'reports'          // Report generation
   | 'inbox'            // Email inbox integration
   | 'copilot'          // AI Co-Pilot
+  | 'sales'            // Capital Raising & Sales CRM
+  | 'marketing'        // Campaign & Event Management
   // Medical modules
   | 'patients'         // Patient records
   | 'appointments'     // Appointment scheduling
@@ -59,7 +62,13 @@ export type ModuleId =
   // Generic
   | 'contacts'         // Generic contacts CRM
   | 'projects'         // Project management
-  | 'invoicing';       // Invoicing / payments
+  | 'invoicing'        // Invoicing / payments
+  // Internal Office Mechanics
+  | 'employees'        // Internal staff directory
+  | 'vendors'          // Partners & service providers
+  | 'billing_mfo'      // MFO specific revenue/billing
+  | 'signatures'       // Electronic Signatures
+  | 'expenses';        // Operating expenses
 
 export interface NavSection {
   section:  string;
@@ -101,11 +110,12 @@ const MFO_NAV: NavSection[] = [
         icon: '👥',
         label: 'Relationships',
         subItems: [
-          { href: '/clients',                     label: 'Clients (360°)' },
+          { href: '/families',                    label: 'Family Groups' },
           { href: '/relationships/organizations', label: 'Organizations' },
           { href: '/relationships/contacts',      label: 'Contacts' },
         ]
       },
+      { href: '/governance',     icon: '🏛', label: 'Family Governance' },
       { href: '/activities',     icon: '💬', label: 'Activities' },
       { href: '/tarefas',        icon: '✓',  label: 'Tarefas' },
       { href: '/platform/support', icon: '🎧', label: 'Support Center' },
@@ -113,26 +123,63 @@ const MFO_NAV: NavSection[] = [
     ],
   },
   {
+    section: 'Business Development',
+    items: [
+      { href: '/sales',          icon: '🎯', label: 'Deal Origination' },
+      { href: '/marketing',      icon: '📢', label: 'Marketing & Events' },
+    ],
+  },
+  {
     section: 'Wealth',
     items: [
       { href: '/portfolio',          icon: '📊', label: 'Portfolio' },
+      { href: '/screener',           icon: '🔍', label: 'Market Screener' },
       { href: '/financial-engineer', icon: '⚙', label: 'Financial Eng.' },
+      { href: '/statement-tracker',  icon: '📋', label: 'Statement Tracker' },
       { href: '/documents',          icon: '🗄', label: 'Documents' },
       { href: '/reports',            icon: '📈', label: 'Reports' },
     ],
   },
   {
+    section: 'CIO Office',
+    items: [
+      { href: '/cio-office/macro',         icon: '🌎', label: 'Macro & House View' },
+      { href: '/cio-office/allocation',    icon: '🥧', label: 'Asset Allocation' },
+      { href: '/cio-office/due-diligence', icon: '🔬', label: 'Due Diligence' },
+      { href: '/cio-office/risk',          icon: '⚡', label: 'Risk & Stress Test' },
+      { href: '/cio-office/committee',     icon: '🏛', label: 'Comitê' },
+    ],
+  },
+  {
     section: 'Operations',
     items: [
-      { href: '/governance', icon: '🏛', label: 'Governance' },
-      { href: '/estate',     icon: '⚖', label: 'Succession' },
+      { href: '/bpm', icon: '🔄', label: 'Workflows & Process Builder' },
+      { href: '/compliance', icon: '⚖', label: 'Compliance' },
+      { href: '/intake',     icon: '📥', label: 'Document Intake' },
+      { href: '/knowledge',  icon: '📚', label: 'Knowledge Base' },
+      { href: '/signatures', icon: '✍', label: 'MFO Sign (e-Sign)' },
+      { href: '/platform/pricing', icon: '💰', label: 'Pricing Configurator' },
       { href: '/concierge',  icon: '🛎', label: 'Concierge' },
+    ],
+  },
+  {
+    section: 'The Office',
+    items: [
+      { href: '/employees',  icon: '👔', label: 'Staff & Advisors' },
+      { href: '/vendors',    icon: '🤝', label: 'Partners & Vendors' },
+      { href: '/finance',    icon: '🏦', label: 'Finance & Payroll' },
+      { href: '/accounting', icon: '🧾', label: 'AI Accounting' },
+      { href: '/billing',    icon: '💳', label: 'Invoicing & Fees' },
+      { href: '/expenses',   icon: '📉', label: 'Expenses' },
     ],
   },
   {
     section: 'Settings',
     items: [
       { href: '/admin/users', icon: '👤', label: 'Users' },
+      { href: '/admin/data-model', icon: '🗄', label: 'Data Model' },
+      { href: '/admin/integrations', icon: '🔌', label: 'Integrations' },
+      { href: '/admin/vault', icon: '🔐', label: 'Vault' },
       { href: '/admin',       icon: '⚙',  label: 'Admin' },
     ],
   },
@@ -150,7 +197,6 @@ const ADVISOR_NAV: NavSection[] = [
   {
     section: 'CRM',
     items: [
-      { href: '/clients',        icon: '👥', label: 'Clients' },
       { href: '/contacts',       icon: '👤', label: 'Contacts' },
       { href: '/organizations',  icon: '🏢', label: 'Organizations' },
       { href: '/activities',     icon: '💬', label: 'Activities' },
@@ -163,6 +209,7 @@ const ADVISOR_NAV: NavSection[] = [
     section: 'Advisory',
     items: [
       { href: '/portfolio',          icon: '📊', label: 'Portfolios' },
+      { href: '/screener',           icon: '🔍', label: 'Market Screener' },
       { href: '/financial-engineer', icon: '⚙', label: 'Financial Eng.' },
       { href: '/reports',            icon: '📈', label: 'Reports' },
       { href: '/documents',          icon: '🗄', label: 'Documents' },
@@ -172,6 +219,9 @@ const ADVISOR_NAV: NavSection[] = [
     section: 'Settings',
     items: [
       { href: '/admin/users', icon: '👤', label: 'Users' },
+      { href: '/admin/data-model', icon: '🗄', label: 'Data Model' },
+      { href: '/admin/integrations', icon: '🔌', label: 'Integrations' },
+      { href: '/admin/vault', icon: '🔐', label: 'Vault' },
       { href: '/admin',       icon: '⚙',  label: 'Admin' },
     ],
   },
@@ -208,6 +258,9 @@ const MEDICAL_NAV: NavSection[] = [
     section: 'Settings',
     items: [
       { href: '/admin/users', icon: '👤', label: 'Users' },
+      { href: '/admin/data-model', icon: '🗄', label: 'Data Model' },
+      { href: '/admin/integrations', icon: '🔌', label: 'Integrations' },
+      { href: '/admin/vault', icon: '🔐', label: 'Vault' },
       { href: '/admin',       icon: '⚙',  label: 'Admin' },
     ],
   },
@@ -239,6 +292,9 @@ const LEGAL_NAV: NavSection[] = [
     section: 'Settings',
     items: [
       { href: '/admin/users', icon: '👤', label: 'Users' },
+      { href: '/admin/data-model', icon: '🗄', label: 'Data Model' },
+      { href: '/admin/integrations', icon: '🔌', label: 'Integrations' },
+      { href: '/admin/vault', icon: '🔐', label: 'Vault' },
       { href: '/admin',       icon: '⚙',  label: 'Admin' },
     ],
   },
@@ -270,6 +326,9 @@ const GENERIC_NAV: NavSection[] = [
     section: 'Settings',
     items: [
       { href: '/admin/users', icon: '👤', label: 'Users' },
+      { href: '/admin/data-model', icon: '🗄', label: 'Data Model' },
+      { href: '/admin/integrations', icon: '🔌', label: 'Integrations' },
+      { href: '/admin/vault', icon: '🔐', label: 'Vault' },
       { href: '/admin',       icon: '⚙',  label: 'Admin' },
     ],
   },
@@ -286,8 +345,8 @@ export const VERTICAL_REGISTRY: VerticalDefinition[] = [
     tagline:      'Complete wealth management platform for institutional family offices',
     color:        '#8b5cf6',
     status:       'ga',
-    availableModules: ['families','contacts_crm','organizations','portfolio','wealth','documents','activities','tasks','calendar','governance','estate','concierge','reports','inbox','copilot'],
-    defaultModules:   ['families','contacts_crm','organizations','portfolio','documents','activities','tasks','calendar','reports','inbox','copilot'],
+    availableModules: ['families','contacts_crm','organizations','portfolio','wealth','documents','activities','tasks','calendar','governance','estate','concierge','reports','inbox','copilot', 'employees', 'vendors', 'billing_mfo', 'expenses', 'signatures', 'sales', 'marketing'],
+    defaultModules:   ['families','contacts_crm','organizations','portfolio','documents','activities','tasks','calendar','reports','inbox','copilot', 'employees', 'vendors', 'billing_mfo', 'expenses', 'signatures', 'sales', 'marketing'],
     defaultRoles: ['tenant_admin','relationship_manager','cio','controller','compliance_officer','report_viewer','external_advisor'],
     nav:          MFO_NAV,
     complianceFrameworks: ['ANBIMA','CVM175','SEC_RIA','FINRA'],
@@ -301,10 +360,10 @@ export const VERTICAL_REGISTRY: VerticalDefinition[] = [
     tagline:      'Streamlined platform for independent financial advisors and RIAs',
     color:        '#06b6d4',
     status:       'ga',
-    availableModules: ['clients','contacts_crm','organizations','portfolio','documents','activities','tasks','calendar','reports','inbox','copilot'],
-    defaultModules:   ['clients','contacts_crm','organizations','portfolio','documents','activities','tasks','calendar','reports'],
+    availableModules: ['clients','contacts_crm','organizations','portfolio','documents','activities','tasks','calendar','reports','inbox','copilot','signatures'],
+    defaultModules:   ['clients','contacts_crm','organizations','portfolio','documents','activities','tasks','calendar','reports','signatures'],
     defaultRoles: ['tenant_admin','relationship_manager','report_viewer'],
-    nav:          ADVISOR_NAV,
+    nav:          [...ADVISOR_NAV.slice(0, 3), { section: 'Operations', items: [{ href: '/signatures', icon: '✍', label: 'e-Sign' }] }, ...ADVISOR_NAV.slice(3)],
     complianceFrameworks: ['SEC_RIA','FINRA','CVM300'],
     defaultCurrencies:    ['USD','BRL'],
   },
@@ -316,10 +375,10 @@ export const VERTICAL_REGISTRY: VerticalDefinition[] = [
     tagline:      'Patient management and clinical operations for healthcare providers',
     color:        '#10b981',
     status:       'beta',
-    availableModules: ['patients','appointments','billing_medical','prescriptions','records','documents','tasks','calendar','inbox','reports'],
-    defaultModules:   ['patients','appointments','records','tasks','calendar'],
+    availableModules: ['patients','appointments','billing_medical','prescriptions','records','documents','tasks','calendar','inbox','reports','signatures'],
+    defaultModules:   ['patients','appointments','records','tasks','calendar','documents','signatures'],
     defaultRoles: ['tenant_admin','report_viewer'],
-    nav:          MEDICAL_NAV,
+    nav:          [...MEDICAL_NAV.slice(0, 3), { section: 'Documents', items: [{ href: '/signatures', icon: '✍', label: 'e-Sign' }] }, ...MEDICAL_NAV.slice(3)],
     complianceFrameworks: ['HIPAA','LGPD_HEALTH'],
     defaultCurrencies:    ['USD','BRL','EUR'],
   },
@@ -331,10 +390,10 @@ export const VERTICAL_REGISTRY: VerticalDefinition[] = [
     tagline:      'Matter management, time tracking, and client billing for law firms',
     color:        '#f59e0b',
     status:       'beta',
-    availableModules: ['clients','cases','billing_legal','contracts','documents','tasks','calendar','inbox','reports'],
-    defaultModules:   ['clients','cases','documents','tasks','calendar'],
+    availableModules: ['clients','cases','billing_legal','contracts','documents','tasks','calendar','inbox','reports','signatures'],
+    defaultModules:   ['clients','cases','documents','tasks','calendar','signatures'],
     defaultRoles: ['tenant_admin','report_viewer'],
-    nav:          LEGAL_NAV,
+    nav:          [...LEGAL_NAV.slice(0, 2), { section: 'Documents', items: [{ href: '/signatures', icon: '✍', label: 'e-Sign' }] }, ...LEGAL_NAV.slice(2)],
     complianceFrameworks: ['ABA_RULES','OAB'],
     defaultCurrencies:    ['USD','BRL','GBP'],
   },
@@ -346,10 +405,10 @@ export const VERTICAL_REGISTRY: VerticalDefinition[] = [
     tagline:      'Client engagements, deadline tracking, and billing for CPA firms',
     color:        '#3b82f6',
     status:       'coming_soon',
-    availableModules: ['clients','engagements','billing_acct','deadlines','documents','tasks','reports'],
-    defaultModules:   ['clients','engagements','deadlines'],
+    availableModules: ['clients','engagements','billing_acct','deadlines','documents','tasks','reports','signatures'],
+    defaultModules:   ['clients','engagements','deadlines','documents','signatures'],
     defaultRoles: ['tenant_admin','report_viewer'],
-    nav:          GENERIC_NAV,
+    nav:          [...GENERIC_NAV.slice(0, 2), { section: 'Documents', items: [{ href: '/signatures', icon: '✍', label: 'e-Sign' }] }, ...GENERIC_NAV.slice(2)],
     complianceFrameworks: ['GAAP','IFRS','CFC'],
     defaultCurrencies:    ['USD','BRL'],
   },
@@ -361,10 +420,10 @@ export const VERTICAL_REGISTRY: VerticalDefinition[] = [
     tagline:      'Property listings, deal pipeline, and client management',
     color:        '#ef4444',
     status:       'coming_soon',
-    availableModules: ['properties','deals','listings','clients','documents','tasks','calendar','reports'],
-    defaultModules:   ['properties','deals','clients'],
+    availableModules: ['properties','deals','listings','clients','documents','tasks','calendar','reports','signatures'],
+    defaultModules:   ['properties','deals','clients','documents','signatures'],
     defaultRoles: ['tenant_admin','report_viewer'],
-    nav:          GENERIC_NAV,
+    nav:          [...GENERIC_NAV.slice(0, 2), { section: 'Documents', items: [{ href: '/signatures', icon: '✍', label: 'e-Sign' }] }, ...GENERIC_NAV.slice(2)],
     complianceFrameworks: ['CRECI','NAR'],
     defaultCurrencies:    ['USD','BRL'],
   },
@@ -376,10 +435,10 @@ export const VERTICAL_REGISTRY: VerticalDefinition[] = [
     tagline:      'Flexible platform foundation for any business type',
     color:        '#64748b',
     status:       'ga',
-    availableModules: ['contacts','projects','invoicing','documents','tasks','calendar','inbox','reports'],
-    defaultModules:   ['contacts','tasks','calendar','documents'],
+    availableModules: ['contacts','projects','invoicing','documents','tasks','calendar','inbox','reports','signatures'],
+    defaultModules:   ['contacts','tasks','calendar','documents','signatures'],
     defaultRoles: ['tenant_admin','report_viewer'],
-    nav:          GENERIC_NAV,
+    nav:          [...GENERIC_NAV.slice(0, 2), { section: 'Documents', items: [{ href: '/signatures', icon: '✍', label: 'e-Sign' }] }, ...GENERIC_NAV.slice(2)],
     complianceFrameworks: [],
     defaultCurrencies:    ['USD','BRL','EUR'],
   },
@@ -397,3 +456,4 @@ export function getVerticalNav(id: IndustryVerticalId | undefined): NavSection[]
 }
 
 export const DEFAULT_VERTICAL: IndustryVerticalId = 'multi_family_office';
+

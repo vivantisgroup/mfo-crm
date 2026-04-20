@@ -67,8 +67,30 @@ function MessageBubble({ msg, collapsed, onToggle, onReply, onAction }: {
     const iframe = iframeRef.current;
     const onLoad = () => {
       try {
-        const body = iframe.contentDocument?.body;
-        if (body) setIframeHeight(body.scrollHeight + 24);
+        const doc = iframe.contentDocument;
+        if (!doc) return;
+        const updateHeight = () => {
+          const wrapper = doc.getElementById('email-wrapper');
+          if (wrapper) {
+            setIframeHeight(Math.max(wrapper.scrollHeight, wrapper.offsetHeight) + 32);
+          } else {
+            const height = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight);
+            setIframeHeight(height + 32);
+          }
+        };
+        updateHeight(); // Initial check
+        
+        // Observe mutations (e.g. content expanding)
+        const observer = new MutationObserver(updateHeight);
+        observer.observe(doc.body, { childList: true, subtree: true, attributes: true });
+        
+        // Ensure image loads adjust height
+        doc.querySelectorAll('img').forEach(img => {
+          if (!img.complete) {
+            img.addEventListener('load', updateHeight);
+            img.addEventListener('error', updateHeight);
+          }
+        });
       } catch { /* cross-origin fallback */ }
     };
     iframe.addEventListener('load', onLoad);
@@ -78,14 +100,15 @@ function MessageBubble({ msg, collapsed, onToggle, onReply, onAction }: {
   const srcDoc = msg.html
     ? `<!DOCTYPE html><html><head><meta charset="UTF-8">
         <style>
-          :root { color-scheme: light dark; }
-          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; margin: 16px; line-height: 1.6; background: transparent; word-break: break-word; color: CanvasText; }
+          :root { color-scheme: light; }
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; margin: 0; padding: 16px; line-height: 1.6; background: #ffffff !important; word-break: break-word; color: #000000 !important; }
           a { color: #4f46e5; text-decoration: underline; }
           img { max-width: 100%; height: auto; border-radius: 8px; }
-          blockquote { border-left: 3px solid #cbd5e1; margin: 12px 0; padding: 4px 16px; opacity: 0.8; background: color-mix(in srgb, CanvasText 5%, transparent); border-radius: 0 8px 8px 0; }
-          pre, code { background: color-mix(in srgb, CanvasText 5%, transparent); padding: 3px 6px; border-radius: 6px; font-size: 13px; }
+          blockquote { border-left: 3px solid #cbd5e1; margin: 12px 0; padding: 4px 16px; opacity: 0.8; background: #f8fafc; border-radius: 0 8px 8px 0; color: #475569; }
+          pre, code { background: #f1f5f9; padding: 3px 6px; border-radius: 6px; font-size: 13px; color: #0f172a; }
+          .gmail_quote, .gmail_extra { display: block !important; visibility: visible !important; height: auto !important; overflow: visible !important; }
         </style>
-      </head><body>${msg.html}</body></html>`
+      </head><body><div id="email-wrapper">${msg.html}</div></body></html>`
     : undefined;
 
   const replyTo    = msg.isSent ? msg.to : msg.from;
@@ -237,7 +260,9 @@ function MessageBubble({ msg, collapsed, onToggle, onReply, onAction }: {
           {msg.html
             ? <iframe ref={iframeRef} srcDoc={srcDoc} sandbox="allow-same-origin"
                 style={{ width: '100%', border: 'none', height: iframeHeight, minHeight: 120, display: 'block' }} title="Email content" />
-            : <pre style={{ fontFamily: 'inherit', fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap', color: 'var(--text-primary)', margin: 0 }}>{msg.text || msg.snippet}</pre>
+            : <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, inherit', fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap', color: 'var(--text-primary)', margin: 0, background: 'transparent' }}>
+                {msg.text || msg.snippet}
+              </div>
           }
 
           <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
@@ -281,7 +306,7 @@ export function ReadingPane({ thread, uid, tenantId = '', emailLogId, initialLin
   useEffect(() => {
     if (!thread || !uid) { setMessages([]); setErrorMsg(null); return; }
     loadThread(thread.gmailThreadId ?? thread.id, thread.provider ?? 'google');
-  }, [thread?.id]);
+  }, [thread?.id, thread?.provider]);
 
   async function loadThread(threadId: string, provider: string = 'google') {
     setLoading(true);

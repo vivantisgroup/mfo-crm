@@ -2,11 +2,14 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import ReactECharts from 'echarts-for-react';
-import { Database, LayoutTemplate, Settings2, Play, Save, ChevronLeft } from 'lucide-react';
+import { Database, LayoutTemplate, Settings2, Play, Save, ChevronLeft, Bot, Code, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
 import { ROLE_PERMISSIONS, type Permission } from '@/lib/rbacService';
 import type { PlatformRole } from '@/lib/platformService';
+import { getFirestore, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { firebaseApp } from '@mfo-crm/config';
+import { toast } from 'sonner';
 
 // Database Registry mapping to RBAC Permissions
 const ALL_MODULE_TABLES = [
@@ -25,26 +28,51 @@ const ALL_MODULE_TABLES = [
 ];
 
 export default function BIBuilderPage() {
-  const { user } = useAuth();
+  const { user, tenant } = useAuth();
   const userRole = user?.role as PlatformRole | undefined;
   
   // Calculate authorized tables
   const userPermissions = userRole ? (ROLE_PERMISSIONS[userRole] || []) : [];
   const availableTables = ALL_MODULE_TABLES.filter(t => userPermissions.includes(t.permission as Permission));
 
-  const [chartType, setChartType] = useState<'line' | 'bar' | 'pie'>('bar');
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveTitle, setSaveTitle] = useState('My AI Dashboard Report');
   const [dataSource, setDataSource] = useState(availableTables.length > 0 ? availableTables[0].id : 'crm_opportunities');
-  const [colorScheme, setColorScheme] = useState('emerald');
+  const [rightTab, setRightTab] = useState<'design'|'code'>('design');
   
   const chartRef = useRef<ReactECharts>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Sync default if current is unauthorized
-  useEffect(() => {
-    if (availableTables.length > 0 && !availableTables.find(t => t.id === dataSource)) {
-      setDataSource(availableTables[0].id);
+  // Default Blueprint
+  const INITIAL_OPTION = {
+    color: ['#10b981', '#34d399', '#6ee7b7', '#a7f3d0'],
+    textStyle: { fontFamily: 'Inter, sans-serif' },
+    tooltip: { trigger: 'item' },
+    xAxis: { type: 'category', data: ['Q1', 'Q2', 'Q3', 'Q4'] },
+    yAxis: { type: 'value' },
+    series: [ { type: 'bar', data: [120000, 200000, 150000, 80000] } ]
+  };
+
+  const [chartConfigStr, setChartConfigStr] = useState(JSON.stringify(INITIAL_OPTION, null, 2));
+
+  let parsedOption: any = {};
+  try {
+     parsedOption = JSON.parse(chartConfigStr);
+  } catch (e) {
+     // Ignore real-time typing errors in JSON
+  }
+
+  const updateOption = (updater: (opt: any) => void) => {
+    try {
+       const current = JSON.parse(chartConfigStr);
+       updater(current);
+       setChartConfigStr(JSON.stringify(current, null, 2));
+    } catch {
+       toast.error("Cannot use Design Studio while JSON structure is invalid. Please fix syntax in Code tab first.");
     }
-  }, [availableTables, dataSource]);
+  };
 
   // Boxed UI ResizeObserver
   useEffect(() => {
@@ -53,118 +81,71 @@ export default function BIBuilderPage() {
     const observer = new ResizeObserver(() => {
       clearTimeout(timer);
       timer = setTimeout(() => {
-        chartRef.current?.getEchartsInstance()?.resize();
+        try {
+          chartRef.current?.getEchartsInstance()?.resize();
+        } catch (e) {
+          console.warn('ECharts resize layout engine skipped due to transitional structural fault:', e);
+        }
       }, 50);
     });
     observer.observe(containerRef.current);
     return () => { observer.disconnect(); clearTimeout(timer); };
   }, []);
 
-  // Mock data generator for live preview
-  const getMockData = () => {
-    switch(dataSource) {
-      case 'families':
-        return [
-          { name: 'UHNW', value: 45 }, { name: 'HNW', value: 120 }, { name: 'Core', value: 340 }
-        ];
-      case 'contacts':
-        return [
-          { name: 'Principals', value: 85 }, { name: 'Advisors', value: 156 }, { name: 'Dependents', value: 210 }
-        ];
-      case 'activities':
-        return [
-          { name: 'Calls', value: 450 }, { name: 'Meetings', value: 120 }, { name: 'Emails', value: 1250 }
-        ];
-      case 'tasks':
-        return [
-          { name: 'To Do', value: 55 }, { name: 'In Progress', value: 34 }, { name: 'Review', value: 12 }, { name: 'Done', value: 89 }
-        ];
-      case 'calendar':
-        return [
-          { name: 'Q1', value: 120 }, { name: 'Q2', value: 145 }, { name: 'Q3', value: 110 }, { name: 'Q4', value: 95 }
-        ];
-      case 'portfolio':
-        return [
-          { name: 'Equities', value: 65000000 }, { name: 'Fixed Income', value: 30000000 }, { name: 'Alts', value: 15000000 }, { name: 'Cash', value: 5000000 }
-        ];
-      case 'documents':
-        return [
-          { name: 'Signed', value: 450 }, { name: 'Pending', value: 32 }, { name: 'Archived', value: 1200 }
-        ];
-      case 'estate':
-        return [
-          { name: 'Trusts', value: 45 }, { name: 'Wills', value: 120 }, { name: 'Directives', value: 85 }
-        ];
-      case 'governance':
-        return [
-          { name: 'Active', value: 12 }, { name: 'In Review', value: 3 }, { name: 'Drafts', value: 5 }
-        ];
-      case 'compliance':
-      case 'suitability':
-        return [
-          { name: 'Approved', value: 850 }, { name: 'Pending Review', value: 45 }, { name: 'Flagged', value: 12 }
-        ];
-      case 'concierge':
-        return [
-          { name: 'Travel', value: 120 }, { name: 'Events', value: 45 }, { name: 'Lifestyle', value: 80 }
-        ];
-      case 'crm_opportunities':
-        return [
-          { name: 'Q1', value: 120000 }, { name: 'Q2', value: 200000 }, { name: 'Q3', value: 150000 }, { name: 'Q4', value: 80000 }
-        ];
-      default:
-        return [
-          { name: 'Metric A', value: 42 }, { name: 'Metric B', value: 58 }
-        ];
+  const handleAiGenerate = async () => {
+    if (!aiPrompt.trim()) return;
+    setIsGenerating(true);
+    try {
+      const res = await fetch('/api/ai/chart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+           prompt: aiPrompt,
+           schema: { activeTable: dataSource },
+           theme: 'emerald'
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to generate chart');
+      
+      if (data.option) {
+         setChartConfigStr(JSON.stringify(data.option, null, 2));
+      }
+    } catch (e: any) {
+      toast.error("AI Generation Error: " + e.message);
+    } finally {
+      setIsGenerating(false);
     }
   };
 
-  const data = getMockData();
-
-  const getColors = () => {
-    if (colorScheme === 'emerald') return ['#10b981', '#34d399', '#6ee7b7', '#a7f3d0']; // Bright emerald sequence for charts
-    if (colorScheme === 'slate') return ['#64748b', '#94a3b8', '#cbd5e1', '#e2e8f0'];
-    return ['#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe']; // Blue
+  const handleSaveToDashboard = async () => {
+     if (!tenant?.id || !user?.uid) {
+        toast.error("You must be part of a tenant to save analytics.");
+        return;
+     }
+     if (!saveTitle.trim()) { toast.error("Please provide a title"); return; }
+     
+     setIsSaving(true);
+     try {
+       const db = getFirestore(firebaseApp);
+       await addDoc(collection(db, 'tenants', tenant.id, 'reports'), {
+         title: saveTitle,
+         type: 'echarts_widget',
+         config: parsedOption,
+         dataSource,
+         createdBy: user.uid,
+         createdAt: serverTimestamp()
+       });
+       toast.error("Successfully saved to your Analytics Dashboard!");
+     } catch (e: any) {
+       console.error(e);
+       toast.error("Failed to save report: " + e.message);
+     } finally {
+       setIsSaving(false);
+     }
   };
 
-  const option = {
-    color: getColors(),
-    textStyle: { fontFamily: 'Inter, sans-serif' },
-    tooltip: {
-      trigger: 'item',
-      backgroundColor: 'var(--bg-surface)',
-      borderColor: 'var(--border-subtle)',
-      borderWidth: 1,
-      textStyle: { color: 'var(--text-primary)', fontSize: 13, fontWeight: 600 },
-      extraCssText: 'box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border-radius: 8px;'
-    },
-    xAxis: chartType !== 'pie' ? {
-      type: 'category',
-      data: data.map(d => d.name),
-      axisLine: { lineStyle: { color: 'var(--border-strong)' } },
-      axisLabel: { color: 'var(--text-secondary)' }
-    } : undefined,
-    yAxis: chartType !== 'pie' ? {
-      type: 'value',
-      axisLine: { show: false },
-      splitLine: { lineStyle: { color: 'var(--border-subtle)', type: 'dashed' } },
-      axisLabel: { color: 'var(--text-secondary)' }
-    } : undefined,
-    series: [
-      {
-        type: chartType,
-        data: chartType === 'pie' ? data : data.map(d => d.value),
-        radius: chartType === 'pie' ? ['40%', '70%'] : undefined,
-        itemStyle: {
-          borderRadius: chartType === 'bar' ? [4, 4, 0, 0] : chartType === 'pie' ? 6 : 0,
-          borderColor: chartType === 'pie' ? 'var(--bg-surface)' : 'transparent',
-          borderWidth: chartType === 'pie' ? 2 : 0
-        },
-        symbolSize: 8,
-        smooth: true,
-      }
-    ]
-  };
+
 
   return (
     <div className="absolute inset-0 flex flex-col bg-[var(--bg-background)] overflow-hidden animate-fade-in z-40">
@@ -180,11 +161,15 @@ export default function BIBuilderPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-3 py-1.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--bg-surface)] rounded text-xs font-bold transition-colors">
-            <Play size={14} /> Preview Query
-          </button>
-          <button className="flex items-center gap-2 px-3 py-1.5 bg-[var(--brand-primary)] text-white border border-transparent hover:brightness-90 rounded text-xs font-bold transition-colors shadow-sm">
-            <Save size={14} /> Save Dashboard
+          <input 
+            type="text" 
+            value={saveTitle} 
+            onChange={e => setSaveTitle(e.target.value)} 
+            placeholder="Dashboard Widget Title" 
+            className="w-64 px-3 py-1.5 bg-[var(--bg-background)] border border-[var(--border-subtle)] rounded text-xs font-semibold focus:outline-none"
+          />
+          <button disabled={isSaving} onClick={handleSaveToDashboard} className="flex items-center gap-2 px-3 py-1.5 bg-[var(--brand-primary)] text-white border border-transparent hover:brightness-90 rounded text-xs font-bold transition-colors shadow-sm disabled:opacity-50">
+            {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} {isSaving ? 'Deploying...' : 'Save & Publish'}
           </button>
         </div>
       </div>
@@ -212,20 +197,22 @@ export default function BIBuilderPage() {
                  )) : (
                    <option value="none" disabled>No access to database tables</option>
                  )}
-               </select>
+                </select>
              </div>
-             <div>
-               <label className="block text-xs font-bold text-[var(--text-secondary)] mb-2">Metrics (Y Axis)</label>
-               <div className="bg-[var(--bg-background)] border border-[var(--border-subtle)] rounded-md p-2 flex items-center justify-center text-[var(--text-tertiary)] text-xs border-dashed">
-                  Drag numeric dimension here
-               </div>
-             </div>
-             <div>
-               <label className="block text-xs font-bold text-[var(--text-secondary)] mb-2">Grouping (X Axis / Slices)</label>
-               <div className="bg-[var(--bg-background)] border border-[var(--border-subtle)] rounded-md p-2 flex items-center gap-2 text-[var(--text-primary)] text-xs font-semibold shadow-sm">
-                  <span className="w-2 h-2 rounded-full bg-[var(--brand-primary)]"></span> Stage Dates
-               </div>
-             </div>
+          </div>
+          <div className="px-4 py-3 border-b border-t mt-auto border-[var(--border-subtle)] flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[var(--text-tertiary)] bg-[var(--bg-elevated)]">
+            <Bot size={14} /> AI Builder Prompt
+          </div>
+          <div className="p-4 flex-col flex shrink-0">
+             <textarea 
+               value={aiPrompt}
+               onChange={e => setAiPrompt(e.target.value)}
+               placeholder="Example: Produce a sleek 3D Globe with data routes, or a stacked area chart analyzing sales by quarter."
+               className="w-full h-32 bg-[var(--bg-background)] border border-indigo-200 text-[var(--text-primary)] text-xs rounded-md px-3 py-2 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 resize-none mb-3"
+             />
+             <button disabled={isGenerating} onClick={handleAiGenerate} className="w-full justify-center flex items-center gap-2 px-3 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded text-xs font-bold transition-colors shadow-sm disabled:opacity-50">
+                {isGenerating ? <Loader2 size={14} className="animate-spin" /> : <Bot size={14} />} {isGenerating ? 'Generating Chart logic via LLM...' : 'Generate with Copilot'}
+             </button>
           </div>
         </div>
 
@@ -236,60 +223,131 @@ export default function BIBuilderPage() {
           </div>
           
           <div ref={containerRef} className="flex-1 bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl shadow-sm overflow-hidden flex flex-col p-6 mt-10">
-             <ReactECharts ref={chartRef} option={option} style={{ height: '100%', width: '100%' }} />
+             {Object.keys(parsedOption).length > 0 ? (
+                <ReactECharts ref={chartRef} option={parsedOption} style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas' }} notMerge={true} lazyUpdate={true} />
+             ) : (
+                <div className="flex-1 flex items-center justify-center text-[var(--text-tertiary)] text-sm font-semibold">JSON Structure is invalid or empty.</div>
+             )}
           </div>
         </div>
 
-        {/* Right Pane: Visualization Styling */}
-        <div className="w-[300px] shrink-0 bg-[var(--bg-surface)] border-l border-[var(--border-subtle)] flex flex-col">
-          <div className="px-4 py-3 border-b border-[var(--border-subtle)] flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[var(--text-tertiary)] bg-[var(--bg-elevated)]">
-            <LayoutTemplate size={14} /> Visualization
+        <div className="w-[350px] shrink-0 bg-[var(--bg-surface)] border-l border-[var(--border-subtle)] flex flex-col">
+          <div className="flex items-center shrink-0 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-1 gap-1">
+             <button onClick={() => setRightTab('design')} className={`flex-1 py-1.5 text-xs font-bold rounded flex justify-center items-center gap-2 transition-colors ${rightTab === 'design' ? 'bg-[var(--bg-surface)] shadow-sm text-[var(--text-primary)] border border-[var(--border-subtle)]' : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'}`}>
+                <LayoutTemplate size={14} /> Studio Design
+             </button>
+             <button onClick={() => setRightTab('code')} className={`flex-1 py-1.5 text-xs font-bold rounded flex justify-center items-center gap-2 transition-colors ${rightTab === 'code' ? 'bg-[#1e1e1e] text-emerald-400 border border-[#333]' : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'}`}>
+                <Code size={14} /> Raw JSON
+             </button>
           </div>
-          <div className="p-4 flex-1 overflow-y-auto flex flex-col gap-6">
-             <div>
-               <label className="block text-xs font-bold text-[var(--text-secondary)] mb-3">Chart Type</label>
-               <div className="grid grid-cols-3 gap-2">
-                 {['bar', 'line', 'pie'].map(type => (
-                   <button 
-                     key={type}
-                     onClick={() => setChartType(type as any)}
-                     className={`py-2 rounded border text-xs font-bold capitalize transition-colors ${chartType === type ? 'bg-[var(--bg-elevated)] border-[var(--brand-primary)] text-[var(--brand-primary)] shadow-sm' : 'bg-transparent border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-strong)]'}`}
-                   >
-                     {type}
-                   </button>
-                 ))}
-               </div>
-             </div>
-             
-             <div>
-               <label className="block text-xs font-bold text-[var(--text-secondary)] mb-3">Color Scheme</label>
-               <div className="flex flex-col gap-2">
-                 {[
-                   { id: 'emerald', label: 'Deep Emerald', colors: ['bg-[#10b981]', 'bg-[#34d399]'] },
-                   { id: 'slate', label: 'Monochrome', colors: ['bg-[#64748b]', 'bg-[#94a3b8]'] },
-                   { id: 'blue', label: 'Ocean', colors: ['bg-[#3b82f6]', 'bg-[#60a5fa]'] },
-                 ].map(scheme => (
-                   <button 
-                     key={scheme.id}
-                     onClick={() => setColorScheme(scheme.id)}
-                     className={`flex items-center justify-between p-2 rounded border transition-colors ${colorScheme === scheme.id ? 'bg-[var(--bg-elevated)] border-[var(--brand-primary)] shadow-sm' : 'bg-transparent border-[var(--border-subtle)] hover:border-[var(--border-strong)]'}`}
-                   >
-                     <span className={`text-xs font-semibold ${colorScheme === scheme.id ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>{scheme.label}</span>
-                     <div className="flex items-center gap-0.5">
-                       <div className={`w-3 h-3 rounded-sm ${scheme.colors[0]}`}></div>
-                       <div className={`w-3 h-3 rounded-sm ${scheme.colors[1]}`}></div>
+          
+          {rightTab === 'design' ? (
+             <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-6">
+                {/* Title Controls */}
+                <div>
+                  <h3 className="text-xs font-bold text-[var(--text-secondary)] mb-3 border-b border-[var(--border-subtle)] pb-1">Chart Title</h3>
+                  <label className="flex items-center justify-between text-xs font-semibold text-[var(--text-primary)] mb-3 cursor-pointer">
+                     Display Title
+                     <div onClick={() => updateOption(o => { o.title = o.title || {}; o.title.show = o.title.show === false ? true : false; })} className={`w-8 h-4 rounded-full flex items-center transition-colors px-0.5 ${parsedOption?.title?.show !== false ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
+                        <div className={`w-3 h-3 bg-white rounded-full shadow-sm transition-transform ${parsedOption?.title?.show !== false ? 'translate-x-4' : 'translate-x-0'}`} />
                      </div>
-                   </button>
-                 ))}
-               </div>
-             </div>
+                  </label>
+                  <input type="text" value={parsedOption?.title?.text || ''} placeholder="Main Title" onChange={e => updateOption(o => { o.title = o.title || {}; o.title.text = e.target.value; })} className="w-full mb-2 bg-[var(--bg-background)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-xs rounded px-2 py-1.5 outline-none" />
+                  <input type="text" value={parsedOption?.title?.subtext || ''} placeholder="Subtitle Text" onChange={e => updateOption(o => { o.title = o.title || {}; o.title.subtext = e.target.value; })} className="w-full bg-[var(--bg-background)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-xs rounded px-2 py-1.5 outline-none" />
+                </div>
 
-             <div className="pt-4 border-t border-[var(--border-subtle)]">
-                <button className="w-full flex items-center justify-center gap-2 py-2 rounded border border-[var(--border-subtle)] bg-[var(--bg-background)] hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)] text-xs font-bold transition-colors">
-                  <Settings2 size={14} /> Advanced Settings
-                </button>
+                {/* Legend & Tooltip */}
+                <div>
+                  <h3 className="text-xs font-bold text-[var(--text-secondary)] mb-3 border-b border-[var(--border-subtle)] pb-1">Interactive Elements</h3>
+                  <label className="flex items-center justify-between text-xs font-semibold text-[var(--text-primary)] mb-3 cursor-pointer">
+                     Show Legend
+                     <div onClick={() => updateOption(o => { o.legend = o.legend || {}; o.legend.show = o.legend.show === false ? true : false; })} className={`w-8 h-4 rounded-full flex items-center transition-colors px-0.5 ${parsedOption?.legend?.show !== false ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
+                        <div className={`w-3 h-3 bg-white rounded-full shadow-sm transition-transform ${parsedOption?.legend?.show !== false ? 'translate-x-4' : 'translate-x-0'}`} />
+                     </div>
+                  </label>
+                  <label className="flex items-center justify-between text-xs font-semibold text-[var(--text-primary)] mb-3 cursor-pointer">
+                     Show Tooltips
+                     <div onClick={() => updateOption(o => { o.tooltip = o.tooltip || { trigger: 'item' }; o.tooltip.show = o.tooltip.show === false ? true : false; })} className={`w-8 h-4 rounded-full flex items-center transition-colors px-0.5 ${parsedOption?.tooltip?.show !== false ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
+                        <div className={`w-3 h-3 bg-white rounded-full shadow-sm transition-transform ${parsedOption?.tooltip?.show !== false ? 'translate-x-4' : 'translate-x-0'}`} />
+                     </div>
+                  </label>
+                  <label className="flex items-center justify-between text-xs font-semibold text-[var(--text-primary)] cursor-pointer">
+                     Enable DataZoom Sliders
+                     <div onClick={() => updateOption(o => { if(o.dataZoom){ delete o.dataZoom; } else { o.dataZoom = [{ type: 'slider', show: true }]; } })} className={`w-8 h-4 rounded-full flex items-center transition-colors px-0.5 ${parsedOption?.dataZoom ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
+                        <div className={`w-3 h-3 bg-white rounded-full shadow-sm transition-transform ${parsedOption?.dataZoom ? 'translate-x-4' : 'translate-x-0'}`} />
+                     </div>
+                  </label>
+                </div>
+
+                {/* Series Base Type */}
+                <div>
+                  <h3 className="text-xs font-bold text-[var(--text-secondary)] mb-3 border-b border-[var(--border-subtle)] pb-1">Primary Series Override</h3>
+                  <div className="grid grid-cols-3 gap-2">
+                     {['bar', 'line', 'pie', 'scatter', 'area', 'radar', 'funnel', 'gauge', 'heatmap', 'candlestick'].map(t => (
+                        <button 
+                           key={t} 
+                           onClick={() => updateOption(o => { 
+                             if(o.series?.[0]) {
+                               o.series[0].type = t === 'area' ? 'line' : t; 
+                               if(t === 'area') o.series[0].areaStyle = {};
+                               else if (o.series[0].areaStyle) delete o.series[0].areaStyle;
+                               
+                               if (t === 'heatmap') {
+                                 if (!o.visualMap) o.visualMap = { min: 0, max: 100, calculable: true, orient: 'horizontal', left: 'center', bottom: '0%' };
+                                 // Heatmaps strictly require X and Y axes to be 'category' types
+                                 if (!o.xAxis) o.xAxis = { type: 'category' };
+                                 if (!o.yAxis) o.yAxis = { type: 'category' };
+
+                                 if (Array.isArray(o.xAxis)) { o.xAxis.forEach((axis: any) => axis.type = 'category'); } 
+                                 else { o.xAxis.type = 'category'; }
+
+                                 if (Array.isArray(o.yAxis)) { o.yAxis.forEach((axis: any) => axis.type = 'category'); } 
+                                 else { o.yAxis.type = 'category'; }
+                               } else {
+                                 delete o.visualMap;
+                               }
+                             }
+                           })} 
+                           className={`py-1.5 capitalize text-[11px] font-bold rounded border transition-colors ${
+                              (parsedOption?.series?.[0]?.type === t || (t === 'area' && parsedOption?.series?.[0]?.areaStyle)) 
+                              ? 'border-indigo-500 bg-indigo-50 text-indigo-700' 
+                              : 'border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]'
+                           }`}
+                        >
+                           {t}
+                        </button>
+                     ))}
+                  </div>
+                  <p className="text-[10px] text-[var(--text-tertiary)] font-medium mt-3 leading-relaxed bg-[var(--bg-elevated)] p-2 rounded border border-[var(--border-subtle)]">
+                     <strong>Missing 3D/Maps/Trees?</strong> Advanced charts (like 3D Globe, Geo/Map, Sankey, Sunburst, or Tree) require specialized hierarchical or geographic datasets. To use them, prompt the <strong>AI Copilot</strong> directly, or paste config into the <strong>Raw JSON</strong> tab.
+                  </p>
+                </div>
+                
+                {/* Advanced Toolkit */}
+                <div>
+                  <h3 className="text-xs font-bold text-[var(--text-secondary)] mb-3 border-b border-[var(--border-subtle)] pb-1">Export Toolbox</h3>
+                  <label className="flex items-center justify-between text-xs font-semibold text-[var(--text-primary)] cursor-pointer">
+                     Enable Download/Save Menu
+                     <div onClick={() => updateOption(o => { if(o.toolbox?.show === true){ delete o.toolbox; } else { o.toolbox = { show: true, feature: { saveAsImage: { show: true } } }; } })} className={`w-8 h-4 rounded-full flex items-center transition-colors px-0.5 ${parsedOption?.toolbox?.show === true ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
+                        <div className={`w-3 h-3 bg-white rounded-full shadow-sm transition-transform ${parsedOption?.toolbox?.show === true ? 'translate-x-4' : 'translate-x-0'}`} />
+                     </div>
+                  </label>
+                </div>
              </div>
-          </div>
+          ) : (
+             <div className="flex-1 overflow-hidden flex flex-col bg-[#1e1e1e]">
+                <div className="px-3 py-1.5 text-[10px] text-gray-400 bg-[#2d2d2d] flex justify-between">
+                   <span>Advanced Mode (Live)</span>
+                   <a href="https://echarts.apache.org/examples/en/index.html" target="_blank" className="text-indigo-400 hover:text-indigo-300">View ECharts Reference API</a>
+                </div>
+                <textarea 
+                  value={chartConfigStr}
+                  spellCheck={false}
+                  onChange={e => setChartConfigStr(e.target.value)}
+                  className="flex-1 w-full p-4 font-mono text-[12px] text-emerald-300 bg-transparent outline-none resize-none leading-relaxed"
+                />
+             </div>
+          )}
         </div>
       </div>
     </div>

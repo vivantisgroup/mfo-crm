@@ -4,16 +4,23 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, orderBy, onSnapshot, addDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
-import { Building2, Plus, Search, X, Users, Landmark, FileText, BadgeDollarSign, Scale, Lock, ShieldCheck, Map, Search as SearchIcon, Umbrella, Ruler, Handshake, Heart, Sprout, Pin, Building } from 'lucide-react';
-import { Select, SelectItem } from '@tremor/react';
+import { Building2, Plus, Search, X, Users, Landmark, FileText, BadgeDollarSign, Scale, Lock, ShieldCheck, Map, Search as SearchIcon, Umbrella, Ruler, Handshake, Heart, Sprout, Pin, Building, UserCog } from 'lucide-react';
+import { RichTextEditor } from '@/components/ui/RichTextEditor';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface Organization {
+ export interface Organization {
  id: string;
  name: string;
  type: string;
  jurisdiction?: string;
+ jurisdictionClass?: 'onshore' | 'offshore';
+ identifier?: string; // e.g. CNPJ, EIN
+ addressStreet?: string;
+ addressCity?: string;
+ addressState?: string;
+ addressZip?: string;
+ addressCountry?: string;
  linkedFamilyIds: string[];
  linkedFamilyNames: string[];
  linkedContactIds: string[];
@@ -31,7 +38,10 @@ const ORG_TYPES = [
   'family_group', 'financial_institution', 'accountant', 'tax_consultant', 'lawyer',
   'trustee', 'fiduciary_admin', 'offshore_admin', 'corporate_provider', 'auditor',
   'insurance_company', 'insurance_consultant', 'real_estate_admin', 'appraiser',
-  'governance_consultant', 'philanthropic_consultant', 'foundation', 'other'
+  'governance_consultant', 'philanthropic_consultant', 'foundation', 
+  'corporate_service_provider', 'corporate_administrator', 'offshore_provider', 
+  'insurance_manager', 'registered_agent', 'nominee_director', 'registered_office',
+  'other'
 ];
 
 const TYPE_LABELS: Record<string, string> = {
@@ -52,6 +62,13 @@ const TYPE_LABELS: Record<string, string> = {
   governance_consultant: 'Consultor de Governança',
   philanthropic_consultant: 'Consultor Filantrópico',
   foundation: 'Fundação',
+  corporate_service_provider: 'Corporate Service Provider',
+  corporate_administrator: 'Corporate Administrator',
+  offshore_provider: 'Offshore Provider',
+  insurance_manager: 'Insurance Manager',
+  registered_agent: 'Registered Agent',
+  nominee_director: 'Nominee Director',
+  registered_office: 'Registered Office',
   other: 'Outros'
 };
 
@@ -73,6 +90,13 @@ const TYPE_COLORS: Record<string, string> = {
   governance_consultant: 'sky',
   philanthropic_consultant: 'lime',
   foundation: 'emerald',
+  corporate_service_provider: 'indigo',
+  corporate_administrator: 'slate',
+  offshore_provider: 'cyan',
+  insurance_manager: 'rose',
+  registered_agent: 'violet',
+  nominee_director: 'amber',
+  registered_office: 'zinc',
   other: 'slate'
 };
 
@@ -94,16 +118,27 @@ const TYPE_ICONS: Record<string, any> = {
   governance_consultant: Handshake, 
   philanthropic_consultant: Heart, 
   foundation: Sprout, 
+  corporate_service_provider: Building2,
+  corporate_administrator: Users,
+  offshore_provider: Map,
+  insurance_manager: Umbrella,
+  registered_agent: ShieldCheck,
+  nominee_director: UserCog,
+  registered_office: Pin,
   other: Pin
 };
 
 // ─── Create org drawer ────────────────────────────────────────────────────────
 
 function CreateOrgView({ tenantId, onClose }: { tenantId: string; onClose: () => void }) {
- const [form, setForm] = useState({ name: '', type: 'family_group', jurisdiction: '', notes: '', status: 'active' });
+ const [form, setForm] = useState<Partial<Organization>>({ 
+   name: '', type: 'family_group', jurisdiction: '', jurisdictionClass: 'offshore', identifier: '',
+   addressStreet: '', addressCity: '', addressState: '', addressZip: '', addressCountry: '',
+   notes: '', status: 'active' 
+  });
  const [saving, setSaving] = useState(false);
 
- const valid = form.name.trim().length > 0;
+ const valid = (form.name || '').trim().length > 0;
 
  async function handleSave(e?: React.FormEvent) {
  if (e) e.preventDefault();
@@ -141,22 +176,22 @@ function CreateOrgView({ tenantId, onClose }: { tenantId: string; onClose: () =>
 
        <div className="flex flex-col gap-2">
          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Entity Type</span>
-         <Select value={form.type} onValueChange={(val) => setForm(p => ({ ...p, type: val }))}>
+         <select className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-[var(--bg-surface)] px-3 py-2 text-sm shadow-sm ring-offset-background" value={form.type} onChange={(e) => setForm(p => ({ ...p, type: e.target.value }))}>
            {ORG_TYPES.map(t => {
-             const IconComp = TYPE_ICONS[t];
              return (
-               <SelectItem key={t} value={t} icon={IconComp}>
+               <option key={t} value={t}>
                  {TYPE_LABELS[t]}
-               </SelectItem>
+               </option>
              );
            })}
-         </Select>
+         </select>
        </div>
 
        <div className="flex flex-col gap-2">
          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Jurisdiction</span>
-         <input className="input w-full" list="jurisdictions-list" value={form.jurisdiction} onChange={e => setForm(p => ({ ...p, jurisdiction: e.target.value }))} placeholder="e.g. Delaware, Cayman Islands" />
+         <input className="input w-full" list="jurisdictions-list" value={form.jurisdiction} onChange={e => setForm(p => ({ ...p, jurisdiction: e.target.value }))} placeholder="e.g. Delaware, Cayman Islands, Brazil" />
          <datalist id="jurisdictions-list">
+           <option value="Brazil" />
            <option value="British Virgin Islands" />
            <option value="Cayman Islands" />
            <option value="Bermuda" />
@@ -170,15 +205,66 @@ function CreateOrgView({ tenantId, onClose }: { tenantId: string; onClose: () =>
          </datalist>
        </div>
 
+       {/* Conditional fields for Financial Institutions (and related entities) */}
+       {form.type === 'financial_institution' && (
+         <div className="col-span-2 grid grid-cols-2 gap-x-8 gap-y-6 mt-2 pt-6 border-t border-slate-100">
+           <div className="col-span-2">
+             <h3 className="text-sm font-bold text-slate-700 mb-1 flex items-center gap-2">
+               <Map className="w-4 h-4 text-slate-400" />
+               Institutional Metadata
+             </h3>
+             <p className="text-xs text-slate-500">Address and tax identification for automated document pairing.</p>
+           </div>
+           
+           <div className="col-span-2 sm:col-span-1 flex flex-col gap-2">
+             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Classification</span>
+             <select className="flex h-9 w-full rounded-md border border-input bg-[var(--bg-surface)] px-3 py-2 text-sm shadow-sm" value={form.jurisdictionClass} onChange={e => setForm(p => ({ ...p, jurisdictionClass: e.target.value as any}))}>
+               <option value="onshore">Onshore (Domestic)</option>
+               <option value="offshore">Offshore (International)</option>
+             </select>
+           </div>
+           
+           <div className="col-span-2 sm:col-span-1 flex flex-col gap-2">
+             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">CNPJ / Tax Identifier</span>
+             <input className="input w-full" value={form.identifier} onChange={e => setForm(p => ({ ...p, identifier: e.target.value }))} placeholder="e.g. 00.000.000/0001-00" />
+           </div>
+
+           <div className="col-span-2 flex flex-col gap-2">
+             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Street Address</span>
+             <input className="input w-full" value={form.addressStreet} onChange={e => setForm(p => ({ ...p, addressStreet: e.target.value }))} placeholder="e.g. Av. Faria Lima, 3000" />
+           </div>
+           
+           <div className="flex flex-col gap-2">
+             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">City</span>
+             <input className="input w-full" value={form.addressCity} onChange={e => setForm(p => ({ ...p, addressCity: e.target.value }))} placeholder="e.g. São Paulo" />
+           </div>
+           
+           <div className="flex flex-col gap-2">
+             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">State / Region</span>
+             <input className="input w-full" value={form.addressState} onChange={e => setForm(p => ({ ...p, addressState: e.target.value }))} placeholder="e.g. SP" />
+           </div>
+
+           <div className="flex flex-col gap-2">
+             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Postal / ZIP Code</span>
+             <input className="input w-full" value={form.addressZip} onChange={e => setForm(p => ({ ...p, addressZip: e.target.value }))} placeholder="e.g. 01452-000" />
+           </div>
+           
+           <div className="flex flex-col gap-2">
+             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Country</span>
+             <input className="input w-full" value={form.addressCountry} onChange={e => setForm(p => ({ ...p, addressCountry: e.target.value }))} placeholder="e.g. Brazil" />
+           </div>
+         </div>
+       )}
+
        <div className="col-span-2 flex flex-col gap-2">
          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Internal Notes</span>
-         <textarea 
-           value={form.notes} 
-           onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} 
-           rows={4}
-           className="input w-full resize-y"
-           placeholder="Additional context or formation details..."
-         />
+         <div className="min-h-[200px] border border-slate-200 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-transparent transition-all">
+           <RichTextEditor 
+             value={form.notes || ''} 
+             onChange={val => setForm(p => ({ ...p, notes: val }))} 
+             placeholder="Additional context or formation details..."
+           />
+         </div>
        </div>
      </div>
 
@@ -322,6 +408,8 @@ export default function OrganizationsPage() {
       {TYPE_LABELS[o.type] || o.type}
       </span>
       {o.jurisdiction && <span className="text-xs font-medium truncate max-w-[120px]" style={{ color: 'var(--text-secondary)' }}>· {o.jurisdiction}</span>}
+      {o.jurisdictionClass && <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">· {o.jurisdictionClass}</span>}
+      {o.identifier && <span className="text-xs font-medium text-slate-400">· {o.identifier}</span>}
       </div>
       </div>
       </div>

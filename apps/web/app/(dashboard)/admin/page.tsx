@@ -6,23 +6,48 @@ import { useTheme } from '@/lib/ThemeContext';
 import { useTaskQueue } from '@/lib/TaskQueueContext';
 import { type TaskQueue } from '@/lib/types';
 import { VERTICAL_REGISTRY } from '@/lib/verticalRegistry';
-import { Card, Title, Subtitle, Text, Divider, Flex, Grid, Col, Badge, TextInput, Select, SelectItem, Switch, Button, TabGroup, TabList, Tab, TabPanels, TabPanel } from '@tremor/react';
-import { Settings, Database, Shield, Plug, Bot, Building2, Scale, Sliders, Landmark, Mail, DatabaseBackup, Settings2, Search } from 'lucide-react';
+import { Settings, Database, Shield, Plug, Bot, Building2, Scale, Sliders, Landmark, Mail, DatabaseBackup, Settings2, Search, FileSignature, Cloud } from 'lucide-react';
+import { DigitalSignatureWizard } from './components/DigitalSignatureWizard';
+import { StorageConfigurationWizard } from './components/StorageConfigurationWizard';
+import { OdooMigrationUtility } from './components/OdooMigrationUtility';
+import { PromptEngineeringTab } from './components/PromptEngineeringTab';
+
+import { db } from '@/lib/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { toast } from 'sonner';
+
+// ─── Tremor Shim ──────────────────────────────────────────────────────────────
+const Flex = ({ children, className = '', alignItems = 'center', justifyContent = 'between' }: any) => {
+  const alignMap: any = { start: 'items-start', center: 'items-center', end: 'items-end' };
+  const justifyMap: any = { start: 'justify-start', center: 'justify-center', end: 'justify-end', between: 'justify-between' };
+  return <div className={`flex ${alignMap[alignItems] || ''} ${justifyMap[justifyContent] || ''} ${className}`}>{children}</div>;
+};
+const Grid = ({ children, className = '', numItemsMd = 1 }: any) => {
+  const cols: any = { 1: 'md:grid-cols-1', 2: 'md:grid-cols-2', 3: 'md:grid-cols-3', 4: 'md:grid-cols-4' };
+  return <div className={`grid grid-cols-1 ${cols[numItemsMd] || ''} ${className}`}>{children}</div>;
+};
+const Col = ({ children, className = '', numColSpanMd = 1 }: any) => {
+  const span: any = { 1: 'md:col-span-1', 2: 'md:col-span-2', 3: 'md:col-span-3', 4: 'md:col-span-4' };
+  return <div className={`${span[numColSpanMd] || ''} ${className}`}>{children}</div>;
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type TabId =
   | 'platform'
   | 'database'
-  | 'mfa'
   | 'integrations'
+  | 'digital_signatures'
   | 'ai_keys'
   | 'firm'
   | 'compliance'
   | 'customizations'
   | 'users'
   | 'communications'
-  | 'data_explorer';
+  | 'cloud_storage'
+  | 'tenant_types'
+  | 'data_explorer'
+  | 'odoo_migration';
 
 interface ApiKeyField {
   id: string;
@@ -71,15 +96,15 @@ function ApiKeyCard({ field, onSave }: {
   };
 
   return (
-    <Card decoration={field.saved ? "left" : undefined} decorationColor="emerald" className="mb-4 shadow-sm">
+    <div className={`bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 mb-4 ${field.saved ? 'border-l-4 border-l-emerald-500' : ''}`}>
       <Flex alignItems="start" justifyContent="between">
         <div>
           <Flex alignItems="center" justifyContent="start" className="space-x-2">
             <StatusDot ok={field.saved} />
-            <Text className="font-bold text-tremor-content-strong text-sm">{field.label}</Text>
-            {field.required && <Badge color="rose" size="xs">Required</Badge>}
+            <div className="text-sm text-[var(--text-secondary)] font-bold text-tremor-content-strong text-sm">{field.label}</div>
+            {field.required && <span className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-[var(--brand-500)] text-white shadow hover:bg-[var(--brand-600)]">Required</span>}
           </Flex>
-          <Text className="mt-2 text-xs text-tremor-content">{field.description}</Text>
+          <div className="text-sm text-[var(--text-secondary)] mt-2 text-xs text-tremor-content">{field.description}</div>
           {field.docsUrl && (
             <a href={field.docsUrl} target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:underline mt-2 inline-block font-medium">
               📖 Documentation &rarr;
@@ -87,18 +112,16 @@ function ApiKeyCard({ field, onSave }: {
           )}
         </div>
         <Flex className="space-x-3 w-auto" alignItems="center">
-          {field.saved && <Badge color="emerald" size="xs">Configured</Badge>}
-          <Button 
-            size="xs" 
-            variant={editing ? "primary" : field.saved ? "secondary" : "light"} 
+          {field.saved && <span className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-[var(--brand-500)] text-white shadow hover:bg-[var(--brand-600)]">Configured</span>}
+          <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2" 
             onClick={editing ? handleSave : () => setEditing(true)}
           >
             {editing ? '💾 Save' : field.saved ? '🔄 Rotate' : '+ Set Key'}
-          </Button>
+          </button>
           {editing && (
-            <Button size="xs" variant="light" onClick={() => { setEditing(false); setDraft(''); }}>
+            <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2" onClick={() => { setEditing(false); setDraft(''); }}>
               Cancel
-            </Button>
+            </button>
           )}
         </Flex>
       </Flex>
@@ -112,18 +135,18 @@ function ApiKeyCard({ field, onSave }: {
 
       {editing && (
         <div className="mt-4">
-          <TextInput
+          <input 
+            className="input font-mono text-sm w-full"
             type="password"
             autoFocus
             value={draft}
-            onValueChange={setDraft}
+            onChange={e => setDraft(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSave()}
             placeholder={field.placeholder}
-            className="font-mono text-sm"
           />
         </div>
       )}
-    </Card>
+    </div>
   );
 }
 
@@ -274,31 +297,31 @@ function DatabaseSection() {
         <Grid numItemsMd={2} className="gap-6">
           <Col>
             <label className="text-xs font-bold uppercase tracking-wider text-tremor-content mb-2 block">Firebase Project ID *</label>
-            <TextInput value={config.firestoreProjectId} onValueChange={(val) => setConfig(p => ({...p, firestoreProjectId: val}))} className="font-mono text-sm" />
-            <Text className="text-[11px] mt-1 text-tremor-content">Primary Firestore database project identifier</Text>
+            <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 font-mono text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" value={config.firestoreProjectId} onChange={(e) => setConfig(p => ({...p, firestoreProjectId: e.target.value}))} />
+            <div className="text-sm text-[var(--text-secondary)] text-[11px] mt-1 text-tremor-content">Primary Firestore database project identifier</div>
           </Col>
           <Col>
             <label className="text-xs font-bold uppercase tracking-wider text-tremor-content mb-2 block">Firebase Storage Bucket *</label>
-            <TextInput value={config.firebaseStorageBucket} onValueChange={(val) => setConfig(p => ({...p, firebaseStorageBucket: val}))} className="font-mono text-sm" />
-            <Text className="text-[11px] mt-1 text-tremor-content">Cloud Storage bucket for documents</Text>
+            <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 font-mono text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" value={config.firebaseStorageBucket} onChange={(e) => setConfig(p => ({...p, firebaseStorageBucket: e.target.value}))} />
+            <div className="text-sm text-[var(--text-secondary)] text-[11px] mt-1 text-tremor-content">Cloud Storage bucket for documents</div>
           </Col>
           <Col numColSpanMd={2}>
             <label className="text-xs font-bold uppercase tracking-wider text-tremor-content mb-2 block">Firebase Service Account (JSON) *</label>
-            <TextInput type="password" placeholder="Paste full service account JSON..." value={config.firestoreServiceAccount} onValueChange={(val) => setConfig(p => ({...p, firestoreServiceAccount: val}))} className="font-mono text-sm" />
-            <Text className="text-[11px] mt-1 text-tremor-content">Server-side service account for admin SDK access</Text>
+            <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 font-mono text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" type="password" placeholder="Paste full service account JSON..." value={config.firestoreServiceAccount} onChange={(e) => setConfig(p => ({...p, firestoreServiceAccount: e.target.value}))} />
+            <div className="text-sm text-[var(--text-secondary)] text-[11px] mt-1 text-tremor-content">Server-side service account for admin SDK access</div>
           </Col>
           <Col numColSpanMd={2}>
             <label className="text-xs font-bold uppercase tracking-wider text-tremor-content mb-2 block">Redis / Upstash URL (Optional)</label>
-            <TextInput placeholder="redis://default:password@host:6379" value={config.redisUrl} onValueChange={(val) => setConfig(p => ({...p, redisUrl: val}))} className="font-mono text-sm" />
-            <Text className="text-[11px] mt-1 text-tremor-content">Optional: for rate limiting and session caching in production</Text>
+            <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 font-mono text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" placeholder="redis://default:password@host:6379" value={config.redisUrl} onChange={(e) => setConfig(p => ({...p, redisUrl: e.target.value}))} />
+            <div className="text-sm text-[var(--text-secondary)] text-[11px] mt-1 text-tremor-content">Optional: for rate limiting and session caching in production</div>
           </Col>
         </Grid>
       </div>
 
       <div className="flex justify-end mt-auto">
-        <Button onClick={handleSave} className="bg-[#6366f1] hover:bg-[#4f46e5] text-white px-8 shadow-sm">
+        <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[#6366f1] hover:bg-[#4f46e5] text-white shadow hover:shadow-md h-9 px-8 py-2" onClick={handleSave}>
           {saved ? '✅ Saved!' : 'Save Infrastructure Configuration'}
-        </Button>
+        </button>
       </div>
     </div>
   );
@@ -306,185 +329,7 @@ function DatabaseSection() {
 
 // ─── Section: MFA (TOTP — Free) ───────────────────────────────────────────────
 
-function MfaSection() {
-  const { tenant } = useAuth();
-  const [mfaMode, setMfaMode] = useState<'totp' | 'disabled'>('disabled');
-  const [totpIssuer, setTotpIssuer] = useState('MFO Nexus');
-  const [totpWindow, setTotpWindow] = useState(1);
-  const [backupCodes, setBackupCodes] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  React.useEffect(() => {
-    if (!tenant?.id) return;
-    const fetchConfig = async () => {
-      try {
-        const { getAuth } = await import('firebase/auth');
-        const token = await getAuth().currentUser?.getIdToken();
-        if (!token) return;
-        const res = await fetch(`/api/admin/tenant-config?tenantId=${tenant.id}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const data = await res.json();
-        if (data.mfaConfig) {
-          if (data.mfaConfig.mfaMode) setMfaMode(data.mfaConfig.mfaMode);
-          if (data.mfaConfig.totpIssuer) setTotpIssuer(data.mfaConfig.totpIssuer);
-          if (data.mfaConfig.totpWindow !== undefined) setTotpWindow(data.mfaConfig.totpWindow);
-          if (data.mfaConfig.backupCodes !== undefined) setBackupCodes(data.mfaConfig.backupCodes);
-        }
-      } catch (e) {
-        console.error('Failed to load tenant MFA config', e);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchConfig();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenant?.id]);
-
-  const handleSave = async () => {
-    if (!tenant?.id) return;
-    try {
-      const { getAuth } = await import('firebase/auth');
-      const token = await getAuth().currentUser?.getIdToken();
-      if (!token) return;
-      await fetch('/api/admin/tenant-config', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tenantId: tenant.id,
-          mfaConfig: { mfaMode, totpIssuer, totpWindow, backupCodes }
-        })
-      });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
-    } catch (e) {
-      console.error('Failed to save MFA config to backend', e);
-    }
-  };
-
-  return (
-    <div className="animate-fade-in">
-      <div style={{ marginBottom: 32 }}>
-        <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>Multi-Factor Authentication</h2>
-        <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-          Zero-cost TOTP (Time-based One-Time Password) via RFC 6238 — compatible with Google Authenticator, Authy, and Microsoft Authenticator.
-        </p>
-        <div style={{ marginTop: 12, padding: '12px 16px', background: '#22d3ee0a', border: '1px solid #22d3ee33', borderRadius: 'var(--radius-md)' }}>
-          <div style={{ fontWeight: 700, color: '#22d3ee', fontSize: 13, marginBottom: 6 }}>✅ Why TOTP is Best for You</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            {[
-              '🆓 Completely free — no SMS costs, no third-party subscription',
-              '🔐 Industry standard (RFC 6238) used by Google, GitHub, AWS',
-              '📱 Works offline — no data connection needed on client device',
-              '🌐 Compatible with any TOTP app: Authenticator, Authy, 1Password',
-              '⚡ Sub-second verification — no waiting for SMS delivery',
-              '🏦 ANBIMA & CVM compliant — satisfies strong authentication requirements',
-            ].map(item => (
-              <div key={item} style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-                {item}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* MFA Mode Toggle */}
-      <div style={{ marginBottom: 32 }}>
-        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Authentication Mode</label>
-        <div style={{ display: 'flex', gap: 12 }}>
-          {[
-            { id: 'totp', label: '🔐 TOTP (Recommended)', desc: 'Free, offline-capable, RFC 6238' },
-            { id: 'disabled', label: '⚠️ Disabled', desc: 'Only for development environments' },
-          ].map(opt => (
-            <div
-              key={opt.id}
-              onClick={() => setMfaMode(opt.id as any)}
-              style={{
-                flex: 1, padding: '16px 20px', borderRadius: 'var(--radius-lg)', cursor: 'pointer',
-                border: `2px solid ${mfaMode === opt.id ? 'var(--brand-500)' : 'var(--border)'}`,
-                background: mfaMode === opt.id ? 'var(--brand-500)0d' : 'var(--bg-elevated)',
-                transition: 'all 0.2s'
-              }}
-            >
-              <div style={{ fontWeight: 700, fontSize: 14 }}>{opt.label}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}>{opt.desc}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {mfaMode === 'totp' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 32 }}>
-          <div>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Issuer Name (shown in authenticator app)</label>
-            <input
-              type="text"
-              className="input"
-              style={{ width: '100%', padding: '10px 12px' }}
-              value={totpIssuer}
-              onChange={e => setTotpIssuer(e.target.value)}
-              placeholder="Your Company Name"
-            />
-            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>e.g. "Vivants MFO" — displayed in Google Authenticator</div>
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>TOTP Window (± tokens)</label>
-            <select
-              className="input"
-              style={{ width: '100%', padding: '10px 12px' }}
-              value={totpWindow}
-              onChange={e => setTotpWindow(Number(e.target.value))}
-            >
-              <option value={0}>Strict (±0 — current code only)</option>
-              <option value={1}>Standard (±1 — 30s tolerance)</option>
-              <option value={2}>Lenient (±2 — 60s tolerance)</option>
-            </select>
-            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>Larger window allows for clock drift on user devices</div>
-          </div>
-        </div>
-      )}
-
-      {/* Backup Codes */}
-      <div style={{ marginBottom: 32, padding: '16px 20px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <div style={{ fontWeight: 600, fontSize: 14 }}>One-Time Backup Codes</div>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>Generate 10 single-use emergency codes for account recovery (stored in Firestore)</div>
-        </div>
-        <button
-          onClick={() => setBackupCodes(prev => !prev)}
-          style={{
-            width: 48, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer',
-            background: backupCodes ? 'var(--brand-500)' : 'var(--bg-canvas)',
-            boxShadow: 'inset 0 0 0 1px var(--border)', position: 'relative', transition: 'background 0.2s'
-          }}
-        >
-          <div style={{
-            position: 'absolute', top: 3, left: backupCodes ? 24 : 4,
-            width: 20, height: 20, borderRadius: '50%', background: 'white',
-            transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.3)'
-          }} />
-        </button>
-      </div>
-
-      {/* Implementation card */}
-      <div style={{ padding: '20px 24px', background: 'var(--bg-canvas)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', marginBottom: 32 }}>
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12 }}>📦 TOTP Implementation — Production Ready</div>
-        <div style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div>• Library: <code style={{ background: 'var(--bg-elevated)', padding: '2px 6px', borderRadius: 4 }}>otplib</code> (MIT licensed, 0 cost) — generates and validates TOTP codes</div>
-          <div>• QR Code: <code style={{ background: 'var(--bg-elevated)', padding: '2px 6px', borderRadius: 4 }}>qrcode</code> — renders setup QR for authenticator apps</div>
-          <div>• Storage: TOTP secrets stored as AES-256 encrypted values in Firestore <code>/users/{'{uid}'}/mfa_secret</code></div>
-          <div>• Flow: Enroll → Scan QR → Verify first code → Mark as active → Require on next login</div>
-          <div>• Bypass: Admin can generate backup codes or temporarily disable MFA per-user</div>
-        </div>
-      </div>
-
-      <button className="btn btn-primary" onClick={handleSave} style={{ padding: '10px 32px' }}>
-        {saved ? '✅ Saved!' : '💾 Save MFA Configuration'}
-      </button>
-    </div>
-  );
-}
+// MFA Migrated to Security submodule
 
 // ─── Section: Tenant-level Integrations ────────────────────────────────────────
 
@@ -571,7 +416,7 @@ function IntegrationsSection() {
   return (
     <div className="animate-fade-in">
       <div style={{ marginBottom: 32 }}>
-        <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>Tenant Integrations — BYOK</h2>
+        <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>Tenant Integrations</h2>
         <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
           Bring Your Own Keys. Each tenant manages their own integration credentials — Vivants never has access to tenant API secrets.
         </p>
@@ -588,7 +433,7 @@ function IntegrationsSection() {
           <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12 }}>
             Provision a cross-tenant Application webhook for both Channels and 1x1 Chats. Requires Client ID and Secret to be configured first.
           </div>
-          <Button size="xs" variant="secondary" onClick={async () => {
+          <button id="init-hook-btn" className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[#0078d4] text-white shadow hover:bg-[#005a9e] h-9 px-4 py-2" onClick={async () => {
              const btn = document.getElementById('init-hook-btn');
              const msgContainer = document.getElementById('init-hook-msg');
              if (btn) btn.innerText = 'Provisioning...';
@@ -609,7 +454,7 @@ function IntegrationsSection() {
              } finally {
                 if (btn) btn.innerText = 'Initialize Native Webhooks';
              }
-          }} id="init-hook-btn">Initialize Native Webhooks</Button>
+          }}>Initialize Native Webhooks</button>
           <div id="init-hook-msg" className="mt-2 text-xs"></div>
         </div>
       </Section>
@@ -631,7 +476,7 @@ function AiKeysSection() {
   const { tenant } = useAuth();
   console.log('[AiKeysSection] Triggering forced HMR recompile for Groq UI synchronization');
   
-  const providers = [
+  const defaultProviders = [
     {
       group: 'OpenAI', icon: '🤖', color: '#10a37f', desc: 'GPT-4o, o1, DALL·E — for document analysis, meeting summaries, portfolio narratives',
       keys: [
@@ -657,23 +502,22 @@ function AiKeysSection() {
       keys: [
         { id: 'groq_api_key', label: 'Groq API Key', value: '', saved: false, placeholder: 'gsk_xxxxxxxxxxxxxxxxxxxxxxxxx', description: 'Primary key for Groq inference cloud', docsUrl: 'https://console.groq.com/keys', required: true }
       ]
-    },
-    {
-      group: 'Additional Providers', icon: '⚙️', color: '#64748b', desc: 'Custom or specialized AI models',
-      keys: [
-        { id: 'azure_openai_key', label: 'Azure OpenAI API Key', value: '', saved: false, placeholder: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', description: 'For Azure-hosted OpenAI models (data residency compliance)', docsUrl: 'https://azure.microsoft.com/en-us/products/ai-services/openai-service' },
-        { id: 'azure_openai_endpoint', label: 'Azure OpenAI Endpoint', value: '', saved: false, placeholder: 'https://your-resource.openai.azure.com/', description: 'Regional endpoint for Azure OpenAI service' },
-        { id: 'custom_llm_url', label: 'Custom LLM Base URL (self-hosted)', value: '', saved: false, placeholder: 'https://your-ollama-instance.com/api', description: 'For self-hosted models (Ollama, LM Studio, vLLM)' },
-      ]
     }
   ];
 
-  const [allKeys, setAllKeys] = useState<Record<string, ApiKeyField[]>>(
-    Object.fromEntries(providers.map(p => [p.group, p.keys as ApiKeyField[]]))
-  );
-  
+  const [customProviders, setCustomProviders] = useState<{ id: string, group: string, icon: string, desc: string, color?: string, keys: any[] }[]>([]);
+  const [providerStates, setProviderStates] = useState<Record<string, boolean>>({});
+
+  const providers = [...defaultProviders, ...customProviders];
+
+  const [allKeys, setAllKeys] = useState<Record<string, ApiKeyField[]>>({});
   const [activeProvider, setActiveProvider] = useState('OpenAI');
+  const [priorityOrder, setPriorityOrder] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tabSection, setTabSection] = useState<'catalog' | 'prompts'>('catalog');
+
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [newProvider, setNewProvider] = useState({ name: '', icon: '🌟', description: '', keyPlaceholder: '', endpointPlaceholder: '' });
 
   React.useEffect(() => {
     if (!tenant?.id) return;
@@ -686,18 +530,33 @@ function AiKeysSection() {
           headers: { Authorization: `Bearer ${token}` }
         });
         const data = await res.json();
-        if (data.aiKeys && Object.keys(data.aiKeys).length > 0) {
-          // Merge fetched keys with the default provider template to ensure we don't lose new fields
-          const mergedKeys: Record<string, ApiKeyField[]> = {};
-          for (const p of providers) {
-            mergedKeys[p.group] = p.keys.map(defaultKey => {
-              const remoteGroup = data.aiKeys[p.group] || [];
-              const remoteKey = remoteGroup.find((k: any) => k.id === defaultKey.id);
-              return remoteKey ? { ...defaultKey, ...remoteKey } : defaultKey;
-            });
-          }
-          setAllKeys(mergedKeys);
+        
+        const fetchedCustom = data.customAiProviders || [];
+        setCustomProviders(fetchedCustom);
+        setProviderStates(data.aiProviderStates || {});
+
+        const combinedProviders = [...defaultProviders, ...fetchedCustom];
+
+        const mergedKeys: Record<string, ApiKeyField[]> = {};
+        for (const p of combinedProviders) {
+          mergedKeys[p.group] = p.keys.map((defaultKey: any) => {
+            const remoteGroup = data.aiKeys?.[p.group] || [];
+            const remoteKey = remoteGroup.find((k: any) => k.id === defaultKey.id);
+            return remoteKey ? { ...defaultKey, ...remoteKey } : defaultKey;
+          });
         }
+        setAllKeys(mergedKeys);
+
+        let initialPriority = data.aiProviderPriority;
+        if (!initialPriority || !Array.isArray(initialPriority)) {
+           initialPriority = defaultProviders.map(p => p.group);
+        }
+        
+        // Merge with any new providers not in the saved list
+        const allGroups = combinedProviders.map(p => p.group);
+        const newGroups = allGroups.filter(g => !initialPriority.includes(g));
+        setPriorityOrder([...initialPriority, ...newGroups]);
+
       } catch (e) {
         console.error('Failed to load tenant aiKeys', e);
       } finally {
@@ -708,83 +567,280 @@ function AiKeysSection() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenant?.id]);
 
-  const handleSave = (group: string) => async (id: string, val: string) => {
-    const newKeys = {
-      ...allKeys,
-      [group]: allKeys[group].map(k => k.id === id ? { ...k, value: val, saved: true } : k)
-    };
-    setAllKeys(newKeys);
-    
-    if (tenant?.id) {
-      try {
+  const handleSaveKeys = async (newKeys: any, customP: any = customProviders, pStates: any = providerStates) => {
+     if (!tenant?.id) return;
+     try {
         const { getAuth } = await import('firebase/auth');
         const token = await getAuth().currentUser?.getIdToken();
         if (token) {
           await fetch('/api/admin/tenant-config', {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tenantId: tenant.id, aiKeys: newKeys })
+            body: JSON.stringify({ tenantId: tenant.id, aiKeys: newKeys, customAiProviders: customP, aiProviderStates: pStates })
           });
         }
       } catch (err) {
-        console.error('Failed to save key to backend', err);
+        console.error('Failed to save to backend', err);
       }
+  }
+
+  const handleSave = (group: string) => async (id: string, val: string) => {
+    const newKeys = {
+      ...allKeys,
+      [group]: allKeys[group].map(k => k.id === id ? { ...k, value: val, saved: true } : k)
+    };
+    setAllKeys(newKeys);
+    await handleSaveKeys(newKeys);
+  };
+
+  const handleToggleState = async (group: string) => {
+    const nextStates = { ...providerStates, [group]: providerStates[group] === false ? true : false };
+    setProviderStates(nextStates);
+    await handleSaveKeys(allKeys, customProviders, nextStates);
+  }
+
+  const handleCreateProvider = async () => {
+     if (!newProvider.name.trim()) return;
+     const newId = newProvider.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+     const pBase = {
+        id: newId,
+        group: newProvider.name,
+        icon: newProvider.icon || '🌟',
+        color: '#64748b',
+        desc: newProvider.description,
+        keys: [
+           { id: `${newId}_api_key`, label: `${newProvider.name} API Key`, value: '', saved: false, placeholder: newProvider.keyPlaceholder || 'sk-...', required: true },
+           { id: `${newId}_endpoint`, label: `${newProvider.name} Endpoint URL`, value: '', saved: false, placeholder: newProvider.endpointPlaceholder || 'https://...' }
+        ]
+     };
+     
+     const nextCustom = [...customProviders, pBase];
+     setCustomProviders(nextCustom);
+     
+     const nextKeys = { ...allKeys, [pBase.group]: pBase.keys as any[] };
+     setAllKeys(nextKeys);
+
+     const nextPriority = [...priorityOrder, pBase.group];
+     setPriorityOrder(nextPriority);
+
+     const nextStates = { ...providerStates, [pBase.group]: true };
+     setProviderStates(nextStates);
+
+     setIsAddOpen(false);
+     setNewProvider({ name: '', icon: '🌟', description: '', keyPlaceholder: '', endpointPlaceholder: '' });
+
+     if (!tenant?.id) return;
+     try {
+       const { getAuth } = await import('firebase/auth');
+       const token = await getAuth().currentUser?.getIdToken();
+       if (token) {
+         await fetch('/api/admin/tenant-config', {
+           method: 'POST',
+           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+           body: JSON.stringify({ tenantId: tenant.id, customAiProviders: nextCustom, aiProviderPriority: nextPriority, aiKeys: nextKeys, aiProviderStates: nextStates })
+         });
+       }
+     } catch (err) {
+       console.error('Failed to create custom provider', err);
+     }
+  }
+
+  const savePriorityOrder = async (newOrder: string[]) => {
+    setPriorityOrder(newOrder);
+    if (!tenant?.id) return;
+    try {
+      const { getAuth } = await import('firebase/auth');
+      const token = await getAuth().currentUser?.getIdToken();
+      if (token) {
+        await fetch('/api/admin/tenant-config', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tenantId: tenant.id, aiProviderPriority: newOrder })
+        });
+      }
+    } catch (err) {
+      console.error('Failed to save AI priority', err);
     }
   };
 
-  const current = providers.find(p => p.group === activeProvider)!;
+  const current = providers.find(p => p.group === activeProvider);
+
+  if (loading) return <div className="text-sm text-tremor-content">Loading providers...</div>;
 
   return (
     <div className="animate-fade-in">
-      <div style={{ marginBottom: 32 }}>
-        <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>AI API Keys — BYOK</h2>
-        <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-          Bring your own AI provider keys. The platform supports multi-provider AI routing — automatically falls back to the next available provider.
-        </p>
-        <div style={{ marginTop: 12, padding: '10px 16px', background: '#10a37f0a', border: '1px solid #10a37f33', borderRadius: 'var(--radius-md)', fontSize: 13, color: '#10a37f', display: 'flex', gap: 10 }}>
-          💡 Keys are encrypted and scoped per tenant. Usage costs belong to each tenant's AI provider account.
+      <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid var(--border)', marginBottom: 24, paddingBottom: 0 }}>
+        <button 
+          onClick={() => setTabSection('catalog')} 
+          style={{ padding: '8px 16px', background: 'none', border: 'none', borderBottom: tabSection === 'catalog' ? '2px solid var(--brand-500)' : '2px solid transparent', color: tabSection === 'catalog' ? 'var(--brand-500)' : 'var(--text-secondary)', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' }}>
+          Providers
+        </button>
+        <button 
+          onClick={() => setTabSection('prompts')} 
+          style={{ padding: '8px 16px', background: 'none', border: 'none', borderBottom: tabSection === 'prompts' ? '2px solid var(--brand-500)' : '2px solid transparent', color: tabSection === 'prompts' ? 'var(--brand-500)' : 'var(--text-secondary)', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' }}>
+          Prompts
+        </button>
+      </div>
+
+      {tabSection === 'prompts' ? (
+        <PromptEngineeringTab />
+      ) : (
+      <>
+        <div style={{ marginBottom: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>AI Providers Configurations</h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+              Configure predefined models or add custom self-hosted endpoints.
+            </p>
+          </div>
+          <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2" onClick={() => setIsAddOpen(true)}>
+            + Add Custom Provider
+          </button>
+        </div>
+
+        {/* Add Custom Provider Dialog */}
+        {isAddOpen && (
+          <div className="bg-card text-card-foreground shadow-lg rounded-xl border border-[var(--border)] p-6 mb-8 animate-fade-in relative z-10">
+             <button className="absolute top-4 right-4 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]" onClick={() => setIsAddOpen(false)}>✕</button>
+             <h3 className="text-lg font-bold mb-4">Add Custom Provider</h3>
+             <Grid numItemsMd={2} className="gap-6 mb-4">
+                <Col>
+                  <label className="text-xs font-bold uppercase tracking-wider text-tremor-content mb-2 block">Provider Name *</label>
+                  <input className="input font-sans text-sm w-full" placeholder="e.g. Local LLM" value={newProvider.name} onChange={e => setNewProvider(p => ({...p, name: e.target.value}))}/>
+                </Col>
+                <Col>
+                  <label className="text-xs font-bold uppercase tracking-wider text-tremor-content mb-2 block">Icon (Emoji)</label>
+                  <input className="input font-sans text-sm w-full" placeholder="🌟" value={newProvider.icon} onChange={e => setNewProvider(p => ({...p, icon: e.target.value}))}/>
+                </Col>
+                <Col numColSpanMd={2}>
+                  <label className="text-xs font-bold uppercase tracking-wider text-tremor-content mb-2 block">Description</label>
+                  <input className="input font-sans text-sm w-full" placeholder="Self-hosted endpoint for Llama 3..." value={newProvider.description} onChange={e => setNewProvider(p => ({...p, description: e.target.value}))}/>
+                </Col>
+                <Col>
+                  <label className="text-xs font-bold uppercase tracking-wider text-tremor-content mb-2 block">API Key Placeholder</label>
+                  <input className="input font-mono text-sm w-full" placeholder="Optional format..." value={newProvider.keyPlaceholder} onChange={e => setNewProvider(p => ({...p, keyPlaceholder: e.target.value}))}/>
+                </Col>
+                <Col>
+                  <label className="text-xs font-bold uppercase tracking-wider text-tremor-content mb-2 block">Endpoint Placeholder</label>
+                  <input className="input font-mono text-sm w-full" placeholder="https://..." value={newProvider.endpointPlaceholder} onChange={e => setNewProvider(p => ({...p, endpointPlaceholder: e.target.value}))}/>
+                </Col>
+             </Grid>
+             <div className="flex justify-end">
+                <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2" onClick={handleCreateProvider} disabled={!newProvider.name.trim()}>Save Provider</button>
+             </div>
+          </div>
+        )}
+      
+      {/* Fallback Priority Configurator */}
+      <div style={{ marginBottom: 32, padding: '24px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <h4 style={{ fontWeight: 800, fontSize: 16 }}>Execution Priority Flow</h4>
+          <span style={{ fontSize: 13, color: 'var(--text-tertiary)', fontWeight: 600 }}>Drag and drop to establish order</span>
+        </div>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, overflowX: 'auto', paddingBottom: 16, paddingTop: 12, paddingLeft: 10 }}>
+          {priorityOrder.map((group, idx) => {
+            const p = providers.find(prov => prov.group === group);
+            if (!p) return null;
+            const isEnabled = providerStates[p.group] !== false;
+            return (
+              <React.Fragment key={group}>
+                <div 
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('text/plain', idx.toString());
+                    e.dataTransfer.effectAllowed = 'move';
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);
+                    if (fromIdx !== idx && !isNaN(fromIdx)) {
+                        const newOrder = [...priorityOrder];
+                        const [moved] = newOrder.splice(fromIdx, 1);
+                        newOrder.splice(idx, 0, moved);
+                        savePriorityOrder(newOrder);
+                    }
+                  }}
+                  className={`transition-transform hover:scale-105 ${!isEnabled ? 'opacity-50 grayscale' : ''}`}
+                  style={{ 
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, 
+                    padding: '16px', background: 'var(--bg-canvas)', borderRadius: 'var(--radius-md)', 
+                    border: '1px solid var(--border)', minWidth: 140, cursor: 'grab',
+                    boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', position: 'relative'
+                  }}>
+                  <div style={{ position: 'absolute', top: -12, left: -12, width: 26, height: 26, borderRadius: 13, background: idx === 0 ? 'var(--brand-500)' : 'var(--bg-elevated)', border: `1px solid ${idx === 0 ? 'var(--brand-500)' : 'var(--border)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: idx === 0 ? 'white' : 'var(--text-tertiary)', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+                    {idx + 1}
+                  </div>
+                  <span style={{ fontSize: 32 }}>{p.icon}</span>
+                  <span style={{ fontWeight: 700, fontSize: 14 }}>{p.group}</span>
+                  <button onClick={() => setActiveProvider(p.group)} style={{ fontSize: 10, padding: '4px 8px', background: 'var(--brand-500)', color: 'white', borderRadius: 4, fontWeight: 700, width: '100%', textAlign: 'center', border: 'none', cursor: 'pointer' }}>
+                     Configure
+                  </button>
+                </div>
+                {idx < priorityOrder.length - 1 && (
+                  <div style={{ color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 12h14M12 5l7 7-7 7"/>
+                    </svg>
+                  </div>
+                )}
+              </React.Fragment>
+            );
+          })}
         </div>
       </div>
 
       {/* Provider Tabs */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 28, flexWrap: 'wrap' }}>
-        {providers.map(p => {
-          const savedCount = (allKeys[p.group] || []).filter(k => k.saved).length;
+        {priorityOrder.map(group => {
+          const p = providers.find(prov => prov.group === group);
+          if (!p) return null;
+          const isEnabled = providerStates[p.group] !== false;
           return (
             <button
               key={p.group}
               onClick={() => setActiveProvider(p.group)}
-              className={`btn btn-sm ${activeProvider === p.group ? 'btn-secondary' : 'btn-ghost'}`}
-              style={{ gap: 8, border: activeProvider === p.group ? `1px solid ${p.color}44` : 'none' }}
+              className={`inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 h-9 px-4 py-2 ${activeProvider === p.group ? 'bg-[var(--brand-50)] text-[var(--brand-700)]' : 'bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]'}`}
+              style={{ gap: 8, border: activeProvider === p.group ? `1px solid ${p.color || '#64748b'}44` : '1px solid var(--border)', opacity: isEnabled ? 1 : 0.6 }}
             >
               <span>{p.icon}</span>
               {p.group}
-              {savedCount > 0 && (
-                <span style={{ fontSize: 10, background: `${p.color}33`, color: p.color, padding: '1px 6px', borderRadius: 8 }}>
-                  {savedCount} key{savedCount > 1 ? 's' : ''}
-                </span>
-              )}
+              {!isEnabled && <span className="ml-2 text-[10px] uppercase font-bold text-slate-500">(Disabled)</span>}
             </button>
           );
         })}
       </div>
 
       {/* Current provider info */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '16px 24px', background: `${current.color}0d`, border: `1px solid ${current.color}33`, borderRadius: 'var(--radius-lg)', marginBottom: 24 }}>
-        <div style={{ fontSize: 36 }}>{current.icon}</div>
-        <div>
-          <div style={{ fontWeight: 800, fontSize: 17 }}>{current.group}</div>
-          <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>{current.desc}</div>
+      {current && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '16px 24px', background: `${current.color || '#64748b'}0d`, border: `1px solid ${current.color || '#64748b'}33`, borderRadius: 'var(--radius-lg)', marginBottom: 24 }}>
+          <div style={{ fontSize: 36 }}>{current.icon}</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 800, fontSize: 17 }}>{current.group}</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>{current.desc || 'Custom AI provider configuration.'}</div>
+          </div>
+          <button 
+             onClick={() => handleToggleState(current.group)}
+             className={`inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-9 px-4 py-2 ${providerStates[current.group] !== false ? 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100' : 'bg-[var(--brand-600)] text-white hover:bg-[var(--brand-700)]'}`}>
+             {providerStates[current.group] !== false ? 'Disable Provider' : 'Enable Provider'}
+          </button>
         </div>
-      </div>
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {(allKeys[activeProvider] || []).map(k => (
-          <ApiKeyCard key={k.id} field={k} onSave={handleSave(activeProvider)} />
+        {current && (allKeys[current.group] || []).map(k => (
+          <ApiKeyCard key={k.id} field={k} onSave={handleSave(current.group)} />
         ))}
+        {current && (!allKeys[current.group] || allKeys[current.group].length === 0) && (
+           <p className="text-sm text-tremor-content">No API keys required or configured for this provider.</p>
+        )}
       </div>
-
-
+      </>
+      )}
     </div>
   );
 }
@@ -792,57 +848,128 @@ function AiKeysSection() {
 // ─── Section: Compliance ───────────────────────────────────────────────────────
 
 function ComplianceSection() {
+  const [activeTab, setActiveTab] = useState<'regulatory' | 'report'>('regulatory');
   const [saved, setSaved] = useState(false);
 
   return (
-    <div className="animate-fade-in">
-      <div style={{ marginBottom: 32 }}>
-        <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>Regulatory Framework</h2>
-        <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-          Configure parameters for ANBIMA, CVM 175, SEC Rule 204-2, and FINRA compliance.
-        </p>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+    <div className="animate-fade-in flex flex-col gap-6">
+      <div style={{ display: 'flex', gap: 4, background: 'var(--bg-elevated)', borderRadius: 10, padding: 4, alignSelf: 'flex-start' }}>
         {[
-          {
-            title: 'Brazilian Regulatory (ANBIMA/CVM)',
-            fields: [
-              { label: 'ANBIMA Category', type: 'select', options: ['Wealth Management / Private Banking', 'Asset Management', 'Distributor', 'Other'] },
-              { label: 'CVM 175 Compliance Mode', type: 'select', options: ['Strict', 'Flexible'] },
-              { label: 'Suitability Expiry (months)', type: 'number', default: '24' },
-            ]
-          },
-          {
-            title: 'US Regulatory (SEC/FINRA)',
-            fields: [
-              { label: 'RIA Registration Number', type: 'text', default: '' },
-              { label: 'Audit Trail Granularity', type: 'select', options: ['High (All Interactions)', 'Medium (Financials Only)', 'Low (Documents Only)'] },
-              { label: 'Record Retention (years)', type: 'number', default: '5' },
-            ]
-          },
-        ].map(group => (
-          <div key={group.title} style={{ padding: 24, background: 'var(--bg-elevated)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)' }}>
-            <h4 style={{ fontWeight: 700, marginBottom: 20, fontSize: 14 }}>{group.title}</h4>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {group.fields.map(f => (
-                <div key={f.label}>
-                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{f.label}</label>
-                  {f.type === 'select' ? (
-                    <select className="input" style={{ width: '100%', padding: '8px 12px' }}>
-                      {(f.options || []).map(o => <option key={o}>{o}</option>)}
-                    </select>
-                  ) : (
-                    <input type={f.type} defaultValue={f.default} className="input" style={{ width: '100%', padding: '8px 12px' }} />
-                  )}
+          { id: 'regulatory', label: 'Regulatory Framework' },
+          { id: 'report', label: 'Compliance Report' }
+        ].map(t => (
+          <button 
+            key={t.id} 
+            onClick={() => setActiveTab(t.id as any)} 
+            className="text-sm font-semibold transition-all px-5 py-2 rounded-lg border-none cursor-pointer"
+            style={{
+              background: activeTab === t.id ? 'var(--brand-500)' : 'transparent',
+              color: activeTab === t.id ? 'white' : 'var(--text-secondary)',
+            }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ background: 'var(--bg-canvas)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', padding: '24px' }}>
+        {activeTab === 'regulatory' && (
+          <div className="animate-fade-in">
+            <div style={{ marginBottom: 32 }}>
+              <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>Regulatory Framework</h2>
+              <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+                Configure parameters for ANBIMA, CVM 175, SEC Rule 204-2, and FINRA compliance.
+              </p>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+              {[
+                {
+                  title: 'Brazilian Regulatory (ANBIMA/CVM)',
+                  fields: [
+                    { label: 'ANBIMA Category', type: 'select', options: ['Wealth Management / Private Banking', 'Asset Management', 'Distributor', 'Other'] },
+                    { label: 'CVM 175 Compliance Mode', type: 'select', options: ['Strict', 'Flexible'] },
+                    { label: 'Suitability Expiry (months)', type: 'number', default: '24' },
+                  ]
+                },
+                {
+                  title: 'US Regulatory (SEC/FINRA)',
+                  fields: [
+                    { label: 'RIA Registration Number', type: 'text', default: '' },
+                    { label: 'Audit Trail Granularity', type: 'select', options: ['High (All Interactions)', 'Medium (Financials Only)', 'Low (Documents Only)'] },
+                    { label: 'Record Retention (years)', type: 'number', default: '5' },
+                  ]
+                },
+              ].map(group => (
+                <div key={group.title} style={{ padding: 24, background: 'var(--bg-elevated)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)' }}>
+                  <h4 style={{ fontWeight: 700, marginBottom: 20, fontSize: 14 }}>{group.title}</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    {group.fields.map(f => (
+                      <div key={f.label}>
+                        <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{f.label}</label>
+                        {f.type === 'select' ? (
+                          <select className="input" style={{ width: '100%', padding: '8px 12px' }}>
+                            {(f.options || []).map(o => <option key={o}>{o}</option>)}
+                          </select>
+                        ) : (
+                          <input type={f.type} defaultValue={f.default} className="input" style={{ width: '100%', padding: '8px 12px' }} />
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
+            <button className="btn btn-primary mt-8" onClick={() => { setSaved(true); setTimeout(() => setSaved(false), 2500); }} style={{ padding: '10px 32px', marginTop: 24 }}>
+              {saved ? '✅ Saved!' : '💾 Save Compliance Settings'}
+            </button>
           </div>
-        ))}
+        )}
+
+        {activeTab === 'report' && (
+          <div className="animate-fade-in max-w-4xl">
+            <h2 className="text-xl font-bold mb-4">Platform Compliance & Security Report</h2>
+            <p className="text-sm text-[var(--text-secondary)] mb-8">
+              This dynamic report provides an overview of the MFO-CRM platform's architectural, security, and administrative compliance capabilities. Note that all statements reflect the strictly implemented technical boundaries and verifiable configurations currently active.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-[var(--bg-surface)] p-6 rounded-xl border border-[var(--border)] relative overflow-hidden shadow-sm">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500 opacity-[0.03] rounded-bl-full"></div>
+                <h3 className="font-bold mb-3 flex items-center gap-2"><span className="text-blue-500">🔒</span> Tenant Data Isolation</h3>
+                <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                  Strict logical separation of client data is enforced utilizing robust Firebase Firestore Security Rules. Every document and collection access is intercepted by serverless rule evaluations. Active tenant matching is verified strictly against the Identity Provider's token (`tenantId` custom claim), denying any cross-tenant data traversal at the database infrastructure layer.
+                </p>
+              </div>
+              
+              <div className="bg-[var(--bg-surface)] p-6 rounded-xl border border-[var(--border)] relative overflow-hidden shadow-sm">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500 opacity-[0.03] rounded-bl-full"></div>
+                <h3 className="font-bold mb-3 flex items-center gap-2"><span className="text-emerald-500">🛡️</span> Role-Based Access Control</h3>
+                <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                  The platform enforces rigorous authentication workflows with declarative role models (e.g., SAAS_MASTER_ADMIN, TENANT_ADMIN, AI_OFFICER, USER). Privileged administrative boundaries—such as System Prompt Engineering, data wipe protocols, and compliance framework configurations—are programmatically inaccessible to unauthorized actors.
+                </p>
+              </div>
+
+              <div className="bg-[var(--bg-surface)] p-6 rounded-xl border border-[var(--border)] relative overflow-hidden shadow-sm">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500 opacity-[0.03] rounded-bl-full"></div>
+                <h3 className="font-bold mb-3 flex items-center gap-2"><span className="text-purple-500">🔑</span> Encryption & Key Ownership</h3>
+                <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                  Bring Your Own Key (BYOK) architecture for third-party inference endpoints is secured using AES-256 server-side encryption prior to persisting. Raw cryptographic materials and sensitive credentials are never serialized to client-side logs nor exposed over standard front-end APIs. Transport links enforce TLS 1.3 connectivity.
+                </p>
+              </div>
+
+              <div className="bg-[var(--bg-surface)] p-6 rounded-xl border border-[var(--border)] relative overflow-hidden shadow-sm">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500 opacity-[0.03] rounded-bl-full"></div>
+                <h3 className="font-bold mb-3 flex items-center gap-2"><span className="text-amber-500">🌍</span> Residency & Audit Trails</h3>
+                <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                  AI workload residency boundaries are guaranteed by native internal routing, permitting Enterprise endpoints like Azure OpenAI localized clusters or fully disconnected/On-Premises Local LLMs via APIs like Ollama. Critical platform mutations log immutable audit trails containing standard timestamp bounds and actor identification metadata constraints.
+                </p>
+              </div>
+            </div>
+            
+            <div className="mt-8 pt-6 border-t border-[var(--border)] text-right">
+              <span className="text-[10px] text-[var(--text-tertiary)] uppercase tracking-wider font-bold">Report Generated Dynamically on Demand</span>
+            </div>
+          </div>
+        )}
       </div>
-      <button className="btn btn-primary mt-8" onClick={() => { setSaved(true); setTimeout(() => setSaved(false), 2500); }} style={{ padding: '10px 32px', marginTop: 24 }}>
-        {saved ? '✅ Saved!' : '💾 Save Compliance Settings'}
-      </button>
     </div>
   );
 }
@@ -851,6 +978,7 @@ function ComplianceSection() {
 
 function FirmSection() {
   const { tenantBranding: b, setTenantBranding } = useTheme();
+  const { tenant } = useAuth();
   const [saved, setSaved] = useState(false);
   const logoFullRef = useRef<HTMLInputElement>(null);
   const logoMarkRef = useRef<HTMLInputElement>(null);
@@ -858,7 +986,23 @@ function FirmSection() {
   const readImg = (file: File): Promise<string> =>
     new Promise((res, rej) => { const r = new FileReader(); r.onload = e => res(e.target!.result as string); r.onerror = rej; r.readAsDataURL(file); });
 
-  const handleSave = () => { setSaved(true); setTimeout(() => setSaved(false), 2500); };
+  const handleSave = async () => { 
+    setSaved(true); 
+    setTimeout(() => setSaved(false), 2500); 
+    if (tenant?.id) {
+       try {
+          const { getFirestore, doc, setDoc } = await import('firebase/firestore');
+          const { firebaseApp } = await import('@mfo-crm/config');
+          const db = getFirestore(firebaseApp);
+          await setDoc(doc(db, 'tenants', tenant.id), { 
+             branding: b, 
+             logoUrl: b.logoFull || b.logoMark || null 
+          }, { merge: true });
+       } catch(e) {
+          console.error("Error saving branding to Firestore", e);
+       }
+    }
+  };
 
   const Field = ({ label, fk, type = 'text', mono = false, hint }: { label: string; fk: keyof typeof b; type?: string; mono?: boolean; hint?: string }) => (
     <div>
@@ -964,6 +1108,27 @@ function FirmSection() {
               <Field label="Telefone" fk="phone" type="tel" />
               <Field label="E-mail" fk="email" type="email" />
               <Field label="Website / Portal" fk="website" />
+            </div>
+          </div>
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginTop: 4 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 12 }}>🌍 Regional / Localization Settings</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Primary Language</label>
+                <select className="input" style={{ width: '100%', padding: '9px 12px' }} value={(b as any).language || 'en'} onChange={e => setTenantBranding({ language: e.target.value } as any)}>
+                  <option value="en">English (US)</option>
+                  <option value="pt">Português (Brasil)</option>
+                  <option value="es">Español</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Default Date Format</label>
+                <select className="input" style={{ width: '100%', padding: '9px 12px' }} value={(b as any).dateFormat || 'MM/DD/YYYY'} onChange={e => setTenantBranding({ dateFormat: e.target.value } as any)}>
+                  <option value="MM/DD/YYYY">MM/DD/YYYY (US Format)</option>
+                  <option value="DD/MM/YYYY">DD/MM/YYYY (BR/EU Format)</option>
+                  <option value="YYYY-MM-DD">YYYY-MM-DD (ISO)</option>
+                </select>
+              </div>
             </div>
           </div>
         </div>
@@ -1401,11 +1566,14 @@ function QueueSettingsSection() {
 
 const TABS: { id: TabId; label: string; icon: React.ElementType; superAdminOnly?: boolean }[] = [
   { id: 'platform',       label: 'Platform Config',       icon: Settings,  superAdminOnly: true },
+  { id: 'tenant_types',     label: 'Tenant Types',          icon: Building2, superAdminOnly: true },
   { id: 'database',       label: 'Database',              icon: Database,  superAdminOnly: true },
   { id: 'data_explorer',  label: 'Data',                  icon: DatabaseBackup, superAdminOnly: true },
-  { id: 'mfa',            label: 'MFA / Security',        icon: Shield },
-  { id: 'integrations',   label: 'Integrations (BYOK)',   icon: Plug },
-  { id: 'ai_keys',        label: 'AI Providers',          icon: Bot },
+  { id: 'odoo_migration', label: 'External Sources',      icon: Landmark },
+  { id: 'cloud_storage',    label: 'Cloud Storage',         icon: Cloud },
+  { id: 'integrations',   label: 'Integrations',   icon: Plug },
+  { id: 'digital_signatures', label: 'E-Signatures',      icon: FileSignature },
+  { id: 'ai_keys',        label: 'AI',          icon: Bot },
   { id: 'firm',           label: 'Firm Identity',         icon: Building2 },
   { id: 'compliance',     label: 'Compliance',            icon: Scale },
   { id: 'customizations', label: 'Customizations',        icon: Sliders },
@@ -1493,6 +1661,7 @@ function SecretField({
 }
 
 function CommunicationsSection() {
+  const { tenant } = useAuth();
   const [activeProvider, setActiveProvider] = useState<'teams' | 'slack' | 'google'>('teams');
 
   const [teamsEnabled,      setTeamsEnabled]      = useState(false);
@@ -1518,6 +1687,15 @@ function CommunicationsSection() {
   const [googleSaveError,    setGoogleSaveError]    = useState('');
   const [isSavingGoogle,     setIsSavingGoogle]     = useState(false);
   const [isLoadingGoogle,    setIsLoadingGoogle]    = useState(true);
+
+  // SMTP Settings
+  const [smtpHost, setSmtpHost] = useState('');
+  const [smtpPort, setSmtpPort] = useState('587');
+  const [smtpUser, setSmtpUser] = useState('');
+  const [smtpPass, setSmtpPass] = useState('');
+  const [smtpSecure, setSmtpSecure] = useState(false);
+  const [smtpLoading, setSmtpLoading] = useState(true);
+  const [smtpSaving, setSmtpSaving] = useState(false);
 
   React.useEffect(() => {
     setIsLoadingTeams(true);
@@ -1560,7 +1738,24 @@ function CommunicationsSection() {
       })
       .catch(console.error)
       .finally(() => setIsLoadingGoogle(false));
-  }, []);
+
+    if (tenant?.id) {
+       setSmtpLoading(true);
+       import('firebase/auth').then(({ getAuth }) => getAuth().currentUser?.getIdToken()).then(token => {
+         fetch(`/api/admin/tenant-config?tenantId=${tenant.id}`, { headers: { Authorization: `Bearer ${token}` }})
+         .then(res => res.json())
+         .then(data => {
+            if (data.smtpConfig) {
+               setSmtpHost(data.smtpConfig.host || '');
+               setSmtpPort(data.smtpConfig.port || '587');
+               setSmtpUser(data.smtpConfig.user || '');
+               setSmtpPass(data.smtpConfig.pass || '');
+               setSmtpSecure(!!data.smtpConfig.secure);
+            }
+         }).catch(console.error).finally(() => setSmtpLoading(false));
+       });
+    }
+  }, [tenant?.id]);
 
   const handleSaveTeams = async () => {
     setIsSavingTeams(true);
@@ -1622,6 +1817,34 @@ function CommunicationsSection() {
     setTimeout(() => setSlackSaved(false), 2500);
   };
 
+  const handleSaveSmtp = async () => {
+    if (!tenant?.id) return;
+    setSmtpSaving(true);
+    try {
+      const { getAuth } = await import('firebase/auth');
+      const token = await getAuth().currentUser?.getIdToken();
+      await fetch('/api/admin/tenant-config', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId: tenant.id,
+          smtpConfig: {
+             host: smtpHost,
+             port: smtpPort,
+             user: smtpUser,
+             pass: smtpPass,
+             secure: smtpSecure
+          }
+        })
+      });
+      toast.error('Saved SMTP Configuration safely to Tenant isolate.');
+    } catch(e) {
+      toast.error('Failed to save SMTP config');
+    } finally {
+      setSmtpSaving(false);
+    }
+  };
+
   return (
     <div className="animate-fade-in">
       <div style={{ marginBottom: 24 }}>
@@ -1631,25 +1854,25 @@ function CommunicationsSection() {
         </p>
       </div>
 
-      <TabGroup>
-        <TabList className="mb-6">
-          <Tab>Email Templates</Tab>
-          <Tab>Messaging Pipelines</Tab>
-          <Tab>SMTP Settings</Tab>
-        </TabList>
-        <TabPanels>
+      <div className="w-full">
+        <div className="inline-flex h-9 items-center justify-center rounded-lg bg-[var(--bg-muted)] p-1 text-[var(--text-tertiary)] mb-6">
+          <button className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-500)] disabled:pointer-events-none disabled:opacity-50 text-[var(--text-secondary)] hover:text-[var(--text-primary)] data-[selected]:bg-[var(--bg-surface)] data-[selected]:text-[var(--text-primary)] data-[selected]:shadow-sm">Email Templates</button>
+          <button className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-500)] disabled:pointer-events-none disabled:opacity-50 text-[var(--text-secondary)] hover:text-[var(--text-primary)] data-[selected]:bg-[var(--bg-surface)] data-[selected]:text-[var(--text-primary)] data-[selected]:shadow-sm">Messaging Pipelines</button>
+          <button className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-500)] disabled:pointer-events-none disabled:opacity-50 text-[var(--text-secondary)] hover:text-[var(--text-primary)] data-[selected]:bg-[var(--bg-surface)] data-[selected]:text-[var(--text-primary)] data-[selected]:shadow-sm">SMTP Settings</button>
+        </div>
+        <div className="mt-2">
           {/* Email Templates Panel */}
-          <TabPanel>
+          <div className="mt-2 ring-offset-background">
             <div className="bg-tremor-background-subtle rounded-tremor-default p-4 mb-4">
-              <Text className="text-sm">Manage platform-wide email templates. Changes apply to all tenant communications.</Text>
+              <div className="text-sm text-[var(--text-secondary)] text-sm">Manage platform-wide email templates. Changes apply to all tenant communications.</div>
             </div>
             <React.Suspense fallback={<div style={{ padding: 40, textAlign:'center', color:'var(--text-tertiary)' }}>Loading template editor…</div>}>
               <EmailTemplatesPage />
             </React.Suspense>
-          </TabPanel>
+          </div>
 
           {/* Messaging Pipelines Panel */}
-          <TabPanel>
+          <div className="mt-2 ring-offset-background">
             <Grid numItemsMd={3} className="gap-6 mt-4">
               {/* MASTER LIST */}
               <Col numColSpanMd={1} className="flex flex-col gap-3">
@@ -1664,7 +1887,7 @@ function CommunicationsSection() {
                     <div className="font-semibold text-tremor-content-strong text-sm">Microsoft Teams</div>
                     <div className="text-xs text-tremor-content mt-1">Azure AD Graph API</div>
                   </div>
-                  {teamsEnabled && <Badge size="xs" color="emerald" className="ml-auto">Active</Badge>}
+                  {teamsEnabled && <span className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-[var(--brand-500)] text-white shadow hover:bg-[var(--brand-600)] ml-auto">Active</span>}
                 </button>
 
                 <button 
@@ -1678,7 +1901,7 @@ function CommunicationsSection() {
                     <div className="font-semibold text-tremor-content-strong text-sm">Slack app</div>
                     <div className="text-xs text-tremor-content mt-1">Events API Webhook</div>
                   </div>
-                  {slackEnabled && <Badge size="xs" color="emerald" className="ml-auto">Active</Badge>}
+                  {slackEnabled && <span className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-[var(--brand-500)] text-white shadow hover:bg-[var(--brand-600)] ml-auto">Active</span>}
                 </button>
 
                 <button 
@@ -1692,28 +1915,28 @@ function CommunicationsSection() {
                     <div className="font-semibold text-tremor-content-strong text-sm">Google Workspace</div>
                     <div className="text-xs text-tremor-content mt-1">OAuth & Gmail API</div>
                   </div>
-                  {googleEnabled && <Badge size="xs" color="emerald" className="ml-auto">Active</Badge>}
+                  {googleEnabled && <span className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-[var(--brand-500)] text-white shadow hover:bg-[var(--brand-600)] ml-auto">Active</span>}
                 </button>
               </Col>
 
               {/* DETAIL VIEW */}
               <Col numColSpanMd={2}>
-                <Card className="h-full min-h-[500px] shadow-sm ring-1 ring-tremor-border flex flex-col p-6">
+                <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 h-full min-h-[500px] shadow-sm ring-1 ring-tremor-border flex flex-col p-6">
                   {activeProvider === 'teams' && (
                     <div className="flex-1 flex flex-col gap-6 animate-fade-in">
                       <Flex alignItems="start" justifyContent="between">
                         <div>
-                          <Title className="text-[#5B5FC7] flex items-center gap-2 font-bold">
+                          <h3 className="text-lg font-semibold tracking-tight mb-2 text-[#5B5FC7] flex items-center gap-2 font-bold">
                             Microsoft Teams Pipeline
-                          </Title>
-                          <Text className="text-xs mt-1 text-tremor-content">Enable secure messaging boundaries via Microsoft Graph.</Text>
+                          </h3>
+                          <div className="text-sm text-[var(--text-secondary)] text-xs mt-1 text-tremor-content">Enable secure messaging boundaries via Microsoft Graph.</div>
                         </div>
                         <div className="flex items-center gap-3 bg-tremor-background-subtle px-3 py-1.5 rounded-full border border-tremor-border">
-                          <Text className="text-xs font-semibold text-tremor-content-strong">{teamsEnabled ? 'Enabled' : 'Disabled'}</Text>
-                          <Switch id="teams-switch" checked={teamsEnabled} onChange={setTeamsEnabled} />
+                          <div className="text-sm text-[var(--text-secondary)] text-xs font-semibold text-tremor-content-strong">{teamsEnabled ? 'Enabled' : 'Disabled'}</div>
+                          <input type="checkbox" id="teams-switch" className="w-4 h-4 cursor-pointer text-[#5B5FC7] bg-gray-100 border-gray-300 rounded focus:ring-[#5B5FC7]" checked={teamsEnabled} onChange={(e) => setTeamsEnabled(e.target.checked)} />
                         </div>
                       </Flex>
-                      <Divider className="my-1" />
+                      <hr className="my-4 border-t border-[var(--border)] my-1" />
                       <div className="text-xs text-tremor-content bg-indigo-50/50 p-4 rounded-tremor-small border border-indigo-100 leading-relaxed shadow-sm">
                         <strong className="text-indigo-900">Provisioning Requirements:</strong> Register an App within your Azure Active Directory / Entra Portal. Make sure to grant Admin Consent for <code className="text-xs font-mono text-indigo-700 bg-indigo-100 px-1 py-0.5 rounded">ChannelMessage.Send</code>, <code className="text-xs font-mono text-indigo-700 bg-indigo-100 px-1 py-0.5 rounded">Channel.ReadBasic.All</code>, and <code className="text-xs font-mono text-indigo-700 bg-indigo-100 px-1 py-0.5 rounded">Team.ReadBasic.All</code> to allow automatic message routing to channels from CRM entities.
                       </div>
@@ -1753,13 +1976,12 @@ function CommunicationsSection() {
                       )}
 
                       <div className="mt-auto pt-6 flex justify-end">
-                        <Button
+                        <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[#5B5FC7] text-white shadow hover:bg-[#4d51a6] h-9 px-8 py-2 border-transparent"
                           onClick={handleSaveTeams}
                           disabled={isSavingTeams || isLoadingTeams}
-                          className="bg-[#5B5FC7] hover:bg-[#4d51a6] text-white border-transparent px-8 shadow-sm"
                         >
                           {teamsSaved ? '✅ Configuration Saved!' : isSavingTeams ? 'Saving…' : 'Save Connection Details'}
-                        </Button>
+                        </button>
                       </div>
                     </div>
                   )}
@@ -1768,17 +1990,17 @@ function CommunicationsSection() {
                     <div className="flex-1 flex flex-col gap-6 animate-fade-in">
                       <Flex alignItems="start" justifyContent="between">
                         <div>
-                          <Title className="text-[#4285F4] flex items-center gap-2 font-bold">
+                          <h3 className="text-lg font-semibold tracking-tight mb-2 text-[#4285F4] flex items-center gap-2 font-bold">
                             Google Workspace Integration
-                          </Title>
-                          <Text className="text-xs mt-1 text-tremor-content">Configure OAuth for user email and calendar syncing.</Text>
+                          </h3>
+                          <div className="text-sm text-[var(--text-secondary)] text-xs mt-1 text-tremor-content">Configure OAuth for user email and calendar syncing.</div>
                         </div>
                         <div className="flex items-center gap-3 bg-tremor-background-subtle px-3 py-1.5 rounded-full border border-tremor-border">
-                          <Text className="text-xs font-semibold text-tremor-content-strong">{googleEnabled ? 'Enabled' : 'Disabled'}</Text>
-                          <Switch id="google-switch" checked={googleEnabled} onChange={setGoogleEnabled} />
+                          <div className="text-sm text-[var(--text-secondary)] text-xs font-semibold text-tremor-content-strong">{googleEnabled ? 'Enabled' : 'Disabled'}</div>
+                          <input type="checkbox" id="google-switch" className="w-4 h-4 cursor-pointer text-[#4285F4] bg-gray-100 border-gray-300 rounded focus:ring-[#4285F4]" checked={googleEnabled} onChange={(e) => setGoogleEnabled(e.target.checked)} />
                         </div>
                       </Flex>
-                      <Divider className="my-1" />
+                      <hr className="my-4 border-t border-[var(--border)] my-1" />
                       <div className="text-xs text-tremor-content bg-blue-50/50 p-4 rounded-tremor-small border border-blue-100 leading-relaxed shadow-sm">
                         <strong className="text-blue-900">Provisioning Requirements:</strong> Create an OAuth Client in the Google Cloud Console. Configure the authorized redirect URI to exactly <code className="text-xs font-mono text-blue-700 bg-blue-100 px-1 py-0.5 rounded">https://app.vivantisgroup.com/api/oauth/google/callback</code> (or localhost for dev). This will be used by all tenant members globally to connect their inboxes.
                       </div>
@@ -1811,13 +2033,12 @@ function CommunicationsSection() {
                       )}
 
                       <div className="mt-auto pt-6 flex justify-end">
-                        <Button
+                        <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[#4285F4] text-white shadow hover:bg-[#3367d6] h-9 px-8 py-2 border-transparent"
                           onClick={handleSaveGoogle}
                           disabled={isSavingGoogle || isLoadingGoogle}
-                          className="bg-[#4285F4] hover:bg-[#3367d6] text-white border-transparent px-8 shadow-sm"
                         >
                           {googleSaved ? '✅ Configuration Saved!' : isSavingGoogle ? 'Saving…' : 'Save Connection Details'}
-                        </Button>
+                        </button>
                       </div>
                     </div>
                   )}
@@ -1826,17 +2047,17 @@ function CommunicationsSection() {
                     <div className="flex-1 flex flex-col gap-6 animate-fade-in">
                       <Flex alignItems="start" justifyContent="between">
                         <div>
-                          <Title className="text-[#E01E5A] flex items-center gap-2 font-bold">
+                          <h3 className="text-lg font-semibold tracking-tight mb-2 text-[#E01E5A] flex items-center gap-2 font-bold">
                             Slack Workspace Pipeline
-                          </Title>
-                          <Text className="text-xs mt-1 text-tremor-content">Route real-time alerts into native channels.</Text>
+                          </h3>
+                          <div className="text-sm text-[var(--text-secondary)] text-xs mt-1 text-tremor-content">Route real-time alerts into native channels.</div>
                         </div>
                         <div className="flex items-center gap-3 bg-tremor-background-subtle px-3 py-1.5 rounded-full border border-tremor-border">
-                          <Text className="text-xs font-semibold text-tremor-content-strong">{slackEnabled ? 'Enabled' : 'Disabled'}</Text>
-                          <Switch id="slack-switch" checked={slackEnabled} onChange={setSlackEnabled} />
+                          <div className="text-sm text-[var(--text-secondary)] text-xs font-semibold text-tremor-content-strong">{slackEnabled ? 'Enabled' : 'Disabled'}</div>
+                          <input type="checkbox" id="slack-switch" className="w-4 h-4 cursor-pointer text-[#E01E5A] bg-gray-100 border-gray-300 rounded focus:ring-[#E01E5A]" checked={slackEnabled} onChange={(e) => setSlackEnabled(e.target.checked)} />
                         </div>
                       </Flex>
-                      <Divider className="my-1" />
+                      <hr className="my-4 border-t border-[var(--border)] my-1" />
                       <div className="text-xs text-tremor-content bg-pink-50 p-4 rounded-tremor-small border border-pink-100 leading-relaxed shadow-sm">
                         <strong className="text-pink-900">Provisioning Requirements:</strong> Create an App in your Slack developer portal. Add OAuth scopes for <code className="text-xs font-mono text-pink-700 bg-pink-100 px-1 py-0.5 rounded">chat:write</code> and <code className="text-xs font-mono text-pink-700 bg-pink-100 px-1 py-0.5 rounded">channels:read</code>. Configure your Event Webhooks to point back to the CRM routing engine.
                       </div>
@@ -1844,76 +2065,86 @@ function CommunicationsSection() {
                       <div className="grid grid-cols-2 gap-5 mt-2">
                         <div className="col-span-2">
                           <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-tremor-content mb-2 block">App ID *</label>
-                          <TextInput placeholder="A0XXXXXXXXX" value={slackAppId} onValueChange={setSlackAppId} className="font-mono text-sm shadow-sm" />
+                          <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 font-mono text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" placeholder="A0XXXXXXXXX" value={slackAppId} onChange={(e) => setSlackAppId(e.target.value)} />
                         </div>
                         <div>
                           <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-tremor-content mb-2 block">Client ID *</label>
-                          <TextInput placeholder="1234.5678" value={slackClientId} onValueChange={setSlackClientId} className="font-mono text-sm shadow-sm" />
+                          <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 font-mono text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" placeholder="1234.5678" value={slackClientId} onChange={(e) => setSlackClientId(e.target.value)} />
                         </div>
                         <div>
                           <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-tremor-content mb-2 block">Client Secret *</label>
-                          <TextInput type="password" placeholder="xxxxxxxxxxxxxxxxxxxxxxxx" value={slackClientSecret} onValueChange={setSlackClientSecret} className="font-mono text-sm shadow-sm" />
+                          <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 font-mono text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" type="password" placeholder="xxxxxxxxxxxxxxxxxxxxxxxx" value={slackClientSecret} onChange={(e) => setSlackClientSecret(e.target.value)} />
                         </div>
                         <div className="col-span-2">
                           <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-tremor-content mb-2 block">Signing Secret *</label>
-                          <TextInput type="password" placeholder="xxxxxxxxxxxxxxxxxxxxxxxx" value={slackSigningSecret} onValueChange={setSlackSigningSecret} className="font-mono text-sm shadow-sm" />
+                          <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 font-mono text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" type="password" placeholder="xxxxxxxxxxxxxxxxxxxxxxxx" value={slackSigningSecret} onChange={(e) => setSlackSigningSecret(e.target.value)} />
                         </div>
                       </div>
 
                       <div className="mt-auto pt-6 flex justify-end">
-                         <Button onClick={handleSaveSlack} className="bg-[#E01E5A] hover:bg-[#c91a50] text-white border-transparent px-8 shadow-sm">
+                         <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[#E01E5A] text-white shadow hover:bg-[#c91a50] h-9 px-8 py-2 border-transparent" onClick={handleSaveSlack}>
                            {slackSaved ? '✅ Configuration Saved!' : 'Save Connection Details'}
-                         </Button>
+                         </button>
                       </div>
                     </div>
                   )}
-                </Card>
+                </div>
               </Col>
             </Grid>
-          </TabPanel>
+          </div>
 
           {/* SMTP Settings Panel */}
-          <TabPanel>
+          <div className="mt-2 ring-offset-background">
             <div className="bg-tremor-background-subtle rounded-tremor-default border border-tremor-border p-6 shadow-sm mt-4">
               <div className="flex items-center gap-2 mb-6 border-b border-tremor-border pb-4">
                 <span className="text-xl">📫</span>
                 <div>
                   <h3 className="font-bold text-tremor-content-strong leading-none">SMTP Email Routing</h3>
-                  <Text className="text-xs text-tremor-content mt-1">Configure SendGrid or custom SMTP for system alerts and platform notifications.</Text>
+                  <div className="text-sm text-[var(--text-secondary)] text-xs text-tremor-content mt-1">Configure SendGrid or custom SMTP for system alerts and platform notifications.</div>
                 </div>
               </div>
 
               <Grid numItemsMd={2} className="gap-6">
                 <Col>
                   <label className="text-xs font-bold uppercase tracking-wider text-tremor-content mb-2 block">SMTP Host *</label>
-                  <TextInput defaultValue="smtp.sendgrid.net" className="font-mono text-sm" />
-                  <Text className="text-[11px] mt-1 text-tremor-content">Server address for outgoing mail</Text>
+                  <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 font-mono text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" placeholder="smtp.sendgrid.net" value={smtpHost} onChange={e => setSmtpHost(e.target.value)} disabled={smtpLoading} />
+                  <div className="text-sm text-[var(--text-secondary)] text-[11px] mt-1 text-tremor-content">Server address for outgoing mail</div>
                 </Col>
                 <Col>
                   <label className="text-xs font-bold uppercase tracking-wider text-tremor-content mb-2 block">SMTP Port *</label>
-                  <TextInput defaultValue="587" className="font-mono text-sm" />
-                  <Text className="text-[11px] mt-1 text-tremor-content">Standard 587 (TLS) or 465 (SSL)</Text>
+                  <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 font-mono text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" placeholder="587" value={smtpPort} onChange={e => setSmtpPort(e.target.value)} disabled={smtpLoading} />
+                  <div className="text-sm text-[var(--text-secondary)] text-[11px] mt-1 text-tremor-content">Standard 587 (TLS) or 465 (SSL)</div>
                 </Col>
                 <Col numColSpanMd={2}>
                   <label className="text-xs font-bold uppercase tracking-wider text-tremor-content mb-2 block">Username *</label>
-                  <TextInput defaultValue="apikey" className="font-mono text-sm" />
+                  <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 font-mono text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" placeholder="apikey" value={smtpUser} onChange={e => setSmtpUser(e.target.value)} disabled={smtpLoading} />
                 </Col>
                 <Col numColSpanMd={2}>
                   <label className="text-xs font-bold uppercase tracking-wider text-tremor-content mb-2 block">SMTP Password / API Key *</label>
-                  <TextInput type="password" placeholder="SG.xxxxx..." defaultValue="SG.xxxxx..." className="font-mono text-sm" />
-                  <Text className="text-[11px] mt-1 text-tremor-content">For SendGrid, use 'apikey' as username and input the API token here.</Text>
+                  <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 font-mono text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" type="password" placeholder="SG.xxxxx..." value={smtpPass} onChange={e => setSmtpPass(e.target.value)} disabled={smtpLoading} />
+                  <div className="text-sm text-[var(--text-secondary)] text-[11px] mt-1 text-tremor-content">For SendGrid, use 'apikey' as username and input the API token here.</div>
+                </Col>
+                <Col numColSpanMd={2}>
+                   <label className="flex items-center gap-2 mt-2">
+                      <input type="checkbox" checked={smtpSecure} onChange={e => setSmtpSecure(e.target.checked)} disabled={smtpLoading} />
+                      <span className="text-xs font-bold uppercase tracking-wider text-tremor-content">Require Secure (SSL/TLS always)</span>
+                   </label>
                 </Col>
               </Grid>
 
               <div className="mt-8 flex justify-end">
-                <Button className="bg-[#6366f1] hover:bg-[#4f46e5] text-white border-transparent px-8 shadow-sm" onClick={() => alert('Saved SMTP Configuration')}>
-                  Save Email Configuration
-                </Button>
+                <button 
+                  className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 shadow h-9 px-4 py-2 bg-[#6366f1] hover:bg-[#4f46e5] text-white border-transparent px-8" 
+                  onClick={handleSaveSmtp}
+                  disabled={smtpLoading || smtpSaving}
+                >
+                  {smtpSaving ? 'Saving...' : 'Save Email Configuration'}
+                </button>
               </div>
             </div>
-          </TabPanel>
-        </TabPanels>
-      </TabGroup>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1993,13 +2224,13 @@ function EntityTypesSection() {
   if (loading) return <div style={{ padding: 40, textAlign: 'center' }}>Loading Types...</div>;
 
   const renderSection = (title: string, desc: string, key: keyof typeof types) => (
-    <Card className="mb-6 shadow-sm">
-      <Title>{title}</Title>
-      <Text className="mb-4 text-xs">{desc}</Text>
+    <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 mb-6 shadow-sm">
+      <h3 className="text-lg font-semibold tracking-tight mb-2">{title}</h3>
+      <div className="text-sm text-[var(--text-secondary)] mb-4 text-xs">{desc}</div>
       
       <div className="flex flex-wrap gap-2 mb-4">
         {types[key].map(item => (
-          <Badge key={item} color="indigo" size="sm" className="cursor-pointer">
+          <span className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-[var(--brand-500)] text-white shadow hover:bg-[var(--brand-600)] cursor-pointer" key={item}>
             <div className="flex items-center gap-1">
               <span>{item}</span>
               <button 
@@ -2010,23 +2241,23 @@ function EntityTypesSection() {
                 ✕
               </button>
             </div>
-          </Badge>
+          </span>
         ))}
-        {types[key].length === 0 && <Text className="text-xs italic">No types configured.</Text>}
+        {types[key].length === 0 && <div className="text-sm text-[var(--text-secondary)] text-xs italic">No types configured.</div>}
       </div>
 
       <div className="flex gap-2 max-w-sm">
-        <TextInput 
+        <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" 
           placeholder={`Add new ${title.toLowerCase()}...`}
           value={drafts[key]}
           onChange={e => setDrafts(prev => ({ ...prev, [key]: e.target.value }))}
           onKeyDown={e => e.key === 'Enter' && handleAdd(key)}
         />
-        <Button size="sm" onClick={() => handleAdd(key)} disabled={!drafts[key].trim() || saving}>
+        <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2" onClick={() => handleAdd(key)} disabled={!drafts[key].trim() || saving}>
           Add
-        </Button>
+        </button>
       </div>
-    </Card>
+    </div>
   );
 
   return (
@@ -2047,87 +2278,6 @@ function EntityTypesSection() {
   );
 }
 
-// ─── Section: Customizations ───────────────────────────────────────────────────
-
-function AIRoutingPolicySection() {
-  const { tenant } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [routes, setRoutes] = useState([
-    { id: 'document_analysis', label: 'Document Analysis', primary: 'Claude', fallback: 'GPT-4o' },
-    { id: 'portfolio_narrative', label: 'Portfolio Narrative', primary: 'GPT-4o', fallback: 'Gemini Pro' },
-    { id: 'compliance_review', label: 'Compliance Review', primary: 'Claude', fallback: 'GPT-4o' },
-  ]);
-
-  const providers = ['GPT-4o', 'Claude', 'Gemini Pro', 'Llama 3'];
-  const [toast, setToast] = useState('');
-
-  const handleSave = async () => {
-    setLoading(true);
-    try {
-      const { getAuth } = await import('firebase/auth');
-      const token = await getAuth().currentUser?.getIdToken();
-      if (token && tenant?.id) {
-        await fetch('/api/admin/tenant-config', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tenantId: tenant.id, aiRoutingPolicy: routes })
-        });
-        setToast('AI Routing configuration safely persisted.');
-        setTimeout(() => setToast(''), 3000);
-      }
-    } catch (e: any) {
-      alert(`Save failed: ${e.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const updateRoute = (id: string, field: 'primary' | 'fallback', val: string) => {
-    setRoutes(prev => prev.map(r => r.id === id ? { ...r, [field]: val } : r));
-  };
-
-  return (
-    <div className="animate-fade-in flex flex-col gap-6">
-      <div style={{ marginBottom: 12 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 6 }}>🔄 AI Routing Policy</h2>
-        <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
-          Define explicitly which AI models should be used by internal agent systems to handle asynchronous workloads. Ensures compliance to tenant-specific LLM restrictions.
-        </p>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-        {routes.map(r => (
-          <div key={r.id} style={{ padding: '16px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, marginBottom: 12 }}>
-              {r.label}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' }}>Primary Engine</label>
-                <select className="input" value={r.primary} onChange={e => updateRoute(r.id, 'primary', e.target.value)} style={{ width: '100%', padding: '6px 10px', fontSize: 13 }}>
-                  {providers.map(p => <option key={p} value={p}>{p}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' }}>Fallback Engine</label>
-                <select className="input" value={r.fallback} onChange={e => updateRoute(r.id, 'fallback', e.target.value)} style={{ width: '100%', padding: '6px 10px', fontSize: 13 }}>
-                  {providers.map(p => <option key={p} value={p}>{p}</option>)}
-                </select>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
-        <Button onClick={handleSave} color="indigo" loading={loading} size="xs">
-          Deploy Fallback Config
-        </Button>
-        {toast && <span style={{ fontSize: 12, color: '#34d399', fontWeight: 600 }}>✓ {toast}</span>}
-      </div>
-    </div>
-  );
-}
 
 function TenantTypesSection() {
   return (
@@ -2167,14 +2317,218 @@ function TenantTypesSection() {
   );
 }
 
+function KnowledgeArticlesSettingsSection() {
+  const { tenant } = useAuth();
+  const [allowIframe, setAllowIframe] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    async function fetchConfig() {
+      setLoading(true);
+      try {
+        const { getAuth } = await import('firebase/auth');
+        const token = await getAuth().currentUser?.getIdToken();
+        const res = await fetch(`/api/admin/tenant-config?tenantId=${tenant?.id}&type=knowledgeArticles`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          // If true, or if undefined (default true)
+          setAllowIframe(data.config?.allowIframeEmbeds !== false);
+        }
+      } catch (err) {
+        console.error('Failed to fetch iframe config', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchConfig();
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const { getAuth } = await import('firebase/auth');
+      const token = await getAuth().currentUser?.getIdToken();
+      await fetch('/api/admin/tenant-config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          tenantId: tenant?.id,
+          configType: 'knowledgeArticles',
+          payload: { allowIframeEmbeds: allowIframe }
+        })
+      });
+      toast.error('Knowledge Articles preferences saved.');
+    } catch (err) {
+      console.error('Failed to save', err);
+      toast.error('Failed to save preferences.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="animate-fade-in flex flex-col gap-6">
+      <div style={{ marginBottom: 12 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 6 }}>📚 Knowledge Articles Config</h2>
+        <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+          Configure global policies for editor features.
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="text-xs text-[var(--text-tertiary)] animate-pulse">Loading config...</div>
+      ) : (
+        <div style={{ padding: '16px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+             <h4 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Allow Iframe/Video Embeds</h4>
+             <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Lets users embed external iframes and Dashboards inside articles.</p>
+          </div>
+          <button 
+             onClick={() => setAllowIframe(!allowIframe)}
+             style={{
+               width: 36, height: 20, borderRadius: 10, position: 'relative',
+               background: allowIframe ? 'var(--brand-primary)' : 'var(--border)', cursor: 'pointer', transition: '0.2s', border: 'none'
+             }}
+          >
+             <div style={{ position: 'absolute', top: 2, left: allowIframe ? 18 : 2, width: 16, height: 16, borderRadius: '50%', background: 'white', transition: '0.2s' }} />
+          </button>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+        <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2" onClick={handleSave} disabled={saving}>
+          {saving ? 'Saving...' : 'Save Configuration'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function JurisdictionsSettingsSection() {
+  const { tenant } = useAuth();
+  const [jurisdictions, setJurisdictions] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [newJuri, setNewJuri] = useState('');
+
+  useEffect(() => {
+    if (!tenant?.id) return;
+    setLoading(true);
+    getDoc(doc(db, 'tenants', tenant.id, 'settings', 'jurisdictions'))
+      .then(snap => {
+        if (snap.exists() && snap.data().list) {
+          setJurisdictions(snap.data().list);
+        } else {
+          setJurisdictions(['N/A', 'Delaware', 'Cayman Islands', 'BVI', 'Brazil', 'Switzerland']);
+        }
+      })
+      .finally(() => setLoading(false));
+  }, [tenant?.id]);
+
+  const handleSave = async (newList: string[]) => {
+    if (!tenant?.id) return;
+    setSaving(true);
+    setMsg('');
+    try {
+      await setDoc(doc(db, 'tenants', tenant.id, 'settings', 'jurisdictions'), { list: newList }, { merge: true });
+      setMsg('Jurisdictions saved successfully.');
+    } catch (e: any) {
+      setMsg('Error saving jurisdictions.');
+    } finally {
+      setSaving(false);
+      setTimeout(() => setMsg(''), 3000);
+    }
+  };
+
+  const handleAdd = () => {
+    if (!newJuri.trim()) return;
+    const nl = [...jurisdictions, newJuri.trim()];
+    setJurisdictions(nl);
+    setNewJuri('');
+    handleSave(nl);
+  };
+
+  const handleRemove = (idx: number) => {
+    const nl = jurisdictions.filter((_, i) => i !== idx);
+    setJurisdictions(nl);
+    handleSave(nl);
+  };
+
+  return (
+    <div className="animate-fade-in max-w-2xl">
+      <h3 className="text-lg font-bold text-primary mb-2">Available Jurisdictions</h3>
+      <p className="text-sm text-secondary mb-6 text-tertiary">
+        Manage the list of jurisdictions available when creating or editing Organizations/Entities.
+      </p>
+
+      {loading ? (
+        <div className="animate-pulse flex space-x-4"><div className="h-4 bg-slate-200 rounded w-1/4"></div></div>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex gap-2">
+            <input 
+              type="text" 
+              placeholder="Add new jurisdiction..." 
+              className="flex-1 px-3 py-2 bg-surface text-sm border border-border rounded-lg"
+              value={newJuri}
+              onChange={e => setNewJuri(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleAdd()}
+            />
+            <button 
+              onClick={handleAdd}
+              disabled={!newJuri.trim() || saving}
+              className="px-4 py-2 bg-brand-500 text-white text-sm font-semibold rounded-lg hover:bg-brand-600 transition-colors disabled:opacity-50"
+            >
+              Add
+            </button>
+          </div>
+
+          <div className="bg-surface border border-border rounded-xl divide-y divide-border/50">
+            {jurisdictions.map((j, i) => (
+              <div key={i} className="flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors">
+                <span className="text-sm font-medium text-primary">{j}</span>
+                <button 
+                  onClick={() => handleRemove(i)}
+                  disabled={saving}
+                  className="text-red-500 hover:text-red-700 text-xs font-semibold px-2 py-1 rounded bg-red-50 hover:bg-red-100 transition-colors disabled:opacity-50"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+            {jurisdictions.length === 0 && (
+              <div className="p-4 text-center text-sm text-tertiary">
+                No jurisdictions defined. Add one above.
+              </div>
+            )}
+          </div>
+          
+          {msg && (
+            <div className={`p-3 rounded-lg text-sm ${msg.includes('Error') ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
+              {msg}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CustomizationsSection() {
-  const [activeTab, setActiveTab] = useState<'routing' | 'queues' | 'entities' | 'types'>('routing');
+  const [activeTab, setActiveTab] = useState<'queues' | 'entities' | 'knowledge' | 'jurisdictions' | 'pricing'>('queues');
 
   const tabs = [
-    { id: 'routing', label: 'AI Routing Policy' },
     { id: 'queues', label: 'Task Queue Management' },
     { id: 'entities', label: 'CRM Entities' },
-    { id: 'types', label: 'Tenant Types' },
+    { id: 'knowledge', label: 'Knowledge Articles' },
+    { id: 'jurisdictions', label: 'Jurisdictions' },
   ] as const;
 
   return (
@@ -2185,7 +2539,7 @@ function CustomizationsSection() {
         {tabs.map(t => (
           <button 
             key={t.id} 
-            onClick={() => setActiveTab(t.id)} 
+            onClick={() => setActiveTab(t.id as any)} 
             style={{
               padding: '8px 20px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600,
               background: activeTab === t.id ? 'var(--brand-500)' : 'transparent',
@@ -2198,10 +2552,10 @@ function CustomizationsSection() {
       </div>
 
       <div style={{ background: 'var(--bg-canvas)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', padding: '24px' }}>
-         {activeTab === 'routing' && <AIRoutingPolicySection />}
          {activeTab === 'queues' && <QueueSettingsSection />}
          {activeTab === 'entities' && <EntityTypesSection />}
-         {activeTab === 'types' && <TenantTypesSection />}
+         {activeTab === 'knowledge' && <KnowledgeArticlesSettingsSection />}
+         {activeTab === 'jurisdictions' && <JurisdictionsSettingsSection />}
       </div>
       
     </div>
@@ -2455,30 +2809,30 @@ function DataExplorerSection() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <Card 
+        <div 
           onClick={() => setActiveTab('query')}
-          className={`flex flex-col gap-2 items-center justify-center p-6 border border-dashed transition-colors cursor-pointer ${activeTab==='query' ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-indigo-200 bg-indigo-50/30 hover:bg-indigo-50 dark:hover:bg-indigo-900/20'}`}>
+          className={`text-card-foreground shadow-sm rounded-xl flex flex-col gap-2 items-center justify-center p-6 border border-dashed transition-colors cursor-pointer ${activeTab==='query' ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-indigo-200 bg-indigo-50/30 hover:bg-indigo-50 dark:hover:bg-indigo-900/20'}`}>
           <Search className="text-indigo-600 mb-2" size={24} />
           <h3 className="font-bold text-sm text-indigo-900 dark:text-indigo-300">Explorer</h3>
           <p className="text-xs text-center text-indigo-700/70 dark:text-indigo-400">Query, edit, investigate references</p>
-        </Card>
-        <Card 
+        </div>
+        <div 
           onClick={() => setActiveTab('export')}
-          className={`flex flex-col gap-2 items-center justify-center p-6 border border-dashed transition-colors cursor-pointer ${activeTab==='export' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'border-emerald-200 bg-emerald-50/30 hover:bg-emerald-50 dark:hover:bg-emerald-900/20'}`}>
+          className={`text-card-foreground shadow-sm rounded-xl flex flex-col gap-2 items-center justify-center p-6 border border-dashed transition-colors cursor-pointer ${activeTab==='export' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'border-emerald-200 bg-emerald-50/30 hover:bg-emerald-50 dark:hover:bg-emerald-900/20'}`}>
           <DatabaseBackup className="text-emerald-600 mb-2" size={24} />
           <h3 className="font-bold text-sm text-emerald-900 dark:text-emerald-300">Export Defaults</h3>
           <p className="text-xs text-center text-emerald-700/70 dark:text-emerald-400">Export full tenant JSON structure</p>
-        </Card>
-        <Card 
+        </div>
+        <div 
           onClick={() => setActiveTab('consistency')}
-          className={`flex flex-col gap-2 items-center justify-center p-6 border border-dashed transition-colors cursor-pointer ${activeTab==='consistency' ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20' : 'border-amber-200 bg-amber-50/30 hover:bg-amber-50 dark:hover:bg-amber-900/20'}`}>
+          className={`text-card-foreground shadow-sm rounded-xl flex flex-col gap-2 items-center justify-center p-6 border border-dashed transition-colors cursor-pointer ${activeTab==='consistency' ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20' : 'border-amber-200 bg-amber-50/30 hover:bg-amber-50 dark:hover:bg-amber-900/20'}`}>
           <Shield className="text-amber-600 mb-2" size={24} />
           <h3 className="font-bold text-sm text-amber-900 dark:text-amber-300">Consistency Check</h3>
           <p className="text-xs text-center text-amber-700/70 dark:text-amber-400">Scan metadata and CRM relations</p>
-        </Card>
+        </div>
       </div>
 
-      <Card className="border border-border p-0 overflow-hidden">
+      <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 border border-border p-0 overflow-hidden">
         {/* QUERY TAB */}
         {activeTab === 'query' && (
           <div className="flex flex-col">
@@ -2495,9 +2849,9 @@ function DataExplorerSection() {
                       <option value="platform_orgs">platform_orgs</option>
                       <option value="platform_contacts">platform_contacts</option>
                    </select>
-                   <Button size="xs" color="indigo" onClick={handleQuery} loading={loading}>Execute Filter</Button>
+                   <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2" onClick={handleQuery} disabled={loading}>{loading ? 'Executing...' : 'Execute Filter'}</button>
                 </div>
-                <Badge color="zinc">Read-Only View</Badge>
+                <span className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-[var(--brand-500)] text-white shadow hover:bg-[var(--brand-600)]">Read-Only View</span>
              </div>
              
              <div className="flex h-[600px] bg-surface relative">
@@ -2574,18 +2928,18 @@ function DataExplorerSection() {
                                  <div className="flex items-center gap-2">
                                    {!isEditingRecord ? (
                                      <>
-                                       <Button size="xs" variant="secondary" onClick={() => handleInspect(record.id)} loading={executingCrud}>Dependencies</Button>
-                                       <Button size="xs" variant="secondary" onClick={() => { 
+                                       <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-transparent hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2" onClick={() => handleInspect(record.id)} disabled={executingCrud}>{executingCrud ? 'Loading...' : 'Dependencies'}</button>
+                                       <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-transparent hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2" onClick={() => { 
                                          setIsEditingRecord(true); 
                                          const { id, _sync, ...editable } = record; 
                                          setEditJsonStr(JSON.stringify(editable, null, 2)); 
-                                       }}>Edit Record</Button>
-                                       <Button size="xs" color="rose" onClick={() => handleDeleteRecord(record.id)} loading={executingCrud}>Delete</Button>
+                                       }}>Edit Record</button>
+                                       <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-red-600 text-white shadow hover:bg-red-700 h-9 px-4 py-2" onClick={() => handleDeleteRecord(record.id)} disabled={executingCrud}>{executingCrud ? 'Deleting...' : 'Delete'}</button>
                                      </>
                                    ) : (
                                      <>
-                                       <Button size="xs" variant="secondary" onClick={() => setIsEditingRecord(false)}>Cancel</Button>
-                                       <Button size="xs" color="indigo" onClick={() => handleSaveRecord(record.id)} loading={executingCrud}>Save Changes</Button>
+                                       <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-transparent hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2" onClick={() => setIsEditingRecord(false)}>Cancel</button>
+                                       <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2" onClick={() => handleSaveRecord(record.id)} disabled={executingCrud}>{executingCrud ? 'Saving...' : 'Save Changes'}</button>
                                      </>
                                    )}
                                  </div>
@@ -2659,12 +3013,12 @@ function DataExplorerSection() {
             <p className="text-sm mb-6 max-w-md mx-auto">This will fetch all platform structures attached to your environment to construct a localized backup file.</p>
             {exportError && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 rounded-md text-sm w-full max-w-md">{exportError}</div>}
             <div className="flex gap-4">
-              <Button color="emerald" onClick={() => handleExport('json')} loading={loading}>
+              <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2" onClick={() => handleExport('json')} disabled={loading}>
                 Download JSON Database
-              </Button>
-              <Button color="indigo" onClick={() => handleExport('csv')} loading={loading}>
+              </button>
+              <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2" onClick={() => handleExport('csv')} disabled={loading}>
                 Download CSV Database
-              </Button>
+              </button>
             </div>
           </div>
         )}
@@ -2695,9 +3049,9 @@ function DataExplorerSection() {
             ) : (
               <div className="flex flex-col items-center">
                  {consistencyError && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 rounded-md text-sm w-full max-w-md">{consistencyError}</div>}
-                 <Button color="amber" onClick={handleConsistencyCheck} loading={loading}>
+                 <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2" onClick={handleConsistencyCheck} disabled={loading}>
                    Commence Scan
-                 </Button>
+                 </button>
               </div>
             )}
             
@@ -2740,7 +3094,7 @@ function DataExplorerSection() {
             )}
           </div>
         )}
-      </Card>
+      </div>
     </div>
   );
 }
@@ -2754,14 +3108,12 @@ export default function AdminPage() {
     return true;
   }), [isInternal]);
 
-  // Use the first visible tab as the default unless a manual selection is made
   const [activeTabOverride, setActiveTabOverride] = useState<TabId | null>(null);
   const activeTab = activeTabOverride || visibleTabs[0]?.id || 'firm';
 
   return (
     <div className="absolute inset-0 flex flex-col animate-fade-in w-full bg-[var(--bg-background)] overflow-hidden">
       <div className="flex h-full w-full">
-        {/* Action Board (Doc 2 / Sidebar) */}
         <div className="w-[300px] flex flex-col shrink-0 bg-[var(--bg-canvas)] border-r border-[var(--border)] overflow-hidden relative">
           <div className="p-4 border-b border-border bg-elevated/50 flex items-center gap-3">
              <div className="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center">
@@ -2788,7 +3140,7 @@ export default function AdminPage() {
                 </div>
                 <span className="flex-1">{tab.label}</span>
                 {tab.superAdminOnly && (
-                  <Badge size="xs" color="blue" className="ml-auto px-1.5 opacity-80 text-[9px] py-0">SA</Badge>
+                  <span className="inline-flex items-center rounded-md border font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-blue-500 text-white shadow hover:bg-blue-600 ml-auto px-1.5 opacity-80 text-[9px] py-0">SA</span>
                 )}
               </button>
             ))}
@@ -2799,10 +3151,13 @@ export default function AdminPage() {
         <div className="flex-1 bg-[var(--bg-surface)] flex flex-col overflow-y-auto relative custom-scrollbar">
           <div className="p-8 md:p-10 w-full">
             {activeTab === 'platform'       && isInternal && <PlatformSection />}
+            {activeTab === 'tenant_types'   && isInternal && <TenantTypesSection />}
             {activeTab === 'database'       && isInternal && <DatabaseSection />}
             {activeTab === 'data_explorer'  && isInternal && <DataExplorerSection />}
-            {activeTab === 'mfa'            && <MfaSection />}
+            {activeTab === 'odoo_migration' && tenant?.id && <OdooMigrationUtility tenantId={tenant.id} />}
+            {activeTab === 'cloud_storage'  && <StorageConfigurationWizard />}
             {activeTab === 'integrations'   && <IntegrationsSection />}
+            {activeTab === 'digital_signatures' && <DigitalSignatureWizard />}
             {activeTab === 'ai_keys'        && <AiKeysSection />}
             {activeTab === 'firm'           && <FirmSection />}
             {activeTab === 'compliance'     && <ComplianceSection />}

@@ -20,6 +20,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useSearchParams } from 'next/navigation';
+import { toast } from 'sonner';
 import {
   getMailConnection, getAllMailConnections, disconnectMailProvider,
   updateSyncSettings, triggerManualSync, testMailConnection,
@@ -106,7 +107,7 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
       try {
         const idToken = await (await import('firebase/auth')).getAuth().currentUser?.getIdToken();
         if (!idToken || !user?.uid) {
-          alert('You must be signed in to connect an email account.');
+          toast.error('You must be signed in to connect an email account.');
           return;
         }
         const res = await fetch('/api/oauth/google/prepare', {
@@ -118,7 +119,7 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
         const { authUrl } = await res.json();
         window.location.href = authUrl;
       } catch (e: any) {
-        alert(`Could not start Google OAuth: ${e.message}`);
+        toast.error(`Could not start Google OAuth: ${e.message}`);
       }
     } else {
       // Microsoft — pass the Firebase idToken so the callback can identify the user
@@ -129,7 +130,7 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
         const tenantParam = tenant?.id ? `&tenantId=${encodeURIComponent(tenant.id)}` : '';
         window.location.href = `/api/oauth/microsoft/start?returnTo=${returnTo}${idTokenParam}${tenantParam}`;
       } catch (e: any) {
-        alert(`Could not start Microsoft OAuth: ${e.message}`);
+        toast.error(`Could not start Microsoft OAuth: ${e.message}`);
       }
     }
   }
@@ -150,7 +151,7 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
         if (d.includes('client_id') || d.includes('invalid_request') || d.includes('not configured')) {
           result.details = '❌ OAuth credentials not configured on the server. Contact your administrator.';
         } else if (d.includes('refresh') || d.includes('expired') || d.includes('re-connect')) {
-          result.details = '🔄 Token expired — please disconnect and re-connect your Google account.';
+          result.details = '🔄 Token expired — please disconnect and re-connect your account.';
           result.needsReconnect = true;
         }
       }
@@ -182,7 +183,7 @@ function ProviderCard({ provider, record, onRefresh }: ProviderCardProps) {
       if (d.includes('client_id') || d.includes('invalid_request') || d.includes('not configured')) {
         setSyncMsg('❌ OAuth not configured on the server. Contact your administrator.');
       } else if (d.includes('refresh') || d.includes('expired') || d.includes('re-connect')) {
-        setSyncMsg('🔄 Token expired — please Disconnect and Re-connect your Google account.');
+        setSyncMsg('🔄 Token expired — please Disconnect and Re-connect your account.');
       } else {
         setSyncMsg(`❌ Sync failed: ${msg}`);
       }

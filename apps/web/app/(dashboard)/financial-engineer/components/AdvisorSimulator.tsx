@@ -1,0 +1,1530 @@
+// @ts-nocheck
+'use client';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import {
+    Calculator, TrendingUp, Clock, AlertCircle, Activity,
+    Calendar, Settings, Plus, Trash2, Info, HelpCircle,
+    FileText, X, Printer, BookOpen, Globe, Shield, RefreshCw, AlertTriangle, MapPin, Database, CheckSquare, Wand2, Users, BrainCircuit, Sparkles, Loader2
+} from 'lucide-react';
+
+// --- CONFIGURAÇÃO DE TIPOS ---
+interface ActiveModules { core: boolean; family: boolean; geopolitics: boolean; structures: boolean; events: boolean; aiAdvisor: boolean; }
+interface VariableExpense { id: number; startAge: number; endAge: number; amount: number; }
+interface ResidencyPhase { id: number; startAge: number; endAge: number; jurisdiction: string; formalExitBR: boolean; stateBR: string; }
+interface SimEvent { id: number; age: number; amount: number; costBasis: number; type: 'outflow' | 'inflow' | 'real_estate_sale' | 'real_estate' | 'donation'; description?: string; }
+interface AiStrategy { generalGuideline: string; sCenarios: any[]; }
+interface ReportConfig { panorama: boolean; masterplan: boolean; succession: boolean; chart: boolean; interpretation: boolean; aiStrategy: boolean; disclaimer: boolean; }
+
+// --- MATEM� TICA ESTAT� STICA E FORMATA�!ÒO ---
+const formatCurrency = (value, currency = 'BRL') => {
+    const locale = currency === 'BRL' ? 'pt-BR' : currency === 'EUR' ? 'de-DE' : currency === 'GBP' ? 'en-GB' : 'en-US';
+    return new Intl.NumberFormat(locale, { style: 'currency', currency: currency, maximumFractionDigits: 0 }).format(value);
+};
+
+const randomNormal = () => {
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+};
+
+const calculateLognormalParams = (meanReturnPercent, volPercent) => {
+    const mu = meanReturnPercent / 100;
+    const sigma = volPercent / 100;
+    const variance = sigma * sigma;
+    const onePlusMu = 1 + mu;
+    const sigmaLog = Math.sqrt(Math.log(1 + (variance / (onePlusMu * onePlusMu))));
+    const muLog = Math.log(onePlusMu) - (sigmaLog * sigmaLog) / 2;
+    return { muLog, sigmaLog };
+};
+
+const getPercentile = (data, percentile) => {
+    if (!data || data.length === 0) return 0;
+    const sorted = [...data].sort((a, b) => a - b);
+    const index = (percentile / 100) * (sorted.length - 1);
+    const lower = Math.floor(index);
+    const upper = Math.ceil(index);
+    if (upper >= sorted.length) return sorted[lower];
+    return sorted[lower] * (1 - (index - lower)) + sorted[upper] * (index - lower);
+};
+
+// --- COMPONENTE DE INPUT MONETÁRIO FORMATADO ---
+const CurrencyInput = ({ value, onChange, currency, className }) => {
+    const displayValue = formatCurrency(value || 0, currency);
+    const handleChange = (e) => {
+        const numericString = e.target.value.replace(/\D/g, '');
+        onChange(Number(numericString));
+    };
+    return <input type="text" value = { displayValue } onChange = { handleChange } className = { className } />;
+};
+
+// --- BASE DE DADOS FISCAL GLOBAL E PREMISSAS (ASSUMPTIONS) ---
+const BRAZIL_STATES: Record<string, { name: string; itcmd: number }> = {
+    SP: { name: 'São Paulo', itcmd: 4 }, RJ: { name: 'Rio de Janeiro', itcmd: 8 },
+    MG: { name: 'Minas Gerais', itcmd: 5 }, SC: { name: 'Santa Catarina', itcmd: 8 },
+    PR: { name: 'Paraná', itcmd: 4 }, RS: { name: 'Rio Grande do Sul', itcmd: 6 },
+    DF: { name: 'Distrito Federal', itcmd: 6 }, OUTROS: { name: 'Outros (Teto Máx)', itcmd: 8 }
+};
+
+const JURISDICTIONS_DB_STATIC: Record<string, any> = {
+    BR: { name: 'Brasil', code: 'BR', capGainsOnshore: 15, capGainsOffshore: 15, fixedTax: 0, fixedTaxCurrency: 'BRL', desc: 'Offshore tributa 15% a.a. ITCMD varia por Estado.', exemptionUSD: 0 },
+    AE: { name: 'Dubai (EAU)', code: 'AE', capGainsOnshore: 0, capGainsOffshore: 0, inheritanceTax: 0, fixedTax: 0, fixedTaxCurrency: 'USD', desc: 'Isenção total. Exige Visto de Residência.', exemptionUSD: 0 },
+    IT: { name: 'Itália (Flat Tax)', code: 'IT', capGainsOnshore: 26, capGainsOffshore: 0, inheritanceTax: 4, fixedTax: 100000, fixedTaxCurrency: 'EUR', desc: 'Regime Neo-domiciliati. Imposto fixo anual.', exemptionUSD: 1000000 },
+    US: { name: 'Estados Unidos', code: 'US', capGainsOnshore: 20, capGainsOffshore: 20, inheritanceTax: 40, fixedTax: 0, fixedTaxCurrency: 'USD', desc: 'Estate Tax de 40% sobre ativos globais.', exemptionUSD: 7000000 },
+    PT: { name: 'Portugal', code: 'PT', capGainsOnshore: 28, capGainsOffshore: 28, inheritanceTax: 10, fixedTax: 0, fixedTaxCurrency: 'EUR', desc: 'Regime Geral. Isenção de imposto sucessório para herdeiros diretos.', exemptionUSD: 0 }
+};
+
+const SMART_ASSUMPTIONS = {
+    market: {
+        conservative: { nominal: 8.0, infl: 4.0, vol: 4.0, desc: 'Renda Fixa e Soberanos (Preservação)' },
+        moderate: { nominal: 10.5, infl: 4.0, vol: 9.0, desc: 'Portefólio Equilibrado (60/40)' },
+        aggressive: { nominal: 13.5, infl: 4.0, vol: 16.0, desc: 'Ações e Private Equity (Crescimento)' }
+    }
+};
+
+export function AdvisorSimulator() {
+    // --- ESTADOS: GESTOR DE M�DULOS (ENGINE COMERCIAL) ---
+    const [activeModules, setActiveModules] = useState<ActiveModules>({
+        core: true, family: true, geopolitics: false, structures: false, events: true, aiAdvisor: true
+    });
+
+    // --- ESTADOS: MOEDA E C�MBIO ---
+    const [currency, setCurrency] = useState('BRL');
+    const [exchangeRates, setExchangeRates] = useState<Record<string, number> | null>(null);
+    const [isFetchingRates, setIsFetchingRates] = useState(true);
+
+    // --- MODAIS ---
+    const [infoModalContent, setInfoModalContent] = useState<{title: string, text: string} | null>(null);
+    const [smartAssistModal, setSmartAssistModal] = useState<{fieldKey: string, title: string, phaseId?: number | null} | null>(null);
+
+    const InfoIconBtn = ({ title, text }) => (
+        <button type= "button" onClick = {(e) => { e.preventDefault(); setInfoModalContent({ title, text }); }
+} className = "ml-1.5 text-slate-400 hover:text-indigo-600 transition-colors focus:outline-none inline-flex items-center align-text-bottom" title = "Saber mais" >
+    <Info className="w-4 h-4" />
+        </button>
+  );
+
+const SmartAssistBtn = ({ fieldKey, title, phaseId = null }: { fieldKey: string; title: string; phaseId?: number | null }) => (
+    <button type= "button" onClick = {(e) => { e.preventDefault(); setSmartAssistModal({ fieldKey, title, phaseId }); }} className = "ml-2 text-amber-500 hover:text-amber-600 transition-colors focus:outline-none inline-flex items-center align-text-bottom" title = "Preenchimento Inteligente (MFO Assumptions)" >
+        <Wand2 className="w-4 h-4" />
+            </button>
+  );
+
+// --- ESTADOS: BÁSICOS & BURN RATE ---
+const [initialCapital, setInitialCapital] = useState(25000000);
+const [currentAge, setCurrentAge] = useState(50);
+const [lifeExpectancy, setLifeExpectancy] = useState(90);
+const [mcIterations, setMcIterations] = useState(300);
+
+const [burnRateType, setBurnRateType] = useState('fixed');
+const [baseMonthlyExpense, setBaseMonthlyExpense] = useState(100000);
+const [endMonthlyExpense, setEndMonthlyExpense] = useState(50000);
+const [expenseCurve, setExpenseCurve] = useState('smile');
+const [variableExpenses, setVariableExpenses] = useState<VariableExpense[]>([{ id: 1, startAge: currentAge, endAge: 65, amount: 120000 }, { id: 2, startAge: 66, endAge: 90, amount: 60000 }]);
+
+// --- ESTADOS: GRUPO FAMILIAR ---
+const [hasSpouse, setHasSpouse] = useState(true);
+const [spouseAge, setSpouseAge] = useState(48);
+const [spouseLifeExpectancy, setSpouseLifeExpectancy] = useState(92);
+const [numberOfHeirs, setNumberOfHeirs] = useState(2);
+
+const jointLifeExpectancy = useMemo(() => {
+    if (!activeModules.family || !hasSpouse) return lifeExpectancy;
+    const yearsLeftTitular = lifeExpectancy - currentAge;
+    const yearsLeftSpouse = spouseLifeExpectancy - spouseAge;
+    return currentAge + Math.max(yearsLeftTitular, yearsLeftSpouse);
+}, [activeModules.family, hasSpouse, currentAge, lifeExpectancy, spouseAge, spouseLifeExpectancy]);
+
+// --- ESTADOS: MERCADO E GLIDE PATH ---
+const [marketStrategy, setMarketStrategy] = useState('glidepath');
+const [nominalRate, setNominalRate] = useState(10.5);
+const [inflation, setInflation] = useState(4.0);
+const [volatility, setVolatility] = useState(10.0);
+const [managementFee, setManagementFee] = useState(0.8);
+const [simulationMode, setSimulationMode] = useState('montecarlo');
+
+const [marketPhases, setMarketPhases] = useState([
+    { id: 1, startAge: currentAge, endAge: 65, nominalRate: 13.5, inflation: 4.0, volatility: 16.0, profile: 'Agressivo (Crescimento)' },
+    { id: 2, startAge: 66, endAge: 75, nominalRate: 10.5, inflation: 4.0, volatility: 9.0, profile: 'Moderado (Transição)' },
+    { id: 3, startAge: 76, endAge: 90, nominalRate: 8.0, inflation: 4.0, volatility: 4.0, profile: 'Conservador (Preservação)' }
+]);
+
+// --- ESTADOS: EVENTOS DE LIQUIDEZ ---
+const [events, setEvents] = useState<SimEvent[]>([]);
+const [newEventAge, setNewEventAge] = useState(currentAge + 5);
+const [newEventAmount, setNewEventAmount] = useState(1000000);
+const [newEventCostBasis, setNewEventCostBasis] = useState(500000);
+const [newEventType, setNewEventType] = useState('outflow');
+
+// --- ESTADOS: GEOPOLÍTICA E ESTRUTURAS ---
+const [residencyPhases, setResidencyPhases] = useState<ResidencyPhase[]>([{ id: 1, startAge: currentAge, endAge: 65, jurisdiction: 'BR', formalExitBR: true, stateBR: 'SP' }]);
+const [allocationOffshore, setAllocationOffshore] = useState(60);
+const [hasPIC, setHasPIC] = useState(false);
+const [hasTrust, setHasTrust] = useState(false);
+const [picCostUSD, setPicCostUSD] = useState(4000);
+const [trustCostUSD, setTrustCostUSD] = useState(15000);
+const [dbJurisdictions, setDbJurisdictions] = useState<Record<string, any>>(JURISDICTIONS_DB_STATIC);
+
+// --- ESTADOS: AI ADVISOR ---
+const [aiStrategyData, setAiStrategyData] = useState<AiStrategy | null>(null);
+const [isGeneratingStrategy, setIsGeneratingStrategy] = useState(false);
+const [aiError, setAiError] = useState('');
+
+// Controlo UI e Sincronizações
+const [activeTab, setActiveTab] = useState('basic');
+const [showTutorial, setShowTutorial] = useState(false);
+const [showReport, setShowReport] = useState(false);
+const [reportConfig, setReportConfig] = useState<ReportConfig>({ panorama: true, masterplan: true, succession: true, chart: true, interpretation: true, aiStrategy: true, disclaimer: true });
+const [syncStatus, setSyncStatus] = useState<Record<string, boolean>>({});
+const [syncTimestamps, setSyncTimestamps] = useState<Record<string, number>>({});
+
+const addExpensePhase = () => setVariableExpenses([...variableExpenses, { id: Date.now(), startAge: 60, endAge: 80, amount: 50000 }]);
+const updateExpensePhase = (id: number, field: string, val: any) => setVariableExpenses(variableExpenses.map((exp: VariableExpense) => exp.id === id ? { ...exp, [field]: val } : exp));
+const removeExpensePhase = (id: number) => setVariableExpenses(variableExpenses.filter((exp: VariableExpense) => exp.id !== id));
+const addResidencyPhase = () => setResidencyPhases([...residencyPhases, { id: Date.now(), startAge: 60, endAge: 80, jurisdiction: 'US', formalExitBR: false, stateBR: '' }]);
+const updatePhase = (id: number, field: string, val: any) => setResidencyPhases(residencyPhases.map((p: any) => p.id === id ? { ...p, [field]: val } : p));
+
+useEffect(() => {
+    const updateEdges = (arr) => {
+        const newArr = [...arr];
+        if (newArr.length > 0) {
+            if (newArr[0].startAge !== currentAge) newArr[0].startAge = currentAge;
+            if (newArr[newArr.length - 1].endAge !== jointLifeExpectancy) newArr[newArr.length - 1].endAge = jointLifeExpectancy;
+        }
+        return newArr;
+    };
+    setResidencyPhases(prev => updateEdges(prev));
+    setVariableExpenses(prev => updateEdges(prev));
+    setMarketPhases(prev => updateEdges(prev));
+}, [currentAge, jointLifeExpectancy]);
+
+useEffect(() => {
+    fetch('https://open.er-api.com/v6/latest/USD')
+        .then(res => res.json())
+        .then(data => { setExchangeRates(data.rates); setIsFetchingRates(false); })
+        .catch(err => { setExchangeRates({ USD: 1, BRL: 5.15, EUR: 0.92, GBP: 0.79 }); setIsFetchingRates(false); });
+}, []);
+
+const convertCurrency = useCallback((amount, fromCurrency, toCurrency) => {
+    if (!exchangeRates || !exchangeRates[fromCurrency] || !exchangeRates[toCurrency]) return amount;
+    return amount * (exchangeRates[toCurrency] / exchangeRates[fromCurrency]);
+}, [exchangeRates]);
+
+const handleSyncData = (module) => {
+    setSyncStatus(prev => ({ ...prev, [module]: true }));
+    setTimeout(() => {
+        const now = new Date().toLocaleTimeString('pt-BR');
+        if (module === 'demographics') {
+            const wealthInUSD = convertCurrency(initialCapital, currency, 'USD');
+            let withdrawalRate = 0.02;
+            if (wealthInUSD < 2000000) withdrawalRate = 0.035;
+            else if (wealthInUSD > 15000000) withdrawalRate = 0.015;
+
+            setBaseMonthlyExpense((initialCapital * withdrawalRate) / 12);
+            setExpenseCurve('smile');
+            setBurnRateType('fixed');
+        }
+        if (module === 'market') {
+            setNominalRate(10.5); setInflation(4.0); setVolatility(9.0);
+            setMarketStrategy('glidepath');
+        }
+        if (module === 'tax') {
+            setDbJurisdictions(prev => ({ ...prev, BR: { ...prev.BR, capGainsOnshore: 15, capGainsOffshore: 15 }, US: { ...prev.US, exemptionUSD: 7000000 } }));
+        }
+        if (module === 'structure') { setPicCostUSD(4800); setTrustCostUSD(18500); }
+        setSyncStatus(prev => ({ ...prev, [module]: false }));
+        setSyncTimestamps(prev => ({ ...prev, [module]: now }));
+    }, 1200);
+};
+
+const applySmartAssumption = (type, phaseId) => {
+    const data = SMART_ASSUMPTIONS.market[type];
+    if (data) {
+        if (phaseId) {
+            updateMarketPhase(phaseId, 'nominalRate', data.nominal);
+            updateMarketPhase(phaseId, 'inflation', data.infl);
+            updateMarketPhase(phaseId, 'volatility', data.vol);
+            updateMarketPhase(phaseId, 'profile', data.desc);
+        } else {
+            setNominalRate(data.nominal);
+            setInflation(data.infl);
+            setVolatility(data.vol);
+        }
+    }
+    setSmartAssistModal(null);
+};
+
+// --- FUNÇÕES DE TIMELINE GENÉRICAS ---
+const addTimelinePhase = (stateSetter: any, list: any[], defaultValues: any) => {
+    const lastPhase = list[list.length - 1];
+    if (lastPhase.endAge >= jointLifeExpectancy) return;
+    stateSetter([...list, { id: Date.now(), startAge: lastPhase.endAge + 1, endAge: jointLifeExpectancy, ...defaultValues }]);
+};
+
+const removeTimelinePhase = (stateSetter: any, list: any[], id: string) => {
+    if (list.length <= 1) return;
+    const newPhases = list.filter((p: any) => p.id !== id);
+    newPhases[newPhases.length - 1].endAge = jointLifeExpectancy;
+    stateSetter(newPhases);
+};
+
+const updateTimelinePhase = (stateSetter: any, list: any[], id: string, field: string, value: any) => {
+    const newPhases = list.map((p: any) => p.id === id ? { ...p, [field]: value } : p);
+    for (let i = 1; i < newPhases.length; i++) newPhases[i].startAge = newPhases[i - 1].endAge + 1;
+    newPhases[newPhases.length - 1].endAge = jointLifeExpectancy;
+    stateSetter(newPhases);
+};
+
+const updateMarketPhase = (id: string, field: string, value: any) => updateTimelinePhase(setMarketPhases, marketPhases, id, field, value);
+
+// --- INTEGRAÇÃO COM IA GERATIVA (GEMINI API) ---
+const handleGenerateAIStrategy = async () => {
+    setIsGeneratingStrategy(true);
+    setAiError('');
+    setAiStrategyData(null);
+
+    // Preparar o contexto atual do cliente para o prompt
+    const clientContext = `
+      Moeda Base: ${currency}
+      Patrimônio Atual: ${formatCurrency(initialCapital, currency)}
+      Idade Titular: ${currentAge} | Expectativa de Vida Final: ${jointLifeExpectancy}
+      Cônjuge Incluído: ${activeModules.family && hasSpouse ? 'Sim' : 'Não'}
+      Número de Herdeiros: ${numberOfHeirs}
+      
+      Despesas (Burn Rate): 
+      ${burnRateType === 'fixed' ? 'Base Fixa de ' + formatCurrency(baseMonthlyExpense, currency) + '/mês com curva de ajuste ' + expenseCurve
+            : burnRateType === 'progressive' ? 'Começa em ' + formatCurrency(baseMonthlyExpense, currency) + ' e termina em ' + formatCurrency(endMonthlyExpense, currency)
+                : 'Fases Variáveis: ' + JSON.stringify(variableExpenses)}
+    `;
+
+    try {
+        const response = await fetch('/api/ai/simulator', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'generateStrategy',
+                clientContext: clientContext
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('Falha na comunicação com Roteador de IA');
+        }
+
+        const data = await response.json();
+        setAiStrategyData(data.result);
+    } catch (err: any) {
+        setAiError(err.message || 'Erro desconhecido ao gerar estratégia');
+    } finally {
+        setIsGeneratingStrategy(false);
+    }
+};
+
+// --- MOTOR DE SIMULAÇÃO CENTRAL ---
+const runPath = useCallback((isMonteCarlo = false) => {
+    let balance = initialCapital;
+    const path = [];
+    let isRuined = false;
+    let ruinAge: number | null = null;
+
+    const fee = managementFee / 100;
+    const allocOff = activeModules.structures ? (allocationOffshore / 100) : 0;
+    const allocOn = 1 - allocOff;
+
+    for (let age = currentAge; age <= jointLifeExpectancy; age++) {
+        if (balance <= 0) {
+            if (!isRuined) { isRuined = true; ruinAge = age; }
+            path.push({ age, balance: 0, phase: activeModules.geopolitics ? (residencyPhases.find((p: any) => age >= p.startAge && age <= p.endAge) || residencyPhases[residencyPhases.length - 1]) : { jurisdiction: 'BR' } });
+            continue;
+        }
+
+        // Parâmetros de Mercado do Ano
+        let mPhaseNominal = nominalRate;
+        let mPhaseInfl = inflation;
+        let mPhaseVol = volatility;
+
+        if (marketStrategy === 'glidepath') {
+            const mPhase = marketPhases.find((p: any) => age >= p.startAge && age <= p.endAge) || marketPhases[marketPhases.length - 1];
+            mPhaseNominal = mPhase.nominalRate;
+            mPhaseInfl = mPhase.inflation;
+            mPhaseVol = mPhase.volatility;
+        }
+
+        const nominalNetFeePercent = mPhaseNominal - managementFee; // Taxa nominal líquida de Adm
+        const inflDec = mPhaseInfl / 100;
+
+        const { muLog, sigmaLog } = isMonteCarlo ? calculateLognormalParams(nominalNetFeePercent, mPhaseVol) : { muLog: 0, sigmaLog: 0 };
+
+        // Impostos
+        let onshoreTax = 0.15; let offshoreTax = 0.15; let currentPhase: any = { jurisdiction: 'BR' };
+        if (activeModules.geopolitics) {
+            currentPhase = residencyPhases.find((p: any) => age >= p.startAge && age <= p.endAge) || residencyPhases[residencyPhases.length - 1];
+            const jRules = dbJurisdictions[currentPhase.jurisdiction];
+            onshoreTax = jRules.capGainsOnshore / 100;
+            offshoreTax = jRules.capGainsOffshore / 100;
+            if (currentPhase.jurisdiction === 'BR') offshoreTax = 0.15;
+            if (currentPhase.jurisdiction === 'IT') offshoreTax = 0;
+            if (currentPhase.jurisdiction === 'US' && activeModules.structures && hasPIC) offshoreTax = 0.37;
+            if (currentPhase.jurisdiction !== 'BR' && !currentPhase.formalExitBR) {
+                onshoreTax = Math.max(onshoreTax, 0.15); offshoreTax = Math.max(offshoreTax, 0.15);
+            }
+        }
+        const blendedTaxRate = (allocOn * onshoreTax) + (allocOff * offshoreTax);
+
+        // Rentabilidade
+        let yearNominalReturnDec = nominalNetFeePercent / 100;
+        if (isMonteCarlo && balance > 0) {
+            yearNominalReturnDec = (Math.exp(muLog + sigmaLog * randomNormal()) - 1);
+        }
+
+        const actualTaxDec = yearNominalReturnDec > 0 ? yearNominalReturnDec * blendedTaxRate : 0;
+        const nominalNetTaxDec = yearNominalReturnDec - actualTaxDec;
+        const yearRealReturnPercentDec = ((1 + nominalNetTaxDec) / (1 + inflDec)) - 1;
+
+        // Eventos
+        const yearEvents = activeModules.events ? events.filter(e => e.age === age) : [];
+        let inflow = 0; let outflow = 0;
+        yearEvents.forEach(e => {
+            if (e.type === 'inflow') { inflow += e.amount; }
+            else if (e.type === 'real_estate_sale') {
+                const gain = Math.max(0, e.amount - (e.costBasis || e.amount));
+                const taxRate = currentPhase.jurisdiction === 'BR' ? 0.15 : (dbJurisdictions[currentPhase.jurisdiction].capGainsOnshore / 100);
+                inflow += (e.amount - (gain * taxRate));
+            }
+            else if (e.type === 'real_estate') { outflow += e.amount * 1.03; }
+            else if (e.type === 'donation') { outflow += e.amount * 1.04; }
+            else { outflow += e.amount; }
+        });
+        balance = balance + inflow - outflow;
+        if (balance <= 0) balance = 0;
+
+        // Burn Rate
+        let yearlyBaseExp = 0;
+        const totalYears = jointLifeExpectancy - currentAge;
+
+        if (burnRateType === 'variable') {
+            const vPhase = variableExpenses.find(v => age >= v.startAge && age <= v.endAge) || variableExpenses[variableExpenses.length - 1];
+            yearlyBaseExp = vPhase.amount * 12;
+        } else if (burnRateType === 'progressive') {
+            const progress = totalYears > 0 ? (age - currentAge) / totalYears : 0;
+            const currentMonthlyExp = baseMonthlyExpense + (endMonthlyExpense - baseMonthlyExpense) * progress;
+            yearlyBaseExp = currentMonthlyExp * 12;
+        } else {
+            yearlyBaseExp = baseMonthlyExpense * 12;
+            const percentLife = totalYears > 0 ? (age - currentAge) / totalYears : 0;
+            if (expenseCurve === 'smile') {
+                if (percentLife < 0.3) yearlyBaseExp *= 1.2;
+                else if (percentLife < 0.7) yearlyBaseExp *= 0.8;
+                else yearlyBaseExp *= 1.4;
+            } else if (expenseCurve === 'decreasing') {
+                yearlyBaseExp *= (1.2 - (0.5 * percentLife));
+            }
+        }
+
+        // Custos Estruturais
+        if (activeModules.structures) {
+            if (hasPIC) yearlyBaseExp += convertCurrency(picCostUSD, 'USD', currency);
+            if (hasTrust) yearlyBaseExp += convertCurrency(trustCostUSD, 'USD', currency);
+        }
+        if (activeModules.geopolitics) {
+            const jRules = dbJurisdictions[currentPhase.jurisdiction];
+            if (jRules.fixedTax > 0) yearlyBaseExp += convertCurrency(jRules.fixedTax, jRules.fixedTaxCurrency, currency);
+            if (currentPhase.jurisdiction !== 'BR' && !currentPhase.formalExitBR) yearlyBaseExp += convertCurrency(10000, 'USD', currency);
+        }
+
+        const monthlyExpense = yearlyBaseExp / 12;
+        const monthlyRate = Math.pow(1 + yearRealReturnPercentDec, 1 / 12) - 1;
+
+        for (let m = 0; m < 12; m++) {
+            if (balance > 0) { balance -= monthlyExpense; if (balance < 0) balance = 0; else balance = balance * (1 + monthlyRate); }
+        }
+
+        if (balance <= 0 && !isRuined) { isRuined = true; ruinAge = age; }
+        path.push({ age, balance, phase: currentPhase, taxRate: blendedTaxRate });
+    }
+    return { path, isRuined, ruinAge, finalBalance: balance };
+}, [initialCapital, currentAge, jointLifeExpectancy, nominalRate, inflation, managementFee, volatility, allocationOffshore, hasPIC, hasTrust, events, baseMonthlyExpense, endMonthlyExpense, expenseCurve, convertCurrency, currency, dbJurisdictions, picCostUSD, trustCostUSD, burnRateType, variableExpenses, activeModules, residencyPhases, marketStrategy, marketPhases]);
+
+// --- MOTOR DE SUCESSÃO FINAL ---
+const calculateSuccession = useCallback((finalBalance: number) => {
+    if (finalBalance <= 0) return { netInheritance: 0, totalCosts: 0, inventoryCost: 0, itcmdCost: 0, effectiveRate: 0, jurisdictionDesc: '' };
+
+    let inventoryRate = 0.06; let taxRate = 0.08; let jurisdictionDesc = 'Média Brasil (Sem Planejamento)';
+    let taxableAmount = finalBalance;
+
+    if (activeModules.geopolitics) {
+        const finalPhase = residencyPhases[residencyPhases.length - 1];
+        const jRules = dbJurisdictions[finalPhase.jurisdiction];
+        if (finalPhase.jurisdiction === 'BR') {
+            const uf = finalPhase.stateBR || 'SP';
+            const ufData = BRAZIL_STATES[uf] || BRAZIL_STATES['SP'] || { name: 'São Paulo', itcmd: 4 };
+            taxRate = ufData.itcmd / 100;
+            jurisdictionDesc = "Brasil (" + ufData.name + ")";
+        } else {
+            taxRate = (jRules.inheritanceTax || 0) / 100;
+            jurisdictionDesc = jRules.name;
+        }
+        if (jRules.exemptionUSD > 0) {
+            const exemptionInCurrentCurrency = convertCurrency(jRules.exemptionUSD, 'USD', currency);
+            taxableAmount = Math.max(0, finalBalance - exemptionInCurrentCurrency);
+        }
+        if (finalPhase.jurisdiction === 'PT') taxRate = 0;
+    }
+
+    if (activeModules.structures) {
+        if (hasTrust) { inventoryRate = 0.0; if (!activeModules.geopolitics || residencyPhases[residencyPhases.length - 1].jurisdiction === 'BR') taxRate = 0.0; }
+        else if (hasPIC) { inventoryRate = 0.02; }
+    }
+    const inventoryCost = finalBalance * inventoryRate;
+    const inheritanceTaxCost = taxableAmount * taxRate;
+    const totalCosts = inventoryCost + inheritanceTaxCost;
+
+    return {
+        netInheritance: finalBalance - totalCosts, totalCosts, inventoryCost, itcmdCost: inheritanceTaxCost,
+        effectiveRate: (totalCosts / finalBalance) * 100, deathJurisdiction: jurisdictionDesc
+    };
+}, [hasTrust, hasPIC, currency, convertCurrency, lifeExpectancy, dbJurisdictions, activeModules, residencyPhases]);
+
+const simulationResults = useMemo(() => {
+    if (simulationMode === 'deterministic') {
+        const res = runPath(false);
+        return { deterministic: res.path, successRate: res.isRuined ? 0 : 100, medianFinal: res.finalBalance, successionData: calculateSuccession(res.finalBalance), ruinAge: res.ruinAge };
+    }
+
+    const iterations = mcIterations;
+    const paths = []; let successCount = 0; const finalBalances = [];
+
+    for (let i = 0; i < iterations; i++) {
+        const res = runPath(true);
+        paths.push(res.path);
+        finalBalances.push(res.finalBalance);
+        if (!res.isRuined) successCount++;
+    }
+
+    const p10Path = []; const p50Path = []; const p90Path = [];
+    for (let i = 0; i <= jointLifeExpectancy - currentAge; i++) {
+        const balancesForAge = paths.map(p => p[i].balance);
+        p10Path.push({ age: currentAge + i, balance: getPercentile(balancesForAge, 10) });
+        p50Path.push({ age: currentAge + i, balance: getPercentile(balancesForAge, 50) });
+        p90Path.push({ age: currentAge + i, balance: getPercentile(balancesForAge, 90) });
+    }
+
+    const medianFinal = getPercentile(finalBalances, 50);
+
+    return {
+        p10: p10Path, p50: p50Path, p90: p90Path, successRate: (successCount / iterations) * 100,
+        medianFinal: medianFinal, successionData: calculateSuccession(medianFinal)
+    };
+}, [runPath, simulationMode, jointLifeExpectancy, currentAge, calculateSuccession, mcIterations]);
+
+const chartMaxValue = useMemo(() => {
+    if (simulationMode === 'deterministic') return Math.max(initialCapital, ...simulationResults?.deterministic!.map(d => d.balance)) * 1.1;
+    return Math.max(initialCapital, ...simulationResults?.p90!.map(d => d.balance)) * 1.1;
+}, [simulationResults, simulationMode, initialCapital]);
+
+const systemWarnings = useMemo(() => {
+    const warnings = [];
+    if (activeModules.geopolitics && activeModules.structures) {
+        residencyPhases.forEach(p => {
+            if (p.jurisdiction === 'US' && hasPIC) warnings.push(`PFIC Alert (Idade ${p.startAge}-${p.endAge}): Residência nos EUA com Offshore PIC ativa aciona impostos punitivos.`);
+            if (p.jurisdiction !== 'BR' && !p.formalExitBR) warnings.push(`Dupla Tributação (Idade ${p.startAge}-${p.endAge}): Reside fora mas NÒO formalizou a Saída Definitiva do Brasil.`);
+        });
+    }
+    return [...new Set(warnings)];
+}, [residencyPhases, hasPIC, activeModules]);
+
+const graphInterpretation = useMemo(() => {
+    if (simulationMode === 'montecarlo') {
+        const success = simulationResults.successRate.toFixed(0);
+        const p50 = formatCurrency(simulationResults.medianFinal, currency);
+        const ruinP10 = simulationResults?.p10!.find(d => d.balance <= 0)?.age;
+        const ruinP50 = simulationResults?.p50!.find(d => d.balance <= 0)?.age;
+
+        let text = `Análise de Cenários: Baseado em ${mcIterations} iterações do motor de Monte Carlo, a probabilidade de sobrevivência do capital é de ${success}%. `;
+
+        if (simulationResults.successRate >= 85) {
+            text += `No cenário base (mediana), o capital residual estimado aos ${jointLifeExpectancy} anos é de ${p50}. O plano demonstra alta resiliência a cenários de stress financeiro (Cenário Pessimista seguro).`;
+            if (ruinP10) text += ` Contudo, num evento de crise extrema e prolongada (Cenário P10), o capital esgotar-se-ia aos ${ruinP10} anos.`;
+        } else if (simulationResults.successRate >= 50) {
+            text += `No cenário base, o capital atinge o final do plano com ${p50}. Porém, existe risco moderado. O Cenário Pessimista (P10) indica que o dinheiro acaba aos ${ruinP10 || 'poucos'} anos. Recomenda-se ajustar o Risco da Carteira ou reduzir o Custo de Vida.`;
+        } else {
+            text += `ALERTA CRÍTICO: A Taxa de Consumo atual (Burn Rate) é insustentável. `;
+            if (ruinP50) text += `No cenário Base (P50), o dinheiro acaba aos ${ruinP50} anos. `;
+            if (ruinP10) text += `Num cenário adverso (P10), a falência ocorre aos ${ruinP10} anos.`;
+        }
+        return text;
+    } else {
+        if (simulationResults.successRate === 100) return `Análise Estática: Assumindo taxas constantes sem risco de mercado, o capital preserva-se com saldo de ${formatCurrency(simulationResults.medianFinal, currency)} no fim do plano (${jointLifeExpectancy} anos).`;
+        else return `Análise Estática: A matemática atual aponta para rutura financeira. O capital esgotar-se-á aos ${simulationResults.ruinAge} anos. Ação imediata requerida.`;
+    }
+}, [simulationMode, simulationResults, jointLifeExpectancy, currency, mcIterations]);
+
+const addEvent = () => {
+    if (newEventAmount <= 0) return;
+    setEvents([...events, {
+        id: Date.now(), age: newEventAge, amount: newEventAmount, type: newEventType, costBasis: newEventType === 'real_estate_sale' ? newEventCostBasis : 0,
+        description: newEventType === 'inflow' ? 'Aporte de Liquidez' : newEventType === 'real_estate' ? 'Aquisição Imobiliária' : newEventType === 'real_estate_sale' ? 'Venda de Imóvel' : newEventType === 'donation' ? 'Doação em Vida' : 'Levantamento'
+    }]);
+};
+const removeEvent = (id) => setEvents(events.filter(e => e.id !== id));
+
+const toggleModule = (mod) => {
+    setActiveModules(prev => {
+        const next = { ...prev, [mod]: !prev[mod] };
+        if (!next[mod] && activeTab === mod) setActiveTab('basic');
+        if (mod === 'aiAdvisor' && !next[mod]) setAiStrategyData(null); // Limpar dados de IA se desligado
+        return next;
+    });
+};
+
+// --- RENDERIZA�!ÒO DO RELAT�RIO CUSTOMIZÁVEL ---
+if (showReport) {
+    return (
+        <div className= "min-h-screen bg-slate-100 font-sans text-slate-800" >
+        <div className="print:hidden sticky top-0 z-30 bg-slate-900 text-white p-4 shadow-lg flex flex-wrap gap-6 items-center justify-between" >
+            <div className="flex flex-wrap gap-4 items-center text-sm font-semibold" >
+                <span className="text-slate-400 uppercase tracking-widest text-[10px] flex items-center gap-1" > <CheckSquare className="w-3 h-3" /> Secções do Relatório: </span>
+                    < label className = "flex items-center gap-1.5 cursor-pointer hover:text-indigo-300 transition" >
+                    <input type="checkbox" checked = { reportConfig.panorama } onChange = { e => setReportConfig({ ...reportConfig, panorama: e.target.checked })
+} className = "accent-indigo-500 w-4 h-4" /> Panorama Central
+    </label>
+    < label className = "flex items-center gap-1.5 cursor-pointer hover:text-indigo-300 transition" >
+        <input type="checkbox" checked = { reportConfig.masterplan } onChange = { e => setReportConfig({ ...reportConfig, masterplan: e.target.checked })} className = "accent-indigo-500 w-4 h-4" /> Engenharia & Estruturas
+            </label>
+            < label className = "flex items-center gap-1.5 cursor-pointer hover:text-indigo-300 transition" >
+                <input type="checkbox" checked = { reportConfig.succession } onChange = { e => setReportConfig({ ...reportConfig, succession: e.target.checked })} className = "accent-indigo-500 w-4 h-4" /> Planejamento Sucessório
+                    </label>
+                    < label className = "flex items-center gap-1.5 cursor-pointer hover:text-indigo-300 transition" >
+                        <input type="checkbox" checked = { reportConfig.chart } onChange = { e => setReportConfig({ ...reportConfig, chart: e.target.checked })} className = "accent-indigo-500 w-4 h-4" /> Gráficos de Cenários
+                            </label>
+{
+    aiStrategyData && (
+        <label className="flex items-center gap-1.5 cursor-pointer hover:text-indigo-300 transition text-amber-300" >
+            <input type="checkbox" checked = { reportConfig.aiStrategy } onChange = { e => setReportConfig({ ...reportConfig, aiStrategy: e.target.checked })
+} className = "accent-amber-500 w-4 h-4" /> Parecer Estratégico(IA)
+    </label>
+            )}
+        </div>
+        <div className="flex gap-2">
+            <button onClick={() => setShowReport(false)} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded text-xs font-bold transition">Voltar ao Motor</button>
+            <button onClick={() => window.print()} className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-900 rounded text-xs font-bold transition flex items-center gap-2 shadow-md"><Printer className="w-4 h-4" /> Exportar PDF</button>
+        </div>
+    </div>
+                <div className="max-w-5xl mx-auto bg-white p-8 md:p-12 shadow-xl my-8 print:my-0 print:shadow-none print:w-full">
+                    <div className="border-b-4 border-indigo-900 pb-6 flex justify-between items-end mb-8" >
+                        <div>
+                        <h1 className="text-4xl font-black text-indigo-950 uppercase tracking-tight" > Wealth Analytics Report </h1>
+                            < p className = "text-lg text-slate-600 mt-1 font-medium" > Modelagem Estocástica de Preservação Patrimonial({ currency }) </p>
+                                </div>
+                                < div className = "text-right text-xs text-slate-400 font-mono" > EMITIDO A: { new Date().toLocaleDateString('pt-BR') } <br/>MFO ADVISOR PLATFORM
+                                    </div>
+                                </div>
+
+{
+    reportConfig.panorama && (
+        <section className="mb-8 animate-in fade-in" >
+            <h2 className="text-xl font-bold text-slate-800 border-b pb-2 flex items-center gap-2 uppercase tracking-wide" > <Activity className="w-5 h-5 text-indigo-700" /> Sumário Executivo </h2>
+                < div className = "grid grid-cols-2 2xl:grid-cols-4 gap-4 mt-4 print:grid-cols-4" >
+                    <div className="bg-slate-50 p-4 rounded border border-slate-200" >
+                        <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider" > Património Base </span>
+                            < span className = "block text-lg font-bold text-slate-800" > { formatCurrency(initialCapital, currency) } </span>
+                                </div>
+                                < div className = "bg-slate-50 p-4 rounded border border-slate-200" >
+                                    <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider" > Horizonte do Plano </span>
+                                        < span className = "block text-lg font-bold text-slate-800" > { currentAge } aos { jointLifeExpectancy } anos </span>
+                                            </div>
+                                            < div className = "bg-slate-50 p-4 rounded border border-slate-200" >
+                                                <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider" > Taxa de Consumo Inicial </span>
+                                                    < span className = "block text-lg font-bold text-slate-800" > { burnRateType === 'fixed' ? formatCurrency(baseMonthlyExpense, currency) : burnRateType === 'progressive' ? 'Progressivo' : 'Variável (Fases)'
+} </span>
+    </div>
+    < div className = "bg-slate-50 p-4 rounded border border-slate-200" >
+        <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider" > Índice de Preservação </span>
+            < span className = {`block text-lg font-bold ${simulationResults.successRate >= 85 ? 'text-emerald-600' : 'text-red-600'}`}> { simulationResults.successRate.toFixed(0) } % Seguro </span>
+                </div>
+                </div>
+                </section>
+          )}
+
+{
+    reportConfig.masterplan && (activeModules.geopolitics || activeModules.structures) && (
+        <section className="mb-8 animate-in fade-in" >
+            <h2 className="text-xl font-bold text-slate-800 border-b pb-2 flex items-center gap-2 uppercase tracking-wide" > <Globe className="w-5 h-5 text-indigo-700" /> Engenharia Global & SPVs </h2>
+                < div className = "mt-4 grid grid-cols-1 md:grid-cols-2 gap-6 text-sm text-slate-700" >
+                    {
+                        activeModules.geopolitics && (
+                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                <h3 className="font-bold text-slate-900 mb-2"> Linha do Tempo Domiciliar</ h3 >
+                    <div className="space-y-2" >
+                    {
+                        residencyPhases.map((phase, i) => (
+                            <div key= { i } className = "flex justify-between items-center border-l-4 border-indigo-500 pl-3 py-1" >
+                            <span className="font-bold text-slate-700" > { phase.startAge } - { phase.endAge }a </span>
+                        < span className = "font-bold text-indigo-800 bg-indigo-50 px-2 py-0.5 rounded" >
+                        { dbJurisdictions[phase.jurisdiction].name } { phase.jurisdiction === 'BR' ? ` (${BRAZIL_STATES[phase.stateBR || 'SP'].name})` : '' }
+                        </span>
+                        </div>
+                        ))
+                    }
+                        </div>
+                        </div>
+                )
+}
+{
+    activeModules.structures && (
+        <div className="space-y-4" >
+            <div className="border border-slate-200 p-4 rounded-xl" >
+                <span className="block text-[10px] font-bold text-slate-500 uppercase" > Alocação Cambial Direta </span>
+                    < span className = "block font-bold mt-1 text-emerald-600" > Onshore: { 100 - allocationOffshore }% | Offshore: { allocationOffshore }% </span>
+                        </div>
+                        < div className = "border border-slate-200 p-4 rounded-xl" >
+                            <span className="block text-[10px] font-bold text-slate-500 uppercase" > Status Fiduciário </span>
+                                < span className = "block font-bold mt-1 text-slate-800" > PIC Internacional: { hasPIC ? 'Constituída' : 'Não Constituída' } | Trust: { hasTrust ? 'Constituído' : 'Não Constituído' } </span>
+                                    </div>
+                                    </div>
+                )
+}
+</div>
+    </section>
+          )}
+
+{
+    reportConfig.succession && (
+        <section className="bg-slate-50 border border-slate-200 p-6 rounded-xl mb-8 animate-in fade-in" >
+            <h2 className="text-xl font-bold text-slate-800 border-b border-slate-200 pb-2 flex items-center gap-2 uppercase tracking-wide" > <Shield className="w-5 h-5 text-indigo-700" /> Planejamento de Transição(Aos { jointLifeExpectancy } anos) </h2>
+                < div className = "mt-4 grid grid-cols-1 md:grid-cols-2 gap-8" >
+                    <div>
+                    <p className="text-sm text-slate-600 text-justify mb-4" >
+                        Com base no domicílio final simulado em < strong > { simulationResults.successionData.deathJurisdiction } </strong>, e assumindo o espólio (Cenário Base) de <strong>{formatCurrency(simulationResults.medianFinal, currency)}</strong>, calcula - se o seguinte impacto para os herdeiros:
+    </p>
+        < div className = "space-y-2 text-sm" >
+            <div className="flex justify-between border-b border-red-100 text-red-700" >
+                <span>Carga Tributária(ITCMD / Estate Tax) </span><span className="font-bold">-{formatCurrency(simulationResults.successionData.itcmdCost, currency)}</span>
+                    </div>
+                    < div className = "flex justify-between border-b border-red-100 text-red-700" >
+                        <span>Fricção Jurídica(Probate / Honorários) </span><span className="font-bold">-{formatCurrency(simulationResults.successionData.inventoryCost, currency)}</span>
+                            </div>
+                            < div className = "flex justify-between font-bold text-slate-800 pt-2 border-t-2 border-slate-300" >
+                                <span>Capital Líquido a Transferir </span><span className="text-indigo-700 text-lg">{formatCurrency(simulationResults.successionData.netInheritance, currency)}</span>
+                                    </div>
+                                    </div>
+                                    </div>
+                                    <div className="flex items-center justify-center relative">
+                                        <div className="w-48 h-48 rounded-full border-8 border-indigo-100 flex items-center justify-center flex-col shadow-inner bg-white">
+                                            <span className="text-[10px] font-bold text-slate-500 uppercase">Eficiência Sucessória</span>
+                                            <span className="text-3xl font-black text-indigo-800">{(100 - simulationResults.successionData.effectiveRate).toFixed(1)}%</span>
+                                            <span className="text-[10px] text-slate-400">retenção de riqueza</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+                        )}
+
+                        {/* SEÇÃO IA DO RELATÓRIO */}
+                        {reportConfig.aiStrategy && aiStrategyData && (
+                            <section className="mb-8 print:break-inside-avoid animate-in fade-in">
+                                <h2 className="text-xl font-bold text-slate-800 border-b pb-2 flex items-center gap-2 uppercase tracking-wide">
+                                    <BrainCircuit className="w-5 h-5 text-amber-500" /> Parecer Estratégico de Wealth Management
+                                </h2>
+                                <div className="mt-4 bg-amber-50 border border-amber-200 p-5 rounded-xl text-sm text-slate-800 leading-relaxed text-justify mb-6">
+                                    <strong className="text-amber-900 block mb-1">Análise do Comitê (CIO):</strong>
+                                    {aiStrategyData.generalGuideline}
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    {aiStrategyData.sCenarios.map((sCenario: any, index: number) => (
+                                        <div key={index} className="border border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm flex flex-col">
+                                            <div className={`p-3 text-center text-white font-bold uppercase tracking-wide text-xs ${sCenario.name === 'Conservador' ? 'bg-emerald-600' : sCenario.name === 'Moderado' ? 'bg-indigo-600' : 'bg-red-500'}`}>
+                                                Cenário {sCenario.name}
+                                            </div>
+                                            <div className="p-4 flex-1 flex flex-col gap-4 text-xs text-slate-700">
+                                                <div>
+                                                    <span className="font-bold text-slate-900 block mb-1">Alocação de Ativos:</span>
+                                                    <span className="text-justify block">{sCenario.assetAllocation}</span>
+                                                </div>
+                                                <div className="border-t border-slate-100 pt-3">
+                                                    <span className="font-bold text-slate-900 block mb-1">Estratégia Fiscal & Sucessão:</span>
+                                                    <span className="text-justify block">{sCenario.taxAndSuccessionStrategy}</span>
+                                                </div>
+                                                <div className="mt-auto bg-slate-50 p-2 rounded text-center border border-slate-100">
+                                                    <span className="font-bold text-slate-500 block text-[10px] uppercase">Retorno Nominal Alvo</span>
+                                                    <span className="font-black text-slate-800 text-base">{sCenario.expectedNominalReturn}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+                        )}
+
+{
+    reportConfig.chart && (
+        <section className="mb-8 print:break-inside-avoid animate-in fade-in" >
+            <h2 className="text-xl font-bold text-slate-800 border-b pb-2 uppercase tracking-wide flex justify-between items-center" >
+                <span>Testes de Esforço ({ simulationMode === 'montecarlo' ? 'Estocástico' : 'Estático'})</span>
+            </h2>
+            <div className="relative h-[300px] w-[calc(100%-1rem)] pr-4 flex items-end mt-6">
+                <div className="ml-24 w-full h-full relative border-b-2 border-l-2 border-slate-300">
+                    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full pb-4 overflow-visible">
+                        {simulationMode === 'montecarlo' ? (
+                            <>
+                                <polygon fill="rgba(49, 46, 129, 0.05)" points={`${simulationResults?.p90!.map((d, i) => `${(i / (simulationResults?.p90!.length - 1)) * 100},${100 - (d.balance / chartMaxValue) * 100}`).join(' ')} ${[...simulationResults?.p10!].reverse().map((d, i) => `${((simulationResults?.p10!.length - 1 - i) / (simulationResults?.p10!.length - 1)) * 100},${100 - (d.balance / chartMaxValue) * 100}`).join(' ')}`} />
+                                {
+                                    [{ data: simulationResults?.p90!, color: '#10b981', width: '1.5', dash: '4 4' }, { data: simulationResults?.p50!, color: '#312e81', width: '3', dash: 'none' }, { data: simulationResults?.p10!, color: '#ef4444', width: '2', dash: 'none' }].map((line, idx) => (
+                                        <polyline key={idx} fill="none" stroke={line.color} strokeWidth={line.width} strokeDasharray={line.dash} strokeLinecap="round" strokeLinejoin="round" points={line.data!.map((d, i) => `${(i / (line.data!.length - 1)) * 100},${100 - (d.balance / chartMaxValue) * 100}`).join(' ')} />
+                                    ))
+                                }
+                            </>
+                        ) : (
+                            <polyline fill="none" stroke="#312e81" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={simulationResults?.deterministic!.map((d, i) => `${(i / (simulationResults?.deterministic!.length - 1)) * 100},${100 - (d.balance / chartMaxValue) * 100}`).join(' ')} />
+                        )}
+                    </svg>
+                    <div className="absolute left-0 top-0 bottom-4 flex flex-col justify-between text-[10px] font-bold text-slate-400 w-20 text-right pr-2">
+                        <span className="whitespace-nowrap">{formatCurrency(chartMaxValue, currency).split(',')[0]}</span>
+                        <span className="whitespace-nowrap">{formatCurrency(chartMaxValue / 2, currency).split(',')[0]}</span>
+                        <span className="whitespace-nowrap">0</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+    )}
+
+{
+    reportConfig.interpretation && (
+        <section className="mb-8 print:break-inside-avoid animate-in fade-in" >
+            <div className="p-5 bg-slate-50 rounded-xl border border-slate-200 text-sm text-slate-700 font-medium leading-relaxed italic text-justify shadow-sm" >
+                { graphInterpretation }
+                </div>
+                </section>
+          )
+}
+
+{
+    reportConfig.disclaimer && (
+        <footer className="pt-8 pb-4 border-t border-slate-300 text-justify text-[10px] text-slate-500 leading-relaxed font-serif mt-12" >
+            <strong>ISENÇÃO DE RESPONSABILIDADE(LEGAL E FINANCEIRA): </strong> Esta modelagem quantitativa possui fins exclusivos de debate estratégico de Wealth Management. Não constitui aconselhamento legal, fiscal ou promessa de rentabilidade. Parâmetros assumidos (inflação, taxas diretrizes, tributação transfronteiriça) são simulações. A implementação de estruturas offshore e trustes carece de pareceres jurídicos credenciados independentes. Estratégias geradas por Inteligência Artificial devem ser convalidadas por um Comitê de Investimentos humano.
+                </footer>
+          )
+}
+</div>
+    </div>
+    );
+  }
+
+// --- UI PRINCIPAL ---
+return (
+    <div className= "min-h-screen bg-slate-100 p-4 md:p-8 font-sans text-slate-800" >
+    <div className="max-w-[1400px] mx-auto space-y-6" >
+
+        <header className="mb-6 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col lg:flex-row justify-between lg:items-end gap-6" >
+            <div>
+            <h1 className="text-3xl font-black text-indigo-950 flex items-center gap-2" >
+                <Globe className="text-indigo-600 h-8 w-8" />
+                    MFO Advisor Platform < span className = "text-[10px] bg-indigo-100 text-indigo-800 px-2 py-1 rounded font-bold uppercase ml-2 tracking-widest border border-indigo-200" > AI SaaS Edition </span>
+                        </h1>
+                        < p className = "text-slate-500 mt-1 font-medium text-sm" > Motor Comercial Integrado.Ative os módulos aplicáveis ao perfil do seu cliente.</p>
+                            </div>
+
+                            < div className = "flex gap-2 flex-wrap bg-slate-50 p-2 rounded-xl border border-slate-200 self-start lg:self-end" >
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1 w-full md:w-auto px-2" > <Settings className="w-3 h-3" /> Módulos de Análise: </span>
+                                    < button onClick = {() => toggleModule('family')} className = {`px-3 py-1.5 text-xs font-bold rounded transition ${activeModules.family ? 'bg-indigo-600 text-white' : 'bg-white text-slate-500 border border-slate-300'}`}> Família & Sucessão </button>
+                                        < button onClick = {() => toggleModule('geopolitics')} className = {`px-3 py-1.5 text-xs font-bold rounded transition ${activeModules.geopolitics ? 'bg-indigo-600 text-white' : 'bg-white text-slate-500 border border-slate-300'}`}> Geopolítica Fiscal </button>
+                                            < button onClick = {() => toggleModule('structures')} className = {`px-3 py-1.5 text-xs font-bold rounded transition ${activeModules.structures ? 'bg-indigo-600 text-white' : 'bg-white text-slate-500 border border-slate-300'}`}> SPVs(Offshore) </button>
+                                                < button onClick = {() => toggleModule('events')} className = {`px-3 py-1.5 text-xs font-bold rounded transition ${activeModules.events ? 'bg-indigo-600 text-white' : 'bg-white text-slate-500 border border-slate-300'}`}> Eventos Extra </button>
+                                                    < div className = "w-px bg-slate-300 mx-1" > </div>
+                                                        < button onClick = {() => toggleModule('aiAdvisor')} className = {`px-3 py-1.5 text-xs font-bold rounded transition flex items-center gap-1 ${activeModules.aiAdvisor ? 'bg-amber-500 text-white border-amber-600 shadow-sm' : 'bg-white text-amber-600 border border-amber-200 hover:bg-amber-50'}`}>
+                                                            <Sparkles className="w-3 h-3" /> Estratégia IA
+                                                                </button>
+                                                                </div>
+                                                                </header>
+
+                                                                < div className = "flex justify-between items-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex-wrap gap-4" >
+                                                                    <div className="flex items-center gap-4 pl-2" >
+                                                                        <div className="flex items-center gap-2" >
+                                                                            <span className="text-xs font-bold text-slate-500" > Motor de Cálculo: </span>
+                                                                                < div className = "flex bg-slate-100 rounded-lg p-1 border border-slate-200" >
+                                                                                    <button onClick={ () => setSimulationMode('deterministic') } className = {`px-3 py-1 text-xs font-bold rounded transition ${simulationMode === 'deterministic' ? 'bg-white text-indigo-700 shadow' : 'text-slate-500 hover:text-slate-700'}`}> Estático </button>
+                                                                                        < button onClick = {() => setSimulationMode('montecarlo')} className = {`px-3 py-1 text-xs font-bold rounded transition ${simulationMode === 'montecarlo' ? 'bg-white text-indigo-700 shadow' : 'text-slate-500 hover:text-slate-700'}`}> Estocástico(Monte Carlo) </button>
+                                                                                            </div>
+                                                                                            </div>
+                                                                                            </div>
+                                                                                            < div className = "flex gap-2" >
+                                                                                                <button onClick={ () => setShowTutorial(true) } className = "px-4 py-2 rounded-lg text-sm font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-all flex items-center gap-2" > <HelpCircle className="w-4 h-4" /> Guia Advisor </button>
+                                                                                                    < button onClick = {() => setShowReport(true)} className = "px-4 py-2 rounded-lg text-sm font-bold bg-emerald-100 text-emerald-800 hover:bg-emerald-200 transition-all flex items-center gap-2 shadow-sm" > <FileText className="w-4 h-4" /> Exportar Apresentação </button>
+                                                                                                        </div>
+                                                                                                        </div>
+
+{
+    systemWarnings.length > 0 && (
+        <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-xl shadow-sm" >
+            <div className="flex items-start gap-2" >
+                <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5" />
+                    <div>
+                    <h3 className="text-red-800 font-bold text-sm" > Alertas de Compliance Fiscal({ systemWarnings.length }) </h3>
+                        < ul className = "text-xs text-red-700 mt-1 list-disc pl-4 space-y-1" >
+                            { systemWarnings.map((w, i) => <li key={ i } > { w } </li>) }
+                            </ul>
+                            </div>
+                            </div>
+                            </div>
+        )
+}
+
+<div className="grid grid-cols-1 xl:grid-cols-12 gap-6" >
+    <div className="xl:col-span-4 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[850px]" >
+
+        <div className="flex border-b border-slate-200 bg-slate-50 overflow-x-auto overflow-y-hidden no-scrollbar" >
+            <button onClick={ () => setActiveTab('basic') } className = {`px-4 py-3 text-xs font-bold whitespace-nowrap border-b-2 flex items-center gap-1 ${activeTab === 'basic' ? 'border-indigo-600 text-indigo-700 bg-white' : 'border-transparent text-slate-500 hover:bg-slate-100'}`}> <Calculator className="w-4 h-4" /> Financeiro </button>
+{ activeModules.family && <button onClick={ () => setActiveTab('family') } className = {`px-4 py-3 text-xs font-bold whitespace-nowrap border-b-2 flex items-center gap-1 ${activeTab === 'family' ? 'border-indigo-600 text-indigo-700 bg-white' : 'border-transparent text-slate-500 hover:bg-slate-100'}` }> <Users className="w-4 h-4" /> Grupo Familiar </button>}
+{ activeModules.geopolitics && <button onClick={ () => setActiveTab('jurisdiction') } className = {`px-4 py-3 text-xs font-bold whitespace-nowrap border-b-2 flex items-center gap-1 ${activeTab === 'jurisdiction' ? 'border-indigo-600 text-indigo-700 bg-white' : 'border-transparent text-slate-500 hover:bg-slate-100'}` }> <MapPin className="w-4 h-4" /> Geopolítica </button>}
+{ activeModules.structures && <button onClick={ () => setActiveTab('structure') } className = {`px-4 py-3 text-xs font-bold whitespace-nowrap border-b-2 flex items-center gap-1 ${activeTab === 'structure' ? 'border-indigo-600 text-indigo-700 bg-white' : 'border-transparent text-slate-500 hover:bg-slate-100'}` }> <Shield className="w-4 h-4" /> Estruturas Fiduciárias </button>}
+{ activeModules.events && <button onClick={ () => setActiveTab('events') } className = {`px-4 py-3 text-xs font-bold whitespace-nowrap border-b-2 flex items-center gap-1 ${activeTab === 'events' ? 'border-indigo-600 text-indigo-700 bg-white' : 'border-transparent text-slate-500 hover:bg-slate-100'}` }> <Calendar className="w-4 h-4" /> Movimentações </button>}
+{ activeModules.aiAdvisor && <button onClick={ () => setActiveTab('aiAdvisor') } className = {`px-4 py-3 text-xs font-bold whitespace-nowrap border-b-2 flex items-center gap-1 ${activeTab === 'aiAdvisor' ? 'border-amber-500 text-amber-600 bg-white' : 'border-transparent text-amber-600 hover:bg-amber-50'}` }> <BrainCircuit className="w-4 h-4" /> Estratégia IA </button>}
+</div>
+
+    < div className = "p-6 overflow-y-auto flex-1 custom-scrollbar" >
+
+        {/* ABA 1: BÁSICO E MERCADO */ }
+{
+    activeTab === 'basic' && (
+        <div className="space-y-6 animate-in fade-in duration-300" >
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex justify-between items-center" >
+                <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center" > Moeda de Apresentação </label>
+                    < select value = { currency } onChange = {(e) => setCurrency(e.target.value)
+} className = "p-1.5 border border-slate-300 rounded text-sm font-bold bg-white text-indigo-900 outline-none cursor-pointer" >
+    <option value="BRL" > BRL - Real </option><option value="USD">USD - Dólar</option> <option value="EUR" > EUR - Euro </option><option value="GBP">GBP - Libra</option>
+        </select>
+        </div>
+        </div>
+
+        < div className = "space-y-4 bg-slate-50 p-4 rounded-xl border border-slate-200 relative" >
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2" > Fundamentos do Cliente </h3>
+                < div >
+                <label className= "block text-sm font-bold text-slate-700 mb-1 flex items-center" > Património Global < InfoIconBtn title = "Base de Cálculo" text = "Liquidez total sujeita à simulação." /> </label>
+                    < CurrencyInput value = { initialCapital } onChange = { setInitialCapital } currency = { currency } className = "w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800 text-lg" />
+                        </div>
+                        < div className = "grid grid-cols-2 gap-3" >
+                            <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-1" > Idade Atual </label>
+                                < input type = "number" value = { currentAge } onChange = {(e) => setCurrentAge(Number(e.target.value))} className = "w-full p-2 border border-slate-300 rounded outline-none" />
+                                    </div>
+                                    < div >
+                                    <label className="block text-sm font-bold text-slate-700 mb-1 flex items-center" > Óbito Titular < SmartAssistBtn fieldKey = "life" title = "Ajuste Atuarial UHNW" /> </label>
+                                        < input type = "number" value = { lifeExpectancy } onChange = {(e) => setLifeExpectancy(Number(e.target.value))} className = "w-full p-2 border border-slate-300 rounded outline-none" />
+                                            </div>
+                                            </div>
+                                            </div>
+
+                                            < div className = "space-y-4 bg-indigo-50 p-4 rounded-xl border border-indigo-200" >
+                                                <h3 className="text-xs font-bold text-indigo-900 uppercase tracking-wider mb-2 flex justify-between items-center" >
+                                                    Taxa de Consumo(Burn Rate)
+                                                        </h3>
+                                                        < div className = "flex bg-white rounded-lg p-1 border border-indigo-200 shadow-sm overflow-x-auto no-scrollbar" >
+                                                            <button onClick={ () => setBurnRateType('fixed') } className = {`flex-1 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap px-2 ${burnRateType === 'fixed' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}> Estático(Curva) </button>
+                                                                < button onClick = {() => setBurnRateType('progressive')} className = {`flex-1 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap px-2 ${burnRateType === 'progressive' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}> Progressivo </button>
+                                                                    < button onClick = {() => setBurnRateType('variable')} className = {`flex-1 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap px-2 ${burnRateType === 'variable' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}> Por Fases </button>
+                                                                        </div>
+
+{
+    burnRateType === 'fixed' ? (
+        <div className= "space-y-3 animate-in fade-in zoom-in-95 duration-200" >
+        <div>
+        <label className="block text-xs font-bold text-slate-700 mb-1" > Custo Mensal Base </label>
+            < CurrencyInput value = { baseMonthlyExpense } onChange = { setBaseMonthlyExpense } currency = { currency } className = "w-full p-2 border border-indigo-200 rounded outline-none font-bold text-slate-800" />
+                </div>
+                < div >
+                <label className="block text-xs font-bold text-slate-700 mb-1" > Dinâmica de Ajuste </label>
+                    < select value = { expenseCurve } onChange = {(e) => setExpenseCurve(e.target.value)
+} className = "w-full p-2 border border-indigo-200 rounded bg-white text-xs outline-none font-medium" >
+    <option value="flat" > Estritamente Fixo até o fim </option>
+        < option value = "smile" > Curva Sorriso(Pico na Velhice) </option>
+            < option value = "decreasing" > Decrescente Conservador </option>
+                </select>
+                </div>
+                </div>
+                     ) : burnRateType === 'progressive' ? (
+    <div className= "space-y-3 animate-in fade-in zoom-in-95 duration-200" >
+    <div className="grid grid-cols-2 gap-3" >
+        <div>
+        <label className="block text-xs font-bold text-slate-700 mb-1" > Início({ currentAge }a) </label>
+            < CurrencyInput value = { baseMonthlyExpense } onChange = { setBaseMonthlyExpense } currency = { currency } className = "w-full p-2 border border-indigo-200 rounded outline-none font-bold text-slate-800" />
+                </div>
+                < div >
+                <label className="block text-xs font-bold text-slate-700 mb-1" > Fim({ jointLifeExpectancy }a) </label>
+                    < CurrencyInput value = { endMonthlyExpense } onChange = { setEndMonthlyExpense } currency = { currency } className = "w-full p-2 border border-indigo-200 rounded outline-none font-bold text-slate-800" />
+                        </div>
+                        </div>
+                        < p className = "text-[10px] text-slate-500 leading-tight" > O consumo ajustar - se - á de forma linear ano após ano.</p>
+                            </div>
+                     ) : (
+    <div className= "space-y-3 animate-in fade-in zoom-in-95 duration-200" >
+    {
+        variableExpenses.map((phase, i) => (
+            <div key= { phase.id } className = "bg-white p-3 border border-indigo-200 rounded-lg relative shadow-sm" >
+            { variableExpenses.length > 1 && (<button onClick={() => removeExpensePhase(phase.id)} className = "absolute top-1 right-1 text-slate-300 hover:text-red-500" > <X className="w-4 h-4" /> </button>)}
+<div className="text-[10px] font-bold text-indigo-500 mb-1" > DOS { phase.startAge } AOS { phase.endAge } ANOS </div>
+    < label className = "block text-[10px] font-bold text-slate-500 uppercase" > Mensalidade Desejada </label>
+        < CurrencyInput value = { phase.amount } onChange = {(val) => updateExpensePhase(phase.id, 'amount', val)} currency = { currency } className = "w-full p-1.5 border-b border-indigo-100 outline-none font-bold text-sm text-slate-800" />
+            </div>
+                         ))}
+{
+    variableExpenses[variableExpenses.length - 1].endAge < jointLifeExpectancy && (
+        <button onClick={ addExpensePhase } className = "w-full border border-dashed border-indigo-300 text-indigo-600 text-xs font-bold py-2 rounded-lg hover:bg-indigo-100 transition" > + Acrescentar Escalão de Custo </button>
+                         )
+}
+</div>
+                     )}
+</div>
+
+{/* MACROECONOMIA COM GLIDE PATH */ }
+<div className="space-y-4 bg-orange-50 p-4 rounded-xl border border-orange-200" >
+    <div className="flex justify-between items-start mb-2" >
+        <h3 className="text-xs font-bold text-orange-800 uppercase tracking-wider mt-1" > Estratégia de Mercado(Risco) </h3>
+            </div>
+
+            < div className = "flex bg-white rounded-lg p-1 border border-orange-200 shadow-sm overflow-x-auto no-scrollbar mb-3" >
+                <button onClick={ () => setMarketStrategy('fixed') } className = {`flex-1 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap px-2 ${marketStrategy === 'fixed' ? 'bg-orange-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}> Perfil Único </button>
+                    < button onClick = {() => setMarketStrategy('glidepath')} className = {`flex-1 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap px-2 ${marketStrategy === 'glidepath' ? 'bg-orange-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}> Glide Path(Por Fases) </button>
+                        </div>
+
+{
+    marketStrategy === 'fixed' ? (
+        <div className= "space-y-3 animate-in fade-in" >
+        <div className="flex justify-end -mt-2 mb-2" > <SmartAssistBtn fieldKey="market" title = "Aplicar Consenso de Mercado Global" /> </div>
+            < div className = "grid grid-cols-2 gap-3" >
+                <div><label className="block text-xs font-bold text-slate-700 mb-1" > Ganho Anual(%) </label><input type="number" step="0.1" value={nominalRate} onChange={(e) => setNominalRate(Number(e.target.value))} className="w-full p-2 border border-orange-300 rounded outline-none bg-white font-bold text-slate-800" /> </div>
+                    < div > <label className="block text-xs font-bold text-slate-700 mb-1" > Inflação(%) </label><input type="number" step="0.1" value={inflation} onChange={(e) => setInflation(Number(e.target.value))} className="w-full p-2 border border-orange-300 rounded outline-none bg-white font-bold text-slate-800" /> </div>
+                        </div>
+                        < div >
+                        <label className="block text-xs font-bold text-slate-700 mb-1 flex justify-between items-center" >
+                            <span className="flex items-center" > Volatilidade Lognormal < InfoIconBtn title = "Guia de Volatilidade" text = "Ações: 15-20% (Ideal longo prazo). Moderado: 8-12%. Conservador: 3-6%." /> </span><span className="text-orange-600 font-bold">{volatility}%</span>
+                                </label>
+                                < input type = "range" min = "2" max = "25" step = "1" value = { volatility } onChange = {(e) => setVolatility(Number(e.target.value))
+} className = "w-full h-1.5 bg-orange-200 rounded-lg appearance-none accent-orange-600" />
+    </div>
+    </div>
+                    ) : (
+    <div className= "space-y-3 animate-in fade-in" >
+    {
+        marketPhases.map((phase, i) => (
+            <div key= { phase.id } className = "bg-white p-3 border border-orange-200 rounded-lg relative shadow-sm" >
+            { marketPhases.length > 1 && (<button onClick={() => removeTimelinePhase(setMarketPhases, marketPhases, phase.id)} className = "absolute top-1 right-1 text-slate-300 hover:text-red-500" > <X className="w-4 h-4" /> </button>)}
+<div className="flex justify-between items-center mb-2" >
+    <div className="text-[10px] font-bold text-orange-600" > DOS { phase.startAge } AOS { phase.endAge } ANOS </div>
+        < SmartAssistBtn fieldKey = "market_phase" title = "Assunções de Ciclo de Vida" phaseId = { phase.id } />
+            </div>
+            < div className = "text-xs font-bold text-slate-700 mb-2 truncate" title = { phase.profile } > { phase.profile || 'Perfil Personalizado' } </div>
+
+                < div className = "grid grid-cols-2 gap-2 mb-2" >
+                    <div><label className="block text-[9px] font-bold text-slate-500 uppercase" > Retorno </label><input type="number" step="0.1" value={phase.nominalRate} onChange={(e) => updateMarketPhase(phase.id, 'nominalRate', Number(e.target.value))} className="w-full p-1 border-b border-orange-200 outline-none font-bold text-sm text-slate-800" /> </div>
+                        < div > <label className="block text-[9px] font-bold text-slate-500 uppercase" > Volatilidade </label><input type="number" step="0.1" value={phase.volatility} onChange={(e) => updateMarketPhase(phase.id, 'volatility', Number(e.target.value))} className="w-full p-1 border-b border-orange-200 outline-none font-bold text-sm text-slate-800" /> </div>
+                            </div>
+                            </div>
+                         ))}
+{
+    marketPhases[marketPhases.length - 1].endAge < jointLifeExpectancy && (
+        <button onClick={ () => addTimelinePhase(setMarketPhases, marketPhases, { nominalRate: 10, inflation: 4, volatility: 8, profile: 'Personalizado' }) } className = "w-full border border-dashed border-orange-300 text-orange-600 text-xs font-bold py-2 rounded-lg hover:bg-orange-100 transition" > + Adicionar Fase de Risco </button>
+                         )
+}
+</div>
+                    )}
+
+{
+    simulationMode === 'montecarlo' && (
+        <div className="pt-3 border-t border-orange-200" >
+            <label className="block text-xs font-bold text-slate-700 mb-1 mt-1" > Precisão do Monte Carlo </label>
+                < select value = { mcIterations } onChange = {(e) => setMcIterations(Number(e.target.value))
+} className = "w-full p-2 border border-orange-300 rounded outline-none bg-white text-xs font-bold text-slate-700" >
+    <option value="100" > 100 Vidas(Rápido - Rascunho) </option>
+        < option value = "300" > 300 Vidas(Padrão) </option>
+            < option value = "1000" > 1.000 Vidas(Modo Apresentação) </option>
+                </select>
+                </div>
+                    )}
+</div>
+    </div>
+              )}
+
+{/* ABA: GRUPO FAMILIAR */ }
+{
+    activeTab === 'family' && (
+        <div className="space-y-6 animate-in duration-300 fade-in" >
+            <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-200" >
+                <div className="flex justify-between items-center mb-3" >
+                    <h3 className="text-sm font-bold text-emerald-900 flex items-center gap-2" > <Users className="w-4 h-4" /> Matriz Conjunta(Cônjuge) </h3>
+                        < div className = {`w-10 h-5 rounded-full relative transition-colors cursor-pointer ${hasSpouse ? 'bg-emerald-600' : 'bg-slate-300'}`
+} onClick = {() => setHasSpouse(!hasSpouse)}>
+    <div className={ `w-3 h-3 bg-white rounded-full absolute top-1 transition-transform ${hasSpouse ? 'left-6' : 'left-1'}` }> </div>
+        </div>
+        </div>
+{
+    hasSpouse && (
+        <div className="grid grid-cols-2 gap-3 animate-in fade-in" >
+            <div><label className="block text-xs font-bold text-slate-700 mb-1" > Idade Cônjuge </label><input type="number" value={spouseAge} onChange={(e) => setSpouseAge(Number(e.target.value))} className="w-full p-2 border border-emerald-300 rounded outline-none bg-white font-bold" /> </div>
+                < div > <label className="block text-xs font-bold text-slate-700 mb-1" > Óbito Estimado </label><input type="number" value={spouseLifeExpectancy} onChange={(e) => setSpouseLifeExpectancy(Number(e.target.value))} className="w-full p-2 border border-emerald-300 rounded outline-none bg-white font-bold" /> </div>
+                    </div>
+                    )
+}
+<p className="text-[10px] text-emerald-700 mt-3 leading-tight" > Ao incluir o cônjuge, o planejamento estender - se - á até à morte do último sobrevivente(Aos { jointLifeExpectancy } anos do Titular), momento em que o espólio final será liquidado.</p>
+    </div>
+
+    < div className = "bg-slate-50 p-4 rounded-xl border border-slate-200" >
+        <h3 className="text-sm font-bold text-slate-800 mb-2" > Herdeiros(1ª Linha) </h3>
+            < div > <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider" > Quantidade de Beneficiários </label><input type="number" value={numberOfHeirs} onChange={(e) => setNumberOfHeirs(Number(e.target.value))} className="w-full p-2 border border-slate-300 rounded outline-none font-bold text-slate-800" /> </div>
+                < p className = "text-[10px] text-slate-500 mt-2" > Dica MFO: Se desejar simular a antecipação de herança, vá à aba 'Movimentações' e adicione um evento do tipo 'Doação em Vida'.O imposto de selo incidirá instantaneamente no momento da doação.</p>
+                    </div>
+                    </div>
+              )}
+
+{/* ABA GEOPOLÍTICA */ }
+{
+    activeTab === 'jurisdiction' && (
+        <div className="space-y-6 animate-in duration-300 fade-in" >
+            <div className="space-y-4" >
+            {
+                residencyPhases.map((phase, index) => (
+                    <div key= { phase.id } className = "bg-white border-2 border-sky-200 p-4 rounded-xl relative shadow-sm" >
+                    { residencyPhases.length > 1 && (<button onClick={() => removeTimelinePhase(setResidencyPhases, residencyPhases, phase.id)} className = "absolute top-2 right-2 text-slate-400 hover:text-red-500" > <Trash2 className="w-4 h-4" /> </button>)
+}
+<div className="flex items-center gap-2 mb-3" >
+    <span className="bg-sky-100 text-sky-800 text-[10px] font-bold px-2 py-1 rounded" > FASE { index + 1 } </span>
+        < span className = "text-sm font-bold text-slate-700" > Idade { phase.startAge } a { phase.endAge } a </span>
+            </div>
+            < select value = { phase.jurisdiction } onChange = {(e) => updatePhase(phase.id, 'jurisdiction', e.target.value)} className = "w-full p-2 bg-slate-50 border border-slate-300 rounded font-bold text-slate-800 outline-none mb-3" >
+                { Object.entries(dbJurisdictions).map(([code, data]) => (<option key= { code } value = { code } > { data.name } </option>)) }
+                </select>
+{
+    phase.jurisdiction === 'BR' && (
+        <div className="mt-2 mb-3 bg-indigo-50 p-3 rounded border border-indigo-100" >
+            <label className="block text-[10px] font-bold text-indigo-900 uppercase tracking-wider mb-1 flex items-center" > Competência ITCMD(Estado) </label>
+                < select value = { phase.stateBR || 'SP' } onChange = {(e) => updatePhase(phase.id, 'stateBR', e.target.value)
+} className = "w-full p-2 bg-white border border-indigo-200 rounded text-sm font-bold text-indigo-900 outline-none cursor-pointer" >
+    { Object.entries(BRAZIL_STATES).map(([uf, data]) => (<option key= { uf } value = { uf } > { data.name }(Teto: { data.itcmd } %) </option>)) }
+    </select>
+    </div>
+                        )}
+{
+    phase.jurisdiction !== 'BR' && (
+        <div className="flex items-center gap-2 mt-2 bg-amber-50 p-2 rounded border border-amber-200 cursor-pointer" onClick = {() => updatePhase(phase.id, 'formalExitBR', !phase.formalExitBR)
+}>
+    <input type="checkbox" checked = { phase.formalExitBR } onChange = {() => { }} className = "accent-amber-600 w-4 h-4" />
+        <span className="text-xs font-bold text-amber-900 flex items-center" > Realizou a Saída Fiscal Definitiva ? </span>
+            </div>
+                        )}
+</div>
+                    ))}
+{
+    residencyPhases[residencyPhases.length - 1].endAge < jointLifeExpectancy && (
+        <button onClick={ addResidencyPhase } className = "w-full bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-700 text-xs font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 shadow-sm" > <Plus className="w-4 h-4" /> INSERIR MUDANÇA DE PAÍS </button>
+                    )
+}
+</div>
+    </div>
+              )}
+
+{/* ABA ESTRUTURAS */ }
+{
+    activeTab === 'structure' && (
+        <div className="space-y-6 animate-in fade-in duration-300" >
+            <div className="bg-white border border-slate-200 p-4 rounded-xl" >
+                <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2" > <Globe className="w-4 h-4 text-indigo-600" /> Alocação Cambial Ponderada </h3>
+                    < div className = "mb-2 flex justify-between text-xs font-bold" > <span className="text-emerald-700" > Residente: { 100 - allocationOffshore }% </span><span className="text-indigo-700">Internacional: {allocationOffshore}%</span> </div>
+                        < input type = "range" min = "0" max = "100" step = "5" value = { allocationOffshore } onChange = {(e) => setAllocationOffshore(Number(e.target.value))
+} className = "w-full h-2 bg-slate-200 rounded-lg appearance-none accent-indigo-600" />
+    </div>
+
+    < div className = "space-y-3" >
+        <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-2" > <Shield className="w-4 h-4 text-indigo-600" /> Arquitetura Fiduciária </h3>
+
+            < div className = {`p-4 rounded-xl border-2 transition-all cursor-pointer ${hasPIC ? 'border-indigo-600 bg-indigo-50' : 'border-slate-200 bg-white hover:border-indigo-300'}`} onClick = {() => setHasPIC(!hasPIC)}>
+                <div className="flex justify-between items-start mb-1" >
+                    <span className="font-bold text-slate-800" > PIC Internacional(Empresa) </span>
+                        < div className = {`w-10 h-5 rounded-full relative transition-colors ${hasPIC ? 'bg-indigo-600' : 'bg-slate-300'}`}> <div className={ `w-3 h-3 bg-white rounded-full absolute top-1 transition-transform ${hasPIC ? 'left-6' : 'left-1'}` }> </div></div>
+                            </div>
+                            < p className = "text-[10px] text-slate-500 font-medium" > Custo Operacional Estimado: <span className="text-indigo-700" > { formatCurrency(convertCurrency(picCostUSD, 'USD', currency), currency)}/ano</span>.</p>
+                                </div>
+                                < div className = {`p-4 rounded-xl border-2 transition-all cursor-pointer ${hasTrust ? 'border-indigo-600 bg-indigo-50' : 'border-slate-200 bg-white hover:border-indigo-300'}`} onClick = {() => setHasTrust(!hasTrust)}>
+                                    <div className="flex justify-between items-start mb-1" >
+                                        <span className="font-bold text-slate-800" > Trust Irrevogável(Blindagem) </span>
+                                            < div className = {`w-10 h-5 rounded-full relative transition-colors ${hasTrust ? 'bg-indigo-600' : 'bg-slate-300'}`}> <div className={ `w-3 h-3 bg-white rounded-full absolute top-1 transition-transform ${hasTrust ? 'left-6' : 'left-1'}` }> </div></div>
+                                                </div>
+                                                < p className = "text-[10px] text-slate-500 font-medium" > Fee Fiduciária Média: <span className="text-indigo-700" > { formatCurrency(convertCurrency(trustCostUSD, 'USD', currency), currency)}/ano</span>.</p>
+                                                    </div>
+                                                    </div>
+                                                    </div>
+              )}
+
+{/* ABA EVENTOS */ }
+{
+    activeTab === 'events' && (
+        <div className="space-y-5 animate-in fade-in duration-300" >
+            <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl space-y-3" >
+                <h3 className="text-sm font-bold text-slate-800 mb-2 flex items-center" > Registro de Movimentações Extras </h3>
+                    < div className = "grid grid-cols-2 gap-2" >
+                        <div><label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase" > Idade do Evento </label><input type="number" value={newEventAge} onChange={e=>setNewEventAge(Number(e.target.value))} className="w-full p-2 border border-slate-300 rounded text-sm bg-white font-bold text-slate-800" /> </div>
+                            < div >
+                            <label className= "block text-[10px] font-bold text-slate-500 mb-1 uppercase" > Natureza </label>
+                            < select value = { newEventType } onChange = { e=> setNewEventType(e.target.value) } className = "w-full p-2 border border-slate-300 rounded text-sm bg-white font-bold text-slate-800 outline-none" >
+                                <option value="outflow" > Despesa Extraordinária(-) </option>
+                                    < option value = "inflow" > Entrada de Capital(+) </option>
+                                        < option value = "real_estate" > Aquisição Imobiliária(+ITBI) </option>
+                                            < option value = "real_estate_sale" > Venda Imobiliária(-IR) </option>
+                                                < option value = "donation" > Doação em Vida(+ITCMD) </option>
+                                                    </select>
+                                                    </div>
+                                                    </div>
+                                                    < div >
+                                                    <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase" > Volume Financeiro Bruto </label>
+                                                        < CurrencyInput value = { newEventAmount } onChange = { setNewEventAmount } currency = { currency } className = "w-full p-2 border border-slate-300 rounded text-sm bg-white font-bold text-slate-900" />
+                                                            </div>
+
+    {
+        newEventType === 'real_estate_sale' && (
+            <div className="bg-indigo-50 p-3 rounded border border-indigo-100 mt-2 animate-in fade-in zoom-in-95" >
+                <label className="block text-[10px] font-bold text-indigo-900 mb-1 uppercase flex justify-between items-center" >
+                    Custo de Aquisição / Valor Venal
+                        < SmartAssistBtn fieldKey = "real_estate_cost" title = "Estimar Valor Declarado" />
+                            </label>
+                            < CurrencyInput value = { newEventCostBasis } onChange = { setNewEventCostBasis } currency = { currency } className = "w-full p-2 border border-indigo-200 rounded text-sm bg-white font-bold text-indigo-900" />
+                                <p className="text-[9px] text-indigo-700 mt-1.5 font-medium leading-tight" > O imposto sobre Ganho de Capital incidirá exclusivamente sobre o lucro(Diferença entre Venda e Valor Venal).</p>
+                                    </div>
+                    )
+    }
+
+    <button onClick={ addEvent } className = "w-full bg-indigo-900 hover:bg-indigo-800 text-white text-xs font-bold py-2.5 rounded transition shadow-sm mt-2" > ADICIONAR ì MATRIZ </button>
+
+    {
+        events.length > 0 && (
+            <div className="mt-4 border-t border-slate-200 pt-3 space-y-2" >
+            {
+                events.map((e: any) => (
+                    <div key= { e.id } className = "flex justify-between items-center bg-white p-2 border border-slate-200 rounded" >
+                    <span className="text-xs font-bold text-slate-700 flex flex-col" >
+                <span>Aos { e.age } anos: <span className={(e.type === 'inflow' || e.type === 'real_estate_sale') ? 'text-emerald-600' : 'text-red-500'} > {(e.type === 'inflow' || e.type === 'real_estate_sale') ? '+' : '-'
+    } { formatCurrency(e.amount, currency) } </span></span>
+        <span className="text-[10px] text-slate-400 font-medium" >
+            { e.type === 'inflow' ? 'Aporte de Liquidez' : e.type === 'real_estate' ? 'Imóvel (+3% Fricção)' : e.type === 'real_estate_sale' ? `Venda de Imóvel (Venal: ${formatCurrency(e.costBasis, currency)})` : e.type === 'donation' ? 'Doação a Herdeiros (+ ITCMD)' : 'Saída Pessoal' }
+            </span>
+            </span>
+            < button onClick = {()=> removeEvent(e.id)
+} className = "text-slate-400 hover:text-red-500 p-1" > <Trash2 className="w-4 h-4" /> </button>
+    </div>
+                        ))}
+</div>
+                    )}
+</div>
+    </div>
+              )}
+
+{/* ABA AI ADVISOR */ }
+{
+    activeTab === 'aiAdvisor' && (
+        <div className="space-y-5 animate-in fade-in duration-300" >
+            <div className="bg-amber-50 border border-amber-200 p-5 rounded-xl text-center" >
+                <BrainCircuit className="w-10 h-10 text-amber-500 mx-auto mb-3" />
+                    <h3 className="font-black text-amber-900 mb-2" > Comitê de Investimentos IA </h3>
+                        < p className = "text-xs text-amber-800 mb-4 leading-relaxed px-4" >
+                            O motor de Inteligência Artificial irá analisar a alocação cambial, geopolítica, estruturas e o burn rate do seu cliente para fornecer exatamente 3 cenários de alocação e distribuição sucessória otimizadas de acordo com as leis e o mercado financeiro corrente.
+                    </p>
+
+                                < button
+    onClick = { handleGenerateAIStrategy }
+    disabled = { isGeneratingStrategy }
+    className = "w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-lg shadow-md transition flex justify-center items-center gap-2 disabled:opacity-70"
+        >
+        { isGeneratingStrategy?<Loader2 className = "w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+{ isGeneratingStrategy ? 'A analisar dados e leis fiduciárias...' : 'Gerar 3 Cenários Estratégicos' }
+</button>
+
+{
+    aiError && (
+        <div className="mt-3 text-xs text-red-600 font-bold bg-red-50 p-2 rounded border border-red-200" >
+            { aiError }
+            </div>
+                    )
+}
+</div>
+
+{
+    aiStrategyData && (
+        <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm text-sm text-slate-700 animate-in fade-in" >
+            <p className="font-bold text-slate-900 mb-2 flex items-center gap-2" > <CheckSquare className="w-4 h-4 text-emerald-500" /> Estratégia Gerada com Sucesso </p>
+                < p className = "text-xs text-slate-500" > As recomendações já estão disponíveis no painel de resultados à direita e no Relatório PDF.</p>
+                    </div>
+                  )
+}
+</div>
+              )}
+</div>
+</div>
+
+
+{/* PAINEL DIREITO: RESULTADOS GRÁFICOS */ }
+<div className="xl:col-span-8 flex flex-col space-y-6" >
+
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4" >
+        <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-col justify-between relative overflow-hidden" >
+            <div className="absolute top-0 right-0 p-4 opacity-10" > <TrendingUp className="w-16 h-16" /> </div>
+                < div >
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider" > Índice de Preservação Vitalícia </p>
+                    < h3 className = {`text-4xl font-black mt-1 tracking-tight ${simulationResults.successRate >= 85 ? 'text-emerald-600' : 'text-red-600'}`}>
+                        { simulationMode === 'montecarlo' ? `${simulationResults.successRate.toFixed(0)}%` : (simulationResults.successRate === 100 ? 'Seguro' : 'Rutura')}
+</h3>
+    </div>
+    </div>
+
+    < div className = "p-5 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-col justify-between" >
+        <div>
+        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider" > Espólio Sucessório Projetado </p>
+            < h3 className = "text-2xl font-black text-indigo-900 mt-2" >
+                { formatCurrency(simulationResults.successionData.netInheritance, currency) }
+                </h3>
+                </div>
+                < p className = "text-[10px] mt-2 text-slate-500 font-medium leading-tight" >
+                    Jurisdição do Óbito: <strong>{ simulationResults.successionData.deathJurisdiction } </strong>.<br/ > Os impostos retiveram < strong className = "text-red-500" > { simulationResults.successionData.effectiveRate.toFixed(1) } % </strong> da herança bruta calculada.
+                        </p>
+                        </div>
+
+                        < div className = "p-5 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-col justify-between" >
+                            <div>
+                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider" > Burn Rate Apurado Base </p>
+                                < h3 className = "text-3xl font-black text-slate-800 mt-1" >
+                                    {(((burnRateType === 'variable' ? variableExpenses[0].amount : baseMonthlyExpense) * 12 / initialCapital) * 100).toFixed(2)}% <span className="text-sm font-normal text-slate-400" > /ano</span>
+                                        </h3>
+                                        </div>
+                                        < p className = "text-[10px] mt-2 text-slate-500 font-medium bg-slate-50 p-2 rounded border border-slate-100" >
+                                            Valores acima de 4 % ao ano comprometem irremediavelmente a capacidade matemática de absorção de crises globais prolongadas.
+                </p>
+                                                </div>
+                                                </div>
+
+{/* SE�!ÒO IA RENDERIZADA NA TELA (SE ATIVADA) */ }
+{
+    activeModules.aiAdvisor && aiStrategyData && (
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 animate-in fade-in slide-in-from-bottom-4 duration-500" >
+            <div className="flex justify-between items-center mb-6" >
+                <div>
+                <h3 className="font-black text-lg text-slate-800 flex items-center gap-2" > <BrainCircuit className="w-5 h-5 text-amber-500" /> Parecer Estratégico MFO </h3>
+                    < p className = "text-[10px] text-slate-500 uppercase font-bold tracking-wider mt-1" > Alocação de Ativos e Planejamento Fiduciário </p>
+                        </div>
+                        </div>
+
+                        < div className = "mb-6 p-4 bg-amber-50 rounded-xl border border-amber-100 text-sm text-slate-800 italic leading-relaxed" >
+                            "{aiStrategyData.generalGuideline}"
+                            </div>
+
+                            < div className = "grid grid-cols-1 lg:grid-cols-3 gap-4" >
+                            {
+                                aiStrategyData.sCenarios.map((sCenario: any, index: number) => (
+                                    <div key= { index } className = "border border-slate-200 rounded-xl flex flex-col overflow-hidden" >
+                                    <div className={`p-3 text-center text-white font-bold uppercase tracking-widest text-xs ${sCenario.name === 'Conservador' ? 'bg-emerald-600' : sCenario.name === 'Moderado' ? 'bg-indigo-600' : 'bg-red-500'}`} >
+                                Cenário { sCenario.name }
+    </div>
+        < div className = "p-4 flex-1 flex flex-col gap-4 text-xs text-slate-700" >
+            <div>
+            <span className="font-bold text-slate-900 block mb-1" > Alocação de Ativos: </span>
+                < span className = "text-justify block" > { sCenario.assetAllocation } </span>
+                    </div>
+                    < div className = "border-t border-slate-100 pt-3" >
+                        <span className="font-bold text-slate-900 block mb-1" > Fiscal & Sucessão: </span>
+                            < span className = "text-justify block" > { sCenario.taxAndSuccessionStrategy } </span>
+                                </div>
+                                < div className = "mt-auto bg-slate-50 p-2 rounded text-center border border-slate-200" >
+                                    <span className="font-bold text-slate-500 block text-[10px] uppercase" > Retorno Alvo </span>
+                                        < span className = "font-black text-slate-800 text-sm" > { sCenario.expectedNominalReturn } </span>
+                                            </div>
+                                            </div>
+                                            </div>
+                  ))
+}
+</div>
+    </div>
+            )}
+
+<div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex-1 flex flex-col" >
+    <div className="flex justify-between items-center mb-6" >
+        <div>
+        <h3 className="font-black text-lg text-slate-800" > Projeção Dinâmica de Cenários({ currency }) </h3>
+            </div>
+{
+    simulationMode === 'montecarlo' && (
+        <div className="flex gap-4 text-xs font-bold bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200" >
+            <span className="flex items-center gap-1 text-emerald-600" > <div className="w-2 h-2 rounded-full bg-emerald-500" > </div> Cenário Otimista (P90)</span>
+                <span className="flex items-center gap-1 text-indigo-900" > <div className="w-2 h-2 rounded-full bg-indigo-900" > </div> Cenário Base (P50)</span>
+                    <span className="flex items-center gap-1 text-red-500" > <div className="w-2 h-2 rounded-full bg-red-500" > </div> Cenário Pessimista (P10)</span>
+                        </div>
+                )
+}
+</div>
+
+    < div className = "relative flex-1 w-full flex items-end min-h-[300px]" >
+        <div className="absolute left-0 top-0 bottom-6 flex flex-col justify-between text-[10px] font-bold text-slate-400 w-20" >
+            <span>{ formatCurrency(chartMaxValue, currency) } </span>
+            < span > { formatCurrency(chartMaxValue / 2, currency)}</span>
+                < span > 0 </span>
+                </div>
+
+                < div className = "ml-24 w-full h-full relative border-b-2 border-l-2 border-slate-200" >
+                    <svg viewBox="0 0 100 100" preserveAspectRatio = "none" className = "w-full h-full pb-6 overflow-visible" >
+                        <line x1="0" y1 = "0" x2 = "100" y2 = "0" stroke = "#f1f5f9" strokeWidth = "1" />
+                            <line x1="0" y1 = "25" x2 = "100" y2 = "25" stroke = "#f1f5f9" strokeWidth = "1" />
+                                <line x1="0" y1 = "50" x2 = "100" y2 = "50" stroke = "#f1f5f9" strokeWidth = "1" />
+                                    <line x1="0" y1 = "75" x2 = "100" y2 = "75" stroke = "#f1f5f9" strokeWidth = "1" />
+
+                                    {
+                                        activeModules.geopolitics && residencyPhases.map((phase, i) => {
+                                            if (i === 0) return null;
+                                            const xPos = ((phase.startAge - currentAge) / (jointLifeExpectancy - currentAge)) * 100;
+                                            return (
+                                                <g key= { i } >
+                                                <line x1={ xPos } y1 = "0" x2 = { xPos } y2 = "100" stroke = "#cbd5e1" strokeWidth = "1" strokeDasharray = "4 4" />
+                                                    <text x={ xPos + 1 } y = "5" fontSize = "3" fill = "#64748b" fontWeight = "bold" > Move: { dbJurisdictions[phase.jurisdiction].name } </text>
+                                                        </g>
+                      );
+                                    })}
+
+{
+    marketStrategy === 'glidepath' && marketPhases.map((phase, i) => {
+        if (i === 0) return null;
+        const xPos = ((phase.startAge - currentAge) / (jointLifeExpectancy - currentAge)) * 100;
+        return (
+            <g key= { i } >
+            <line x1={ xPos } y1 = "0" x2 = { xPos } y2 = "100" stroke = "#fef08a" strokeWidth = "1" strokeDasharray = "2 2" />
+                <text x={ xPos + 1 } y = "95" fontSize = "3" fill = "#ca8a04" fontWeight = "bold" > Risco: { phase.profile?.split(' ')[0] || phase.volatility + '%' } </text>
+                    </g>
+                      );
+})}
+
+{
+    simulationMode === 'montecarlo' ? (
+        <>
+        <polygon fill= "rgba(49, 46, 129, 0.05)" points = {`${simulationResults?.p90!.map((d, i) => `${(i / (simulationResults?.p90!.length - 1)) * 100},${100 - (d.balance / chartMaxValue) * 100}`).join(' ')} ${[...simulationResults?.p10!].reverse().map((d, i) => `${((simulationResults?.p10!.length - 1 - i) / (simulationResults?.p10!.length - 1)) * 100},${100 - (d.balance / chartMaxValue) * 100}`).join(' ')}`
+} />
+{
+    [{ data: simulationResults?.p90!, color: '#10b981', width: '1.5', dash: '4 4' }, { data: simulationResults?.p50!, color: '#312e81', width: '3', dash: 'none' }, { data: simulationResults?.p10!, color: '#ef4444', width: '2', dash: 'none' }].map((line, idx) => (
+        <polyline key= { idx } fill = "none" stroke = { line.color } strokeWidth = { line.width } strokeDasharray = { line.dash } strokeLinecap = "round" strokeLinejoin = "round" points = { line.data!.map((d, i) => `${(i / (line.data!.length - 1)) * 100},${100 - (d.balance / chartMaxValue) * 100}`).join(' ') } />
+                        ))
+}
+</>
+                    ) : (
+    <>
+    <polygon fill= "rgba(49, 46, 129, 0.1)" points = {`0,100 ${simulationResults?.deterministic!.map((d, i) => `${(i / (simulationResults?.deterministic!.length - 1)) * 100},${100 - (d.balance / chartMaxValue) * 100}`).join(' ')} 100,100`} />
+        < polyline fill = "none" stroke = "#312e81" strokeWidth = "3" strokeLinecap = "round" strokeLinejoin = "round" points = { simulationResults?.deterministic!.map((d, i) => `${(i / (simulationResults?.deterministic!.length - 1)) * 100},${100 - (d.balance / chartMaxValue) * 100}`).join(' ') } />
+            </>
+                    )}
+</svg>
+
+    < div className = "absolute -bottom-6 left-0 w-full flex justify-between text-xs font-black text-slate-500" >
+        <span>{ currentAge } anos </span>
+            < span > { Math.floor(currentAge + (jointLifeExpectancy - currentAge) / 2) } anos </span>
+                < span > { jointLifeExpectancy } anos </span>
+                    </div>
+                    </div>
+                    </div>
+
+                    < div className = "mt-8 p-4 bg-indigo-50 border border-indigo-100 rounded-xl flex gap-3 items-start shadow-sm" >
+                        <Activity className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+                            <p className="text-sm text-indigo-900 font-medium leading-relaxed" > { graphInterpretation } </p>
+                                </div>
+                                </div>
+
+                                </div>
+                                </div>
+
+
+{/* --- INFO MODALS & TOOLTIPS --- */ }
+{
+    infoModalContent && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4 print:hidden" >
+            <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl relative animate-in fade-in zoom-in duration-200" >
+                <div className="border-b border-slate-100 p-4 flex justify-between items-center bg-indigo-50 rounded-t-2xl" >
+                    <h3 className="font-black text-indigo-900 flex items-center gap-2 text-sm uppercase tracking-wide" > <Info className="w-5 h-5" /> { infoModalContent.title } </h3>
+                        < button onClick = {() => setInfoModalContent(null)
+} className = "text-indigo-400 hover:text-indigo-600 transition-colors" > <X className="w-5 h-5" /> </button>
+    </div>
+    < div className = "p-6 text-[15px] text-slate-700 leading-relaxed text-justify" > { infoModalContent.text } </div>
+        < div className = "p-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl flex justify-end" >
+            <button onClick={ () => setInfoModalContent(null) } className = "px-5 py-2.5 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 transition shadow-sm" > Compreendido </button>
+                </div>
+                </div>
+                </div>
+      )}
+
+{/* --- SMART ASSIST MODAL --- */ }
+{
+    smartAssistModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4 print:hidden" >
+            <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl relative animate-in fade-in zoom-in duration-200" >
+                <div className="border-b border-slate-100 p-4 flex justify-between items-center bg-amber-50 rounded-t-2xl" >
+                    <h3 className="font-black text-amber-900 flex items-center gap-2 text-sm uppercase tracking-wide" > <Wand2 className="w-5 h-5" /> MFO Smart Assist </h3>
+                        < button onClick = {() => setSmartAssistModal(null)
+} className = "text-amber-400 hover:text-amber-600 transition-colors" > <X className="w-5 h-5" /> </button>
+    </div>
+    < div className = "p-6 space-y-4" >
+        <p className="text-sm text-slate-600 mb-4 text-justify" > A aplicar premissas na coleta < strong > { smartAssistModal.title } </strong>. Baseando-se no comportamento do mercado para Family Offices, selecione o perfil estatístico desejado:</p>
+
+            {(smartAssistModal.fieldKey === 'market' || smartAssistModal.fieldKey === 'market_phase') && Object.entries(SMART_ASSUMPTIONS.market).map(([key, data]) => (
+                <button key= { key } onClick = {() => applySmartAssumption(key, smartAssistModal.phaseId)} className = "w-full text-left p-4 border border-slate-200 rounded-xl hover:border-amber-400 hover:bg-amber-50 transition group" >
+                <div className="font-bold text-slate-800 group-hover:text-amber-900 capitalize" > { key } </div>
+            < div className = "text-xs text-slate-500 mt-1" > { data.desc } </div>
+            < div className = "flex gap-4 mt-2 text-xs font-bold text-slate-600" >
+            <span className="text-emerald-600" > Retorno: { data.nominal } % </span><span>Inflação: {data.infl}%</span> <span className="text-orange-500" > Risco: { data.vol } % </span>
+            </div>
+            </button>
+            ))}
+
+{
+    smartAssistModal.fieldKey === 'life' && (
+        <div className="p-4 border border-slate-200 rounded-xl text-sm text-slate-600" >
+            <p>Ajuste atuarial da Esperança de Vida UHNW(Ultra High Net Worth).Em média, a elite vive 5 a 10 anos a mais do que a média demográfica nacional devido a avanços preventivos na medicina.</p>
+                < button onClick = {() => { setLifeExpectancy(Math.max(currentAge + 10, 88)); setSmartAssistModal(null); }
+} className = "mt-4 w-full bg-amber-500 text-white font-bold py-2 rounded" > Fixar Tábua UHNW(88 anos) </button>
+    </div>
+              )}
+
+{
+    smartAssistModal.fieldKey === 'real_estate_cost' && (
+        <div className="p-4 border border-slate-200 rounded-xl text-sm text-slate-600 bg-white" >
+            <p className="mb-3 text-justify" > Na maior parte das jurisdições, imóveis retidos na família a longo prazo possuem um < b > Valor Venal(Custo de Aquisição Declarado) </b> amplamente defasado em relação ao valor de mercado, gerando altos impostos na venda.</p>
+                <p className="font-bold text-slate-800 mb-4" > Assunção MFO: Aplicar 55 % do valor de venda esperado como o valor histórico declarado(média de mercado).</p>
+                    < button onClick = {() => { setNewEventCostBasis(newEventAmount * 0.55); setSmartAssistModal(null); }
+} className = "w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 rounded transition shadow-sm" > Aplicar Estimativa(55 %) </button>
+    </div>
+              )}
+</div>
+    </div>
+    </div>
+      )}
+
+{/* --- GUIA DE ADVISOR --- */ }
+{
+    showTutorial && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" >
+            <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl relative" >
+                <div className="sticky top-0 bg-white border-b border-slate-200 p-4 px-6 flex justify-between items-center z-10" >
+                    <h2 className="text-xl font-black text-indigo-900 flex items-center gap-2" > <BookOpen className="w-5 h-5" /> Arquitetura Comercial MFO </h2>
+                        < button onClick = {() => setShowTutorial(false)
+} className = "p-2 hover:bg-slate-100 rounded-full text-slate-500" > <X className="w-5 h-5" /> </button>
+    </div>
+    < div className = "p-6 space-y-6 text-sm text-slate-700 text-justify" >
+        <div className="space-y-4" >
+            <div className="bg-amber-50 p-4 rounded-lg border border-amber-200" >
+                <h3 className="font-bold text-amber-900 mb-1 flex items-center gap-1" > <BrainCircuit className="w-4 h-4" /> Módulo de Estratégia IA </h3>
+                    < p > O simulador não entrega apenas números frios.O botão "Estratégia IA" coleta os dados correntes do cliente e os envia para a API do modelo Generativo.Ele constrói um parecer de investimento e de sucessão exigindo sempre três opções: <b>Agressivo, Moderado e Conservador </b>, guiando o cliente na tomada de decisão sobre os SPVs e ativos.</p>
+                        </div>
+                        < div className = "bg-slate-100 p-4 rounded-lg border border-slate-300" >
+                            <h3 className="font-bold text-slate-900 mb-1 flex items-center gap-1" >⚡ Modularidade(Ligue e Desligue) </h3>
+                                < p > Nem todo cliente possui(ou quer possuir) uma Offshore.No menu de topo, pode desativar os módulos não aplicáveis ao cliente.A interface de coleta limpa - se automaticamente.</p>
+                                    </div>
+                                    </div>
+                                    < button onClick = {() => setShowTutorial(false)} className = "w-full bg-slate-900 text-white font-bold py-3 rounded-lg shadow-md hover:bg-slate-800" > Iniciar Ferramenta </button>
+                                        </div>
+                                        </div>
+                                        </div>
+      )}
+</div>
+</div>
+  );
+}
+

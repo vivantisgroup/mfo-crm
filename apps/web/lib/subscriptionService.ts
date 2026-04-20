@@ -11,6 +11,7 @@
  */
 
 import { firebaseApp } from '@mfo-crm/config';
+import { getPendingAiCharges } from './aiBillingService';
 import {
   getFirestore,
   collection,
@@ -461,6 +462,23 @@ export async function generateInvoice(
   performer: { uid: string; name: string },
 ): Promise<Invoice> {
   const data = calculateMonthlyInvoice(sub, performer);
+
+  // ── Inject Pending AI Consumption ──
+  const aiCharges = await getPendingAiCharges(sub.tenantId, sub.currentPeriodStart, sub.currentPeriodEnd);
+  if (aiCharges > 0) {
+     data.lineItems.push({
+       description: 'Platform AI Usage (Token Consumption & Inference)',
+       quantity: 1,
+       unit: 'billing period',
+       unitPrice: aiCharges,
+       amount: aiCharges,
+       category: 'addon'
+     });
+     data.subtotal += aiCharges;
+     data.taxAmount = data.subtotal * data.taxRate;
+     data.totalAmount = data.subtotal + data.taxAmount;
+  }
+
   const invoiceNumber = generateInvoiceNumber(sub.tenantId);
   const ref  = await addDoc(collection(db, 'invoices'), { ...data, invoiceNumber });
   const inv  = { ...data, invoiceNumber, id: ref.id } as Invoice;

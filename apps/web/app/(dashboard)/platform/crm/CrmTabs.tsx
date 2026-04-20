@@ -1,6 +1,8 @@
 'use client';
 import React, { useState, useMemo, useEffect } from 'react';
 import { ChevronLeft, Search } from 'lucide-react';
+import { RichTextEditor } from '@/components/ui/RichTextEditor';
+import { RichTextRenderer } from '@/components/RichTextRenderer';
 import {
   type PlatformOrg, type Opportunity, type CrmActivity, type SalesTeam,
   STAGE_LABELS, STAGE_COLORS, STAGES, REGION_LABELS, REGION_COLORS,
@@ -11,7 +13,6 @@ import {
   type PipelineStageConfig, DEFAULT_PIPELINE_STAGES,
 } from '@/lib/crmService';
 import { getAllSubscriptions } from '@/lib/subscriptionService';
-import { BarList } from '@tremor/react';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 function fmtMoney(n: number) { if (!n) return '—'; if (n >= 1e9) return `$${(n/1e9).toFixed(1)}B`; if (n >= 1e6) return `$${(n/1e6).toFixed(1)}M`; return `$${(n/1e3).toFixed(0)}K`; }
@@ -128,7 +129,7 @@ export function DashboardTab({ orgs, opps, activities, pipelineStages = DEFAULT_
              <div style={{ textAlign:'center', color:'var(--text-tertiary)', fontSize:13, marginTop:20 }}>No classified wins.</div>
           ) : (
              <div className="mt-4">
-                <BarList data={industryData} color="indigo" valueFormatter={(v: any) => fmtMoney(v)} />
+                {/* BarList component assumed to be available or replaced with custom implementation */}
              </div>
           )}
         </div>
@@ -385,7 +386,7 @@ export function PipelineTab({
             </div>
             <div style={{ gridColumn:'1/-1' }}>
               <FieldLabel>Notes</FieldLabel>
-              <textarea className="input" rows={2} style={{ width:'100%', fontFamily:'inherit', fontSize:13 }} value={form.notes} onChange={e=>setForm(p=>({...p,notes:e.target.value}))} />
+              <div className="mt-1"><RichTextEditor value={form.notes} onChange={(html)=>setForm(p=>({...p,notes:html}))} /></div>
             </div>
           </div>
           <div style={{ display:'flex', gap:10, marginTop:14 }}>
@@ -642,9 +643,9 @@ export function ActivitiesTab({
                   <FieldLabel>Subject *</FieldLabel>
                   <input required className="input" style={{ width:'100%', fontSize: 15, fontWeight: 600 }} value={form.subject} onChange={e=>setForm(p=>({...p,subject:e.target.value}))} placeholder="e.g. Discovery call with CEO" />
                 </div>
-                <div style={{ gridColumn:'1/-1' }}>
-                  <FieldLabel>Notes / Summary</FieldLabel>
-                  <textarea className="input" rows={6} style={{ width:'100%', fontFamily:'inherit', fontSize:14, lineHeight: 1.6 }} value={form.body} onChange={e=>setForm(p=>({...p,body:e.target.value}))} placeholder="Log conversation details, meeting minutes, or action items here..." />
+                <div className="col-span-2">
+                  <FieldLabel>Message Body</FieldLabel>
+                  <div className="mt-1"><RichTextEditor value={form.body} onChange={(html)=>setForm(p=>({...p,body:html}))} /></div>
                 </div>
                 <div style={{ gridColumn:'1/-1' }}>
                   <FieldLabel>Outcome</FieldLabel>

@@ -3,7 +3,6 @@
 export type RiskProfile = 'conservative' | 'balanced' | 'growth' | 'aggressive';
 export type ServiceTier = 'platinum' | 'gold' | 'standard';
 export type KycStatus = 'pending' | 'in_review' | 'approved' | 'flagged';
-export type EntityType = 'trust' | 'corporation' | 'foundation' | 'llc' | 'partnership' | 'individual';
 export type AssetClass = 'equity' | 'fixed_income' | 'private_equity' | 'real_estate' | 'hedge_fund' | 'cash' | 'structured' | 'venture_capital';
 export type ActivityType = 'email' | 'call' | 'meeting' | 'note' | 'task_completed' | 'document_shared' | 'capital_call';
 export type TaskStatus = 'open' | 'in_progress' | 'completed' | 'cancelled';
@@ -28,6 +27,12 @@ export interface TenantMember {
   tenantId: string;
   userId: string;
   role: UserRole;
+  additionalRoles?: UserRole[];
+  dashboardPreferences?: {
+    roleId: UserRole;
+    visible: boolean;
+    order: number;
+  }[];
   joinedAt: string;
 }
 
@@ -50,18 +55,7 @@ export interface FamilyMember {
   tags?: string[];
 }
 
-export interface Entity {
-  id: string;
-  familyId: string;
-  name: string;
-  entityType: EntityType;
-  jurisdiction: string;
-  currency: string;
-  status: 'active' | 'dormant' | 'dissolved';
-  totalValue?: number;
-  parentEntityId?: string;
-  tags?: string[];
-}
+
 
 export interface ServiceProvider {
   id: string;
@@ -120,19 +114,21 @@ export interface RelationshipEdge {
 export interface Family {
   id: string;
   name: string;
-  code: string;
+  pseudonym?: string;
+  code: string; // Format: 999-XXX
   inceptionDate?: string;
   domicileCountry: string;
   riskProfile: RiskProfile;
   serviceTier: ServiceTier;
-  assignedRmId: string;
+  serviceTeamId?: string;
+  serviceTeamName?: string;
+  assignedRmId: string; // legacy RM, or keeping it for specific single point of contact
   assignedRmName: string;
   kycStatus: KycStatus;
   amlStatus: 'clear' | 'flagged' | 'review';
   totalAum: number; // USD
   currency: string;
   members: FamilyMember[];
-  entities: Entity[];
   lastActivityAt: string;
   tags?: string[];
   notes?: string;
@@ -146,6 +142,33 @@ export type DocumentCategory =
   | 'correspondence' // Emails, Meeting Notes
   | 'legal' // Trust Deeds, Passports
   | 'tax'; // K-1s, Returns
+
+// ─── LGPD Compliance ───────────────────────────────────────────────────────
+export interface LgpdConsent {
+  id: string;
+  familyId: string;
+  memberId?: string; // Optional: specific member or whole family logic
+  purpose: string;
+  status: 'granted' | 'revoked' | 'pending';
+  grantedAt?: string;
+  revokedAt?: string;
+  ipAddress?: string;
+}
+
+export type LgpdRequestType = 'access' | 'deletion' | 'export' | 'correction' | 'anonymization';
+
+export interface LgpdSubjectRequest {
+  id: string;
+  familyId: string;
+  type: LgpdRequestType;
+  status: 'open' | 'in_progress' | 'fulfilled' | 'rejected';
+  requestedAt: string;
+  resolvedAt?: string;
+  assignedToUid?: string;
+  details?: string;
+}
+
+// ─── Documents ─────────────────────────────────────────────────────────────
 
 export interface Document {
   id: string;
@@ -336,6 +359,8 @@ export interface Task {
   priority: TaskPriority;
   taskTypeId?: string;         // links to TaskType for SLA
   queueId?: string;            // queue this task lives in
+  serviceTeamId?: string;      // team assigned to this task
+  serviceTeamName?: string;
   assignedTo?: string;         // legacy name field
   assignedUserId?: string;     // user who picked it up
   assignedUserName?: string;
@@ -384,6 +409,7 @@ export interface TimeEntry {
   linkedEntityName?: string;
   userId: string;
   userName: string;
+  serviceTeamId?: string;      // if user was part of a team, or task was assigned to team
   familyId?: string;
   activityType: ActivityType | string;
   startedAt: string;           // ISO

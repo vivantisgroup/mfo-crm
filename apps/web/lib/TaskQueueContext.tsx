@@ -28,6 +28,7 @@ interface TaskQueueCtx {
   updateTask:   (id: string, patch: Partial<Task>) => void;
   acceptTask:   (taskId: string, userId: string, userName: string) => void;
   completeTask: (taskId: string) => void;
+  addTask:      (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'status'>, actorId: string, actorName: string) => Promise<string>;
 
   // Queue management (admin only)
   addQueue:     (q: Omit<TaskQueue, 'id'>, actorId: string, actorName: string) => Promise<string>;
@@ -67,6 +68,7 @@ interface TaskQueueCtx {
   getTimeByFamily:   () => { familyId: string; familyName: string; minutes: number }[];
   getTimeByUser:     () => { userId: string; userName: string; minutes: number }[];
   getTimeByActivity: () => { activityType: string; minutes: number }[];
+  getTimeByServiceTeam: () => { serviceTeamId: string; minutes: number }[];
 }
 
 const TaskQueueContext = createContext<TaskQueueCtx>({} as TaskQueueCtx);
@@ -94,20 +96,45 @@ export function TaskQueueProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!tenant?.id) return;
     
+    let baseQueues: TaskQueue[] = [];
+    let teamQueues: TaskQueue[] = [];
+
+    const updateCombinedQueues = () => {
+      setQueues([...baseQueues, ...teamQueues]);
+    };
+
     const usTasks = onSnapshot(collection(db, 'tenants', tenant.id, 'tasks'), snap => {
        setTasks(snap.docs.map(d => ({id: d.id, ...d.data()}) as Task));
     });
     
     // In Firestore, respect definition of queues ("task_queues")
     const usQueues = onSnapshot(collection(db, 'tenants', tenant.id, 'task_queues'), snap => {
-       setQueues(snap.docs.map(d => ({id: d.id, ...d.data()}) as TaskQueue));
+       baseQueues = snap.docs.map(d => ({id: d.id, ...d.data()}) as TaskQueue);
+       updateCombinedQueues();
+    });
+
+    const usTeams = onSnapshot(collection(db, 'tenants', tenant.id, 'serviceTeams'), snap => {
+       teamQueues = snap.docs.map(d => {
+         const t = d.data();
+         return {
+           id: d.id,
+           name: t.name + ' (Team Queue)',
+           description: t.description || 'Service Team Auto-Queue',
+           icon: '🛡️',
+           color: '#3b82f6',
+           memberIds: (t.members || []).map((m: any) => m.uid),
+           assignSlaMinutes: 120, // default SLA for team queues
+           tenantType: 'global'
+         } as TaskQueue;
+       });
+       updateCombinedQueues();
     });
     
     const usTime = onSnapshot(collection(db, 'tenants', tenant.id, 'time_entries'), snap => {
        setTimeEntries(snap.docs.map(d => ({id: d.id, ...d.data()}) as TimeEntry));
     });
 
-    return () => { usTasks(); usQueues(); usTime(); };
+    return () => { usTasks(); usQueues(); usTeams(); usTime(); };
   }, [tenant?.id]);
 
   // ── Time tracking ──────────────────────────────────────────────────────────
@@ -129,9 +156,26 @@ export function TaskQueueProvider({ children }: { children: React.ReactNode }) {
     setActiveClockItem({ ...entityObj, startAt: Date.now() });
   }, [activeClockItem]);
 
-  const stopClock = useCallback((notes?: string, activityType?: string) => {
+  const stopClock = useCallback(async (notes?: string, activityType?: string) => {
     if (!activeClockItem || !tenant?.id || !user?.id) return;
     const durMin = snapToInterval((Date.now() - activeClockItem.startAt) / 60000);
+    
+    let resolvedServiceTeamId: string | undefined = undefined;
+    try {
+       // Best-effort lookup for service team assignment to tag this time entry
+       if (activeClockItem.type === 'task') {
+         const t = tasks.find(x => x.id === activeClockItem.id);
+         resolvedServiceTeamId = t?.serviceTeamId;
+       } else if (activeClockItem.type === 'family') {
+         const snap = await import('firebase/firestore').then(m => m.getDoc(m.doc(db, 'tenants', tenant.id, 'families', activeClockItem.id)));
+         if (snap.exists()) {
+            resolvedServiceTeamId = snap.data().serviceTeamId;
+         }
+       }
+    } catch (e) {
+       console.error("Failed to lookup service team for metrics", e);
+    }
+
     const entry = {
       taskId: activeClockItem.type === 'task' ? activeClockItem.id : null,
       linkedEntityId: activeClockItem.id,
@@ -139,6 +183,7 @@ export function TaskQueueProvider({ children }: { children: React.ReactNode }) {
       linkedEntityName: activeClockItem.name,
       userId: user.id,
       userName: user.name,
+      serviceTeamId: resolvedServiceTeamId || null,
       activityType: activityType || 'executing',
       startedAt: new Date(activeClockItem.startAt).toISOString(),
       endedAt:   new Date().toISOString(),
@@ -165,12 +210,23 @@ export function TaskQueueProvider({ children }: { children: React.ReactNode }) {
   }, [tenant?.id]);
 
   const acceptTask = useCallback((taskId: string, userId: string, userName: string) => {
-    updateTask(taskId, {
+    const userTeamQueue = queues.find(q => q.name.includes('(Team Queue)') && q.memberIds?.includes(userId));
+    
+    const patch: Partial<Task> = {
       assignedUserId: userId,
       assignedUserName: userName,
       assignedTo: userName,
       pickedUpAt: new Date().toISOString(),
-    });
+    };
+
+    if (userTeamQueue) {
+      patch.queueId = userTeamQueue.id;
+      patch.serviceTeamId = userTeamQueue.id;
+      patch.serviceTeamName = userTeamQueue.name.replace(' (Team Queue)', '');
+    }
+
+    updateTask(taskId, patch);
+    
     addNotification({
       type: 'task_assigned',
       title: 'Task accepted',
@@ -178,12 +234,41 @@ export function TaskQueueProvider({ children }: { children: React.ReactNode }) {
       taskId,
       severity: 'info',
     });
-  }, [updateTask]);
+  }, [updateTask, queues]);
 
   const completeTask = useCallback((taskId: string) => {
     if (activeClockItem?.id === taskId) stopClock();
     updateTask(taskId, { status: 'completed', completedAt: new Date().toISOString() });
   }, [updateTask, activeClockItem, stopClock]);
+
+  const addTask = useCallback(async (
+    t: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'status'>,
+    actorId: string,
+    actorName: string
+  ): Promise<string> => {
+    if (!tenant?.id) throw new Error("No active tenant");
+    
+    const newTask = {
+      ...t,
+      status: 'open',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    
+    const docRef = await addDoc(collection(db, 'tenants', tenant.id, 'tasks'), newTask);
+    
+    logAction({
+      tenantId: tenant.id,
+      userId: actorId,
+      userName: actorName,
+      action: 'TASK_CREATED',
+      resourceId: docRef.id,
+      resourceType: 'task',
+      resourceName: `Task created: "${t.title}"`,
+      status: 'success',
+    });
+    return docRef.id;
+  }, [tenant?.id]);
 
   // ── Queue management ───────────────────────────────────────────────────────
 
@@ -364,17 +449,27 @@ export function TaskQueueProvider({ children }: { children: React.ReactNode }) {
     return Object.values(map).sort((a, b) => b.minutes - a.minutes);
   }, [timeEntries]);
 
+  const getTimeByServiceTeam = useCallback(() => {
+    const map: Record<string, { serviceTeamId: string; minutes: number }> = {};
+    timeEntries.forEach(e => {
+      if (!e.serviceTeamId) return;
+      if (!map[e.serviceTeamId]) map[e.serviceTeamId] = { serviceTeamId: e.serviceTeamId, minutes: 0 };
+      map[e.serviceTeamId].minutes += e.durationMinutes ?? 0;
+    });
+    return Object.values(map).sort((a, b) => b.minutes - a.minutes);
+  }, [timeEntries]);
+
   const unreadCount = notifications.filter(n => !n.dismissedAt && !n.readAt).length;
 
   return (
     <TaskQueueContext.Provider value={{
       tasks, queues, taskTypes, timeEntries, notifications, unreadCount,
-      updateTask, acceptTask, completeTask,
+      addTask, updateTask, acceptTask, completeTask,
       addQueue, updateQueue, queueTaskCount,
       removeEmptyQueue, migrateAndRemoveQueue,
       activeClockItem, clockElapsedSec, startClock, stopClock, getTaskTime,
       dismissNotification, openNotification, acceptNotification, clearAllNotifications,
-      getTimeByFamily, getTimeByUser, getTimeByActivity,
+      getTimeByFamily, getTimeByUser, getTimeByActivity, getTimeByServiceTeam,
     }}>
       {children}
     </TaskQueueContext.Provider>

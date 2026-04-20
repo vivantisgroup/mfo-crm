@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import '@excalidraw/excalidraw/index.css';
 
 // Core Contexts & Services
 import { firebaseApp } from '@mfo-crm/config';
@@ -15,7 +16,7 @@ import { useTaskQueue } from '@/lib/TaskQueueContext';
 import { usePageTitle } from '@/lib/PageTitleContext';
 
 import { NotificationPanel } from '@/components/NotificationPanel';
-import { TenantSwitcher } from '@/components/Header';
+import { TenantSwitcher } from '@/components/TenantSwitcher';
 import { Ticker } from '@/components/Ticker';
 import { AgendaTab } from '@/components/AgendaTab';
 import { Avatar } from '@/components/Avatar';
@@ -23,28 +24,40 @@ import { CommunicationsHub } from '@/components/CommunicationsHub';
 import { DocumentVault } from '@/components/DocumentVault';
 import { ThemeCustomizer } from '@/components/ThemeCustomizer';
 import { GlobalTimeLogger } from '@/components/GlobalTimeLogger';
+import { GlobalSearch } from '@/components/GlobalSearch';
+import GlobalAIAgent from '@/components/GlobalAIAgent';
 
 // Lucide React Iconography (Premium Tech/Finance Vibe)
 import {
-  LayoutDashboard, Mail, Bot, Users, MessageSquare, CheckSquare, Calendar, TrendingUp, LineChart, FolderOpen, ShieldCheck, Briefcase, FileText, Target, Building2, Search, Receipt, Landmark, UserCog, Settings, Settings2, Database, Server, HardDrive, Tag, ChevronLeft, ChevronRight, ChevronDown, Fingerprint, Zap, Globe, Radar, History, Headset
+  LayoutDashboard, Mail, Bot, Users, MessageSquare, CheckSquare, Calendar, TrendingUp, LineChart, FolderOpen, ShieldCheck, Briefcase, FileText, Target, Building2, Search, Receipt, Landmark, UserCog, Settings, Settings2, Database, Server, HardDrive, Tag, ChevronLeft, ChevronRight, ChevronDown, Fingerprint, Zap, Bell, Radar, History, Headset, ListTodo, ConciergeBell, Scale, Network, PieChart, Contact, Crown, ClipboardCheck, Inbox, BookOpen, PenLine, Calculator, CreditCard, TrendingDown, Blocks, Lock, Globe2, Activity, Gavel, Heart
 } from 'lucide-react';
 
 // ─── NAV DEFS ───────────────────────────────────────────────────────────────
 
 const HREF_ICON_MAP: Record<string, any> = {
   '/dashboard': LayoutDashboard, '/inbox': Mail, '/copilot': Bot,
-  '/relationships': Users, '/families': Users, '/clients': Users, '/contacts': Users,
-  '/activities': MessageSquare, '/tasks': CheckSquare, '/tarefas': CheckSquare, '/calendar': Calendar,
+  '/communications': Inbox,
+  '/relationships': Network, '/families': Users, '/clients': Crown, '/contacts': Contact,
+  '/relationships/organizations': Building2, '/relationships/contacts': Contact,
+  '/activities': MessageSquare, '/tasks': ListTodo, '/tarefas': ListTodo, '/calendar': Calendar,
   '/platform/support': Headset,
-  '/portfolio': TrendingUp, '/financial-engineer': LineChart, '/documents': FolderOpen,
-  '/reports': Radar, '/governance': ShieldCheck, '/estate': Briefcase,
-  '/concierge': Briefcase, '/finance': Landmark, '/admin': Settings
+  '/portfolio': PieChart, '/financial-engineer': LineChart, '/statement-tracker': ClipboardCheck, '/documents': FolderOpen,
+  '/reports': Radar, '/governance': Scale, '/compliance': Scale, '/estate': Landmark,
+  '/intake': Inbox, '/knowledge': BookOpen, '/signatures': PenLine, '/philanthropy': Heart, '/knowledge-base': BookOpen,
+  '/concierge': ConciergeBell, '/employees': Users, '/vendors': Briefcase, '/finance': Receipt,
+  '/accounting': Calculator, '/billing': CreditCard, '/expenses': TrendingDown,
+  '/admin/users': UserCog, '/admin/data-model': Database, '/admin/integrations': Blocks, '/admin/vault': Lock, '/admin': Settings,
+  '/platform/pricing': Receipt,
+  '/cio-office/macro': Globe2, '/cio-office/allocation': PieChart, '/cio-office/due-diligence': Search, '/cio-office/risk': Activity, '/cio-office/committee': Gavel
 };
 
-const PLATFORM_NAV = [
-  { section: 'Platform', items: [{ href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' }, { href: '/communications', icon: MessageSquare, label: 'Communications' }, { href: '/reports', icon: Radar, label: 'Reports' }] },
-  { section: 'Operations', items: [{ href: '/platform/tenants', icon: Building2, label: 'Tenants' }, { href: '/platform/crm', icon: Target, label: 'CRM' }, { href: '/tarefas', icon: CheckSquare, label: 'Tarefas' }, { href: '/platform/support', icon: Headset, label: 'Support Center' }, { href: '/platform/finance', icon: Landmark, label: 'Finance' }, { href: '/platform/hr', icon: Users, label: 'HR' }] },
-  { section: 'Intelligence', items: [{ href: '/platform/analytics', icon: LineChart, label: 'Analytics' }, { href: '/copilot', icon: Bot, label: 'Co-Pilot' }] },
+type NavItem = { href: string; icon: any; label: string; subItems?: Array<{ href: string; label: string }> };
+type NavSection = { section: string; items: NavItem[] };
+
+const PLATFORM_NAV: NavSection[] = [
+  { section: 'Platform', items: [{ href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' }, { href: '/knowledge-base', icon: BookOpen, label: 'Advisory Hub' }, { href: '/communications', icon: MessageSquare, label: 'Communications' }, { href: '/reports', icon: Radar, label: 'Reports' }] },
+  { section: 'Operations', items: [{ href: '/platform/tenants', icon: Building2, label: 'Tenants' }, { href: '/platform/crm', icon: Target, label: 'CRM' }, { href: '/tarefas', icon: ListTodo, label: 'Tarefas' }, { href: '/platform/support', icon: Headset, label: 'Support Center' }, { href: '/platform/finance', icon: Receipt, label: 'Finance' }, { href: '/platform/hr', icon: Users, label: 'HR' }, { href: '/platform/pricing', icon: Receipt, label: 'Pricing' }] },
+  { section: 'Intelligence', items: [{ href: '/platform/analytics', icon: LineChart, label: 'Analytics' }, { href: '/philanthropy', icon: Heart, label: 'Philanthropy' }, { href: '/copilot', icon: Bot, label: 'Co-Pilot' }] },
   { section: 'Engineering', items: [{ href: '/admin', icon: Settings2, label: 'Settings' }] },
 ];
 
@@ -117,12 +130,13 @@ function SuspensionGuard({ children }: { children: React.ReactNode }) {
 // ─── MAIN BOXED LAYOUT COMPONENT ─────────────────────────────────────────────
 
 function DashboardInner({ children }: { children: React.ReactNode }) {
-  const { tenant, isAuthenticated, isHydrated, stage, user, logout } = useAuth();
+  const { tenant, isAuthenticated, isHydrated, stage, user, userProfile, isImpersonating, logout } = useAuth();
   const { companyLogoSmall } = useTheme();
   const { title, crumbs: contextCrumbs, crumbOverrides } = usePageTitle() as any;
   const { unreadCount } = useTaskQueue();
   const pathname = usePathname();
   const router = useRouter();
+  const { t } = useTranslation();
 
   // Boxed UI State
   const [leftWidth, setLeftWidth] = useState(260); // Sidebar (160 - 400px)
@@ -134,10 +148,13 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
 
   // Widget States
   const [expandedNav, setExpandedNav] = useState<Record<string, boolean>>({});
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({ 'Platform': true, 'Operations': true });
   const [activeOpsTab, setActiveOpsTab] = useState<'comms' | 'vault' | 'agenda' | 'tasks'>('comms');
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [navSearchQuery, setNavSearchQuery] = useState('');
 
   // Auth routing locks
   useEffect(() => {
@@ -146,6 +163,13 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
     if (stage === 'needs_setup') router.push('/setup');
     if (stage === 'select_tenant') router.push('/select-tenant');
   }, [isHydrated, stage, router]);
+
+  // Global event to coordinate right sidebar collapse
+  useEffect(() => {
+    const handleCollapseAction = () => setRightCollapsed(true);
+    window.addEventListener('mfo-collapse-right', handleCollapseAction);
+    return () => window.removeEventListener('mfo-collapse-right', handleCollapseAction);
+  }, []);
 
   // Handle Resize Physics
   const startResizeLeft = (e: React.MouseEvent) => {
@@ -172,17 +196,94 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
     document.addEventListener('mouseup', onUp);
   };
 
+  const revertImpersonation = async () => {
+    try {
+      const { getAuth, signInWithCustomToken } = await import('firebase/auth');
+      const auth = getAuth(firebaseApp);
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) return;
+      const res = await fetch('/api/auth/impersonate', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+         body: JSON.stringify({ revert: true })
+      });
+      const data = await res.json();
+      if (data.customToken) {
+         await signInWithCustomToken(auth, data.customToken);
+         window.location.href = '/admin/users';
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   // Build Nav
   const nav = useMemo(() => {
-    if (tenant?.isInternal) return PLATFORM_NAV;
-    const verticalId = (tenant as any)?.industryVertical as IndustryVerticalId | undefined;
-    return getVerticalNav(verticalId ?? DEFAULT_VERTICAL).map(s => ({
-      section: s.section,
-      items: s.items.map((i: any) => ({
-        href: i.href, icon: HREF_ICON_MAP[i.href] ?? LayoutDashboard, label: i.label ?? i.labelKey, subItems: i.subItems
-      }))
-    }));
-  }, [tenant]);
+    let sourceNav = tenant?.isInternal ? PLATFORM_NAV : getVerticalNav((tenant as any)?.industryVertical ?? DEFAULT_VERTICAL);
+    
+    // Inject Security submodule right before "Support" or at the end under 'Engineering'
+    if (tenant?.isInternal) {
+      const engSection = sourceNav.find(s => s.section === 'Engineering');
+      if (engSection) {
+         const adminItem = engSection.items.find(i => i.href === '/admin');
+         if (adminItem && !adminItem.subItems?.some(s => s.href === '/admin/security')) {
+            adminItem.subItems = [...(adminItem.subItems || []), { href: '/admin/security', label: 'Security' }];
+         }
+      }
+    }
+    
+    return sourceNav.map(s => {
+      let filteredItems = s.items;
+      
+      // Step 1: RBAC Filtering
+      const restrictions = (tenant as any)?.navRestrictions || {};
+      const userRole = user?.role as string | undefined;
+      
+      if (userRole && userRole !== 'saas_master_admin') {
+         filteredItems = filteredItems.filter(i => {
+            const allowedRoles = restrictions[i.href];
+            if (allowedRoles && allowedRoles.length > 0) {
+               return allowedRoles.includes(userRole);
+            }
+            return true;
+         }).map(i => {
+           if (i.subItems) {
+             return {
+               ...i,
+               subItems: i.subItems.filter(sub => {
+                 const subAllowedRoles = restrictions[sub.href];
+                 if (subAllowedRoles && subAllowedRoles.length > 0) {
+                    return subAllowedRoles.includes(userRole);
+                 }
+                 return true;
+               })
+             }
+           }
+           return i;
+         });
+      }
+
+      // Step 2: Search Filtering
+      if (navSearchQuery.trim()) {
+        const q = navSearchQuery.toLowerCase();
+        filteredItems = filteredItems.filter((i: any) => 
+          (i.label || i.labelKey || '').toLowerCase().includes(q) ||
+          i.subItems?.some((sub: any) => sub.label.toLowerCase().includes(q))
+        ).map((i: any) => ({
+          ...i,
+          subItems: i.subItems?.filter((sub: any) => 
+              sub.label.toLowerCase().includes(q) || (i.label || i.labelKey || '').toLowerCase().includes(q)
+          )
+        }));
+      }
+      return {
+        section: s.section,
+        items: filteredItems.map((i: any) => ({
+          href: i.href, icon: HREF_ICON_MAP[i.href] ?? LayoutDashboard, label: i.label ?? i.labelKey, subItems: i.subItems
+        }))
+      };
+    }).filter(s => s.items.length > 0);
+  }, [tenant, navSearchQuery, user?.role]);
 
   if (!isHydrated || stage === 'loading') return (
     <div className="h-screen w-screen flex items-center justify-center bg-[#f8fafc]">
@@ -196,8 +297,8 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   // Global breadcrumb evaluation logic
   const autoCrumbs = buildAutoCrumbs(pathname || '', crumbOverrides || {});
   const resolvedCrumbs = [...autoCrumbs, ...(contextCrumbs || [])];
-  const effectiveLeftW = leftCollapsed ? 64 : leftWidth;
-  const effectiveRightW = rightCollapsed ? 64 : rightWidth;
+  const effectiveLeftW = leftCollapsed ? 40 : leftWidth;
+  const effectiveRightW = rightCollapsed ? 40 : rightWidth;
 
   const PrimaryColor = '#004b44'; // Deep Emerald theme
 
@@ -206,85 +307,134 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
     
     <div className="fixed inset-0 bg-[var(--bg-background)] flex font-sans font-medium text-[13px] z-0 overflow-hidden">
       
+      {isImpersonating && (
+        <div className="absolute top-0 left-0 right-0 h-10 bg-amber-500 text-black z-[100] flex items-center justify-center font-bold text-xs gap-4 shadow-md uppercase tracking-wider">
+           <span>🎭 You are currently impersonating {user?.name} ({user?.email})</span>
+           <button onClick={revertImpersonation} className="px-3 py-1 bg-black/20 hover:bg-black/30 text-black rounded-md transition-colors flex items-center gap-2 font-extrabold cursor-pointer">
+              <History size={14} /> Revert to Admin
+           </button>
+        </div>
+      )}
+
       {/* ─── COLUMN 1: SIDEBAR ─── */}
-      <div style={{ width: effectiveLeftW }} className="flex flex-col shrink-0 bg-[var(--bg-surface)] text-[var(--text-primary)] transition-all duration-300 overflow-hidden border-r border-[var(--border-subtle)] z-10">
+      <div style={{ width: effectiveLeftW, marginTop: isImpersonating ? 40 : 0 }} className="print:hidden flex flex-col shrink-0 bg-[var(--bg-surface)] text-[var(--text-primary)] transition-all duration-300 overflow-hidden border-r border-[var(--border-subtle)] z-10">
         {/* Col 1 Header (h-16) */}
-        <div className="h-16 flex items-center justify-start px-4 shrink-0 border-b border-[var(--border-subtle)]">
+        <div className={`h-16 flex items-center shrink-0 border-b border-[var(--border-subtle)] ${leftCollapsed ? 'justify-center px-0' : 'justify-start px-4'}`}>
           <div className="w-8 h-8 rounded shrink-0 flex items-center justify-center bg-[#004b44] text-white shadow-sm font-bold text-sm">
             {tenant?.name?.[0] || 'M'}
           </div>
           {!leftCollapsed && (
              <div className="ml-3 flex flex-col min-w-0">
                <span className="truncate font-bold text-[14px] text-[var(--text-primary)] leading-tight">{tenant?.name ?? 'MFO Nexus'}</span>
-               <span className="truncate text-[9.5px] font-bold uppercase tracking-widest text-[var(--brand-primary)]">{tenant?.isInternal ? 'Platform' : 'Terminal'}</span>
+               <span className="truncate text-[9.5px] font-bold uppercase tracking-widest text-[var(--brand-primary)]">{tenant?.isInternal ? 'Platform' : 'Platform'}</span>
              </div>
           )}
         </div>
 
+        {/* Col 1 Search Dock */}
+        {!leftCollapsed && (
+          <div className="px-3 pt-3 pb-1 shrink-0 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+            <div className="flex items-center gap-2 px-2 py-1.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-md text-[var(--text-secondary)] focus-within:border-[var(--brand-primary)] focus-within:ring-1 focus-within:ring-[var(--brand-primary)]/20 transition-all">
+              <Search size={14} className="shrink-0" />
+              <input 
+                 placeholder="Search navigation..." 
+                 className="bg-transparent border-none outline-none text-[12px] w-full text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
+                 value={navSearchQuery}
+                 onChange={e => setNavSearchQuery(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
+
         {/* Col 1 Workspace/Nav (flex-1) */}
-        <div className="flex-1 overflow-y-auto px-2 py-3 flex flex-col gap-1">
-          {nav.map(({ section, items }) => (
-            <React.Fragment key={section}>
-              {!leftCollapsed && <div className="px-3 pt-4 pb-1 text-[10px] font-extrabold uppercase tracking-wider text-[var(--text-tertiary)]">{section}</div>}
-              {items.map((item: any) => {
-                const isDashboard = item.href === '/dashboard';
-                // Active if direct match OR if a subItem is active OR if the pathname starts with one of the hrefs
-                const childActive = item.subItems?.some((si: any) => pathname === si.href || pathname.startsWith(si.href + '/'));
-                const active = pathname === item.href || (!isDashboard && pathname.startsWith(item.href + '/')) || childActive;
+        <div className="flex-1 overflow-y-auto px-2 py-1 flex flex-col gap-1">
+          {nav.map(({ section, items }) => {
+            const isSectionExpanded = navSearchQuery.trim() ? true : (expandedSections[section] ?? false);
+            
+            const toggleSection = (e: React.MouseEvent) => {
+               e.preventDefault();
+               if (leftCollapsed) setLeftCollapsed(false);
+               setExpandedSections({ [section]: !isSectionExpanded });
+            };
+
+            return (
+              <React.Fragment key={section}>
+                {!leftCollapsed && (
+                   <button 
+                      onClick={toggleSection} 
+                      className="w-full mt-2 mb-1 px-3 py-2 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] hover:border-[var(--brand-primary)]/40 rounded-lg flex items-center justify-between transition-all shadow-sm group"
+                   >
+                      <span className="text-[11px] font-extrabold uppercase tracking-widest text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]">{t(section as any)}</span>
+                      <span className="text-[var(--text-tertiary)] group-hover:text-[var(--brand-primary)] transition-colors">
+                          {isSectionExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      </span>
+                   </button>
+                )}
                 
-                const IconLine = item.icon || LayoutDashboard;
-                const hasSub = item.subItems && item.subItems.length > 0;
-                // Auto-expand if active, otherwise use state
-                const isExpanded = expandedNav[item.href] ?? active;
+                {(isSectionExpanded || leftCollapsed) && (
+                   <div className="flex flex-col gap-1 animate-fade-in">
+                      {items.map((item: any) => {
+                        const isDashboard = item.href === '/dashboard';
+                        // Active if direct match OR if a subItem is active OR if the pathname starts with one of the hrefs
+                        const childActive = item.subItems?.some((si: any) => pathname === si.href || pathname.startsWith(si.href + '/'));
+                        const active = pathname === item.href || (!isDashboard && pathname.startsWith(item.href + '/')) || childActive;
+                        
+                        const IconLine = item.icon || LayoutDashboard;
+                        const hasSub = item.subItems && item.subItems.length > 0;
+                        // Auto-expand if active, or if search query matches, otherwise use state
+                        const isExpanded = navSearchQuery.trim() ? true : (expandedNav[item.href] ?? active);
 
-                const toggleSub = (e: React.MouseEvent) => {
-                  e.preventDefault();
-                  if (leftCollapsed) {
-                    setLeftCollapsed(false);
-                    setExpandedNav(prev => ({ ...prev, [item.href]: true }));
-                  } else {
-                    setExpandedNav(prev => ({ ...prev, [item.href]: !isExpanded }));
-                  }
-                };
+                        const toggleSub = (e: React.MouseEvent) => {
+                          e.preventDefault();
+                          if (leftCollapsed) {
+                            setLeftCollapsed(false);
+                            setExpandedNav({ [item.href]: true });
+                          } else {
+                            setExpandedNav({ [item.href]: !isExpanded });
+                          }
+                        };
 
-                return (
-                  <div key={item.href} className="flex flex-col gap-[2px]">
-                    {hasSub ? (
-                      <button onClick={toggleSub} className={`w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${active ? 'bg-[var(--brand-faint)] text-[var(--brand-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]'}`} title={leftCollapsed ? item.label : undefined}>
-                        <div className="flex items-center gap-3 truncate">
-                          <IconLine size={16} strokeWidth={active ? 2.5 : 1.8} className="shrink-0" />
-                          {!leftCollapsed && <span className={`truncate flex-1 text-left ${active ? 'font-bold' : 'font-medium'}`}>{item.label}</span>}
-                        </div>
-                        {!leftCollapsed && (
-                          <span className="shrink-0 text-current opacity-50">
-                            {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                          </span>
-                        )}
-                      </button>
-                    ) : (
-                      <Link href={item.href} className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${active ? 'bg-[var(--brand-faint)] text-[var(--brand-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]'}`} title={leftCollapsed ? item.label : undefined}>
-                        <IconLine size={16} strokeWidth={active ? 2.5 : 1.8} className="shrink-0" />
-                        {!leftCollapsed && <span className={`truncate flex-1 ${active ? 'font-bold' : 'font-medium'}`}>{item.label}</span>}
-                      </Link>
-                    )}
+                        return (
+                          <div key={item.href} className="flex flex-col gap-[2px]">
+                            {hasSub ? (
+                              <button onClick={toggleSub} className={`w-full flex items-center ${leftCollapsed ? 'justify-center px-0' : 'justify-between px-3'} py-2 rounded-lg cursor-pointer transition-colors ${active ? 'bg-[var(--brand-faint)] text-[var(--brand-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]'}`} title={leftCollapsed ? item.label : undefined}>
+                                <div className={`flex items-center truncate ${leftCollapsed ? 'justify-center w-full' : 'gap-3'}`}>
+                                  <IconLine size={16} strokeWidth={active ? 2.5 : 1.8} className="shrink-0" />
+                                  {!leftCollapsed && <span className={`truncate flex-1 text-left ${active ? 'font-bold' : 'font-medium'}`}>{t(item.label as any)}</span>}
+                                </div>
+                                {!leftCollapsed && (
+                                  <span className="shrink-0 text-current opacity-50">
+                                    {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                  </span>
+                                )}
+                              </button>
+                            ) : (
+                              <Link href={item.href} className={`flex items-center py-2 rounded-lg cursor-pointer transition-colors ${leftCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} ${active ? 'bg-[var(--brand-faint)] text-[var(--brand-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]'}`} title={leftCollapsed ? item.label : undefined}>
+                                <IconLine size={16} strokeWidth={active ? 2.5 : 1.8} className="shrink-0" />
+                                {!leftCollapsed && <span className={`truncate flex-1 ${active ? 'font-bold' : 'font-medium'}`}>{t(item.label as any)}</span>}
+                              </Link>
+                            )}
 
-                    {hasSub && isExpanded && !leftCollapsed && (
-                      <div className="flex flex-col gap-1 pl-[38px] pr-2 pt-1 pb-1 animate-fade-in">
-                        {item.subItems.map((sub: any) => {
-                          const subActive = pathname === sub.href || pathname.startsWith(sub.href + '/');
-                          return (
-                            <Link key={sub.href} href={sub.href} className={`flex items-center px-3 py-1.5 rounded-md text-[12px] transition-colors ${subActive ? 'bg-[var(--brand-faint)] text-[var(--brand-primary)] font-bold shadow-sm ring-1 ring-[var(--brand-primary)]/10' : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-secondary)] font-medium border border-transparent'}`}>
-                              <span className="truncate">{sub.label}</span>
-                            </Link>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </React.Fragment>
-          ))}
+                            {hasSub && isExpanded && !leftCollapsed && (
+                              <div className="flex flex-col gap-1 pl-[38px] pr-2 pt-1 pb-1 animate-fade-in">
+                                {item.subItems.map((sub: any) => {
+                                  const subActive = pathname === sub.href || pathname.startsWith(sub.href + '/');
+                                  return (
+                                    <Link key={sub.href} href={sub.href} className={`flex items-center px-3 py-1.5 rounded-md text-[12px] transition-colors ${subActive ? 'bg-[var(--brand-faint)] text-[var(--brand-primary)] font-bold shadow-sm ring-1 ring-[var(--brand-primary)]/10' : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-secondary)] font-medium border border-transparent'}`}>
+                                      <span className="truncate">{t(sub.label as any)}</span>
+                                    </Link>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                   </div>
+                )}
+              </React.Fragment>
+            );
+          })}
         </div>
 
         {/* Col 1 Footer Dock (h-9) */}
@@ -296,7 +446,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* ─── RESIZER 1 ─── */}
-      <div className="w-[4px] group relative flex flex-col justify-center cursor-col-resize shrink-0 z-50 hover:bg-[var(--brand-muted)] transition-colors" onMouseDown={startResizeLeft}>
+      <div className="print:hidden w-[4px] group relative flex flex-col justify-center cursor-col-resize shrink-0 z-50 hover:bg-[var(--brand-muted)] transition-colors" onMouseDown={startResizeLeft} style={{ marginTop: isImpersonating ? 40 : 0 }}>
         <div className={`absolute inset-y-0 right-0 w-[1px] transition-all ${isResizingLeft ? 'bg-[var(--brand-primary)]' : 'bg-transparent group-hover:bg-[var(--brand-primary)]'}`}></div>
         <button
           onClick={(e) => { e.stopPropagation(); setLeftCollapsed(!leftCollapsed); }}
@@ -308,9 +458,9 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* ─── COLUMN 2: WORKSPACE ─── */}
-      <div className="flex-1 flex flex-col shrink min-w-0 bg-[var(--bg-surface)] text-[var(--text-primary)] z-20 overflow-hidden">
+      <div className="flex-1 flex flex-col shrink min-w-0 bg-[var(--bg-surface)] text-[var(--text-primary)] z-20 overflow-hidden print:overflow-visible print:bg-white print:text-black" style={{ marginTop: isImpersonating ? 40 : 0 }}>
         {/* Col 2 Header (h-16) */}
-        <div className="h-16 flex items-center px-6 shrink-0 border-b border-[var(--border-subtle)] justify-between">
+        <div className="print:hidden h-16 flex items-center px-6 shrink-0 border-b border-[var(--border-subtle)] justify-between">
            {/* Breadcrumbs */}
            <div className="flex items-center gap-2 max-w-lg truncate">
              {resolvedCrumbs.map((c: any, i: number) => (
@@ -338,9 +488,12 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
            
            {/* Controls */}
            <div className="flex items-center gap-3 shrink-0">
-             <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg text-[var(--text-secondary)] hover:border-[var(--border-strong)] cursor-pointer transition-colors w-48">
+             <div 
+               onClick={() => setSearchOpen(true)}
+               className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg text-[var(--text-secondary)] hover:border-[var(--border-strong)] cursor-pointer transition-colors w-64"
+             >
                <Search size={14} />
-               <input placeholder="Terminal Search..." className="bg-transparent border-none outline-none text-[12px] text-[var(--text-primary)] w-full" readOnly />
+               <input placeholder="Search" className="bg-transparent border-none outline-none text-[12px] text-[var(--text-primary)] w-full" readOnly />
                <span className="text-[9px] font-bold bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-1 py-0.5 rounded shadow-sm text-[var(--text-secondary)]">⌘K</span>
              </div>
 
@@ -348,7 +501,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
 
              <div className="relative">
                <button onClick={() => setNotifOpen(!notifOpen)} className="relative w-8 h-8 flex items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:text-[var(--brand-primary)] hover:bg-[var(--brand-faint)] hover:border-[var(--brand-muted)] transition-all">
-                  <Globe size={16} />
+                  <Bell size={16} />
                   {unreadCount > 0 && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500 shadow-sm border border-[var(--bg-surface)]"></span>}
                </button>
                {notifOpen && <NotificationPanel onClose={() => setNotifOpen(false)} />}
@@ -358,43 +511,45 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
 
              <div className="relative">
                <button onClick={() => setMenuOpen(!menuOpen)} className="flex items-center gap-2 px-2 py-1 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-lg cursor-pointer hover:bg-[var(--bg-muted)] transition-colors">
-                  <Avatar id={`u-${user?.id}`} name={user?.name} size="sm" />
+                  <Avatar id={`u-${user?.id}`} name={user?.name} size="sm" src={(userProfile as any)?.photoURL ?? user?.photoURL ?? undefined} />
                </button>
                {menuOpen && (
-                 <div className="absolute top-14 right-2 w-48 bg-[var(--bg-surface)] border border-[var(--border-subtle)] shadow-lg rounded-xl p-2 flex flex-col z-50 animate-fade-in text-[var(--text-primary)]">
+                 <>
+                   <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)}></div>
+                   <div className="absolute top-14 right-2 w-64 bg-[var(--bg-surface)] border border-[var(--border-subtle)] shadow-lg rounded-xl p-2 flex flex-col z-50 animate-fade-in text-[var(--text-primary)]">
                    <div className="px-2 pb-2 mb-2 border-b border-[var(--border-subtle)]">
                      <div className="font-bold">{user?.name}</div>
-                     <div className="text-[11px] text-[var(--text-secondary)]">{user?.email}</div>
+                     <div className="text-[12px] text-[var(--brand-primary)] break-words font-medium">{user?.email}</div>
                    </div>
                    <button onClick={() => { setMenuOpen(false); router.push('/settings'); }} className="text-left px-2 py-1.5 hover:bg-[var(--bg-elevated)] rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-medium flex gap-2"><Settings size={14}/> Settings</button>
+                   {/* Personify Indicator & Action */}
+                   {isImpersonating && (
+                     <div className="px-2 pb-2 mb-2 border-b border-[var(--border-subtle)]">
+                       <div className="text-[10px] font-bold text-amber-500 uppercase tracking-wider mb-1">🎭 Active Session: Impersonated</div>
+                       <button onClick={() => { setMenuOpen(false); revertImpersonation(); }} className="w-full text-left px-2 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded font-medium flex gap-2"><History size={14}/> Revert Identity</button>
+                     </div>
+                   )}
                    <button onClick={() => logout()} className="text-left px-2 py-1.5 hover:bg-red-50 text-red-600 rounded font-medium flex gap-2 mt-1"><Zap size={14}/> Sign Out</button>
                  </div>
+                 </>
                )}
              </div>
            </div>
         </div>
 
         {/* Col 2 Workspace Boxed Content (flex-1) */}
-        <div className="flex-1 overflow-y-auto p-4 lg:p-6 bg-[var(--bg-surface)] relative">
+        <div className="flex-1 overflow-y-auto print:overflow-visible p-4 lg:p-6 print:p-0 bg-[var(--bg-surface)] print:bg-white relative">
            {children}
         </div>
 
-        {/* Action Dock (h-11) */}
-        <div className="h-11 shrink-0 bg-[var(--bg-elevated)] border-t border-[var(--border-subtle)] flex items-center justify-between">
-           <div className="flex items-center w-full h-full">
-              <div className="flex-1 overflow-hidden h-full"><Ticker /></div>
-           </div>
-        </div>
-
-        {/* Base Dock (h-9) */}
-        <div className="h-9 shrink-0 bg-[var(--bg-muted)] border-t border-[var(--border-subtle)] px-4 flex items-center justify-between text-[10px] text-[var(--text-tertiary)] font-bold uppercase tracking-widest z-10">
-           <div className="flex items-center gap-2"><Fingerprint size={12} className="text-[var(--brand-emphasis)]" /> Terminal Secured</div>
-           <div>System Status <span className="text-[var(--brand-primary)] ml-1">● Online</span></div>
+        {/* Merged Base Dock (Live Hub) */}
+        <div className="print:hidden shrink-0 flex items-center justify-between z-10 w-full overflow-hidden border-t border-[var(--border-subtle)]">
+           <div className="flex-1 w-full"><Ticker /></div>
         </div>
       </div>
 
       {/* ─── RESIZER 2 ─── */}
-      <div className="w-[4px] group relative flex flex-col justify-center cursor-col-resize shrink-0 z-50 hover:bg-[var(--brand-muted)] transition-colors" onMouseDown={startResizeRight}>
+      <div className="print:hidden w-[4px] group relative flex flex-col justify-center cursor-col-resize shrink-0 z-50 hover:bg-[var(--brand-muted)] transition-colors" onMouseDown={startResizeRight} style={{ marginTop: isImpersonating ? 40 : 0 }}>
         <div className={`absolute inset-y-0 left-0 w-[1px] transition-all ${isResizingRight ? 'bg-[var(--brand-primary)]' : 'bg-transparent group-hover:bg-[var(--brand-primary)]'}`}></div>
         <button
           onClick={(e) => { e.stopPropagation(); setRightCollapsed(!rightCollapsed); }}
@@ -406,13 +561,13 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* ─── COLUMN 3: INTELLIGENCE ─── */}
-      <div style={{ width: effectiveRightW }} className="flex flex-col shrink-0 bg-[var(--bg-surface)] text-[var(--text-primary)] transition-all duration-300 overflow-hidden border-l border-[var(--border-subtle)] z-30">
+      <div style={{ width: effectiveRightW, marginTop: isImpersonating ? 40 : 0 }} className="print:hidden flex flex-col shrink-0 bg-[var(--bg-surface)] text-[var(--text-primary)] transition-all duration-300 overflow-hidden border-l border-[var(--border-subtle)] z-30">
         
         {/* Col 3 Header (h-16) - Intelligence Tabs */}
         {!rightCollapsed ? (
           <div className="h-16 flex items-center px-2 shrink-0 border-b border-[var(--border-subtle)] gap-1 bg-[var(--bg-elevated)]">
              {[
-               { id: 'comms',  icon: <MessageSquare size={14} />,  label: 'Comms' },
+               { id: 'comms',  icon: <BookOpen size={14} />,  label: 'Advisory' },
                { id: 'vault',  icon: <FolderOpen size={14} />,     label: 'Vault' },
                { id: 'agenda', icon: <Calendar size={14} />,       label: 'Agenda' },
                { id: 'tasks',  icon: <History size={14} />,        label: 'Logs' }
@@ -439,7 +594,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
                 {activeOpsTab === 'tasks' && (
                   <div className="p-6 text-center text-[var(--text-tertiary)] text-xs">
                      <History size={24} className="mx-auto mb-2 opacity-50" />
-                     All caught up. Terminal logs clean.
+                     All caught up. System logs clean.
                   </div>
                 )}
              </div>
@@ -462,6 +617,8 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
       </div>
       
       <ThemeCustomizer />
+      <GlobalSearch open={searchOpen} setOpen={setSearchOpen} />
+      <GlobalAIAgent />
     </div>
     </>
   );

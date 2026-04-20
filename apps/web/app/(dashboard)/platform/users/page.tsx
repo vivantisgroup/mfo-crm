@@ -14,8 +14,8 @@ import { usePageTitle } from '@/lib/PageTitleContext';
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const ALL_ROLES: PlatformRole[] = [
- 'saas_master_admin', 'tenant_admin', 'relationship_manager',
- 'cio', 'controller', 'compliance_officer', 'report_viewer', 'external_advisor',
+  'saas_master_admin', 'tenant_admin', 'relationship_manager',
+  'cio', 'controller', 'compliance_officer', 'ai_officer', 'report_viewer', 'external_advisor',
 ];
 
 const ROLE_COLOR: Record<string, { bg: string; fg: string }> = {
@@ -25,6 +25,7 @@ const ROLE_COLOR: Record<string, { bg: string; fg: string }> = {
  cio: { bg: '#0ea5e920', fg: '#38bdf8' },
  controller: { bg: '#a78bfa20', fg: '#a78bfa' },
  compliance_officer: { bg: '#ef444420', fg: '#f87171' },
+ ai_officer: { bg: '#10b98120', fg: '#34d399' },
  report_viewer: { bg: '#64748b20', fg: '#94a3b8' },
  external_advisor: { bg: '#f9731620', fg: '#fb923c' },
 };

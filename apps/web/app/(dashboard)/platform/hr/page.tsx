@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Card, Title, Subtitle, Text, Badge, Button, TextInput, Select, SelectItem, Metric, Table, TableHead, TableRow, TableHeaderCell, TableBody, TableCell, BarChart } from '@tremor/react';
 import { useAuth } from '@/lib/AuthContext';
 import { usePageTitle } from '@/lib/PageTitleContext';
 import { SecondaryDock } from '@/components/SecondaryDock';
@@ -27,63 +26,63 @@ function EmployeeDetailComponent({ emp, departments, onBack, onSave }: { emp: an
     <div className="mx-auto py-2 animate-fade-in relative z-10 w-full mb-20 space-y-6">
       <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
         <div className="flex items-center gap-4">
-          <Button variant="light" color="slate" onClick={onBack}>← Directory</Button>
-          <Title>{emp.id === "new" ? "Register New Employee" : "Edit Profile"}</Title>
+          <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-slate-100 text-slate-700 shadow hover:bg-slate-200 h-9 px-4 py-2" onClick={onBack}>← Directory</button>
+          <h3 className="text-lg font-semibold tracking-tight mb-2">{emp.id === "new" ? "Register New Employee" : "Edit Profile"}</h3>
         </div>
-        <Button onClick={save} disabled={isSaving || !form.name || !form.department || !form.baseSalary}>
+        <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2" onClick={save} disabled={isSaving || !form.name || !form.department || !form.baseSalary}>
           {isSaving ? "Saving..." : "Save Profile"}
-        </Button>
+        </button>
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
-        <Card className="shadow-sm border-slate-200">
-          <Title className="mb-4">Personal Details</Title>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 shadow-sm border-slate-200">
+          <h3 className="text-lg font-semibold tracking-tight mb-2 mb-4">Personal Details</h3>
           <div className="space-y-4">
             <div>
               <label className="text-xs font-bold text-slate-500 mb-1.5 block">Full Name</label>
-              <TextInput value={form.name} onChange={e => setForm({...form, name: e.target.value})} disabled={isSaving} placeholder="Jane Doe" />
+              <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" value={form.name} onChange={e => setForm({...form, name: e.target.value})} disabled={isSaving} placeholder="Jane Doe" />
             </div>
             <div>
               <label className="text-xs font-bold text-slate-500 mb-1.5 block">Location</label>
-              <TextInput value={form.location || ""} onChange={e => setForm({...form, location: e.target.value})} disabled={isSaving} placeholder="Remote, UK" />
+              <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" value={form.location || ""} onChange={e => setForm({...form, location: e.target.value})} disabled={isSaving} placeholder="Remote, UK" />
             </div>
             <div>
               <label className="text-xs font-bold text-slate-500 mb-1.5 block">Start Date</label>
-              <TextInput type={"date" as any} value={form.startDate ? form.startDate.split("T")[0] : ""} onChange={e => setForm({...form, startDate: e.target.value})} disabled={isSaving} />
+              <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" type={"date" as any} value={form.startDate ? form.startDate.split("T")[0] : ""} onChange={e => setForm({...form, startDate: e.target.value})} disabled={isSaving} />
             </div>
           </div>
-        </Card>
+        </div>
         
-        <Card className="shadow-sm border-slate-200">
-          <Title className="mb-4">Employment Data</Title>
+        <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 shadow-sm border-slate-200">
+          <h3 className="text-lg font-semibold tracking-tight mb-2 mb-4">Employment Data</h3>
           <div className="space-y-4">
             <div>
               <label className="text-xs font-bold text-slate-500 mb-1.5 block">Title / Role</label>
-              <TextInput value={form.title} onChange={e => setForm({...form, title: e.target.value})} disabled={isSaving} />
+              <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" value={form.title} onChange={e => setForm({...form, title: e.target.value})} disabled={isSaving} />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-bold text-slate-500 mb-1.5 block">Department</label>
-                <Select value={form.department} onValueChange={v => setForm({...form, department: v})} disabled={isSaving}>
+                <select className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-[var(--bg-surface)] px-3 py-2 text-sm shadow-sm ring-offset-background" value={form.department} onChange={e => setForm({...form, department: e.target.value})} disabled={isSaving}>
                   {departments.map(d => (
-                    <SelectItem key={d.id} value={d.name}>{d.name}</SelectItem>
+                    <option key={d.id} value={d.name}>{d.name}</option>
                   ))}
-                </Select>
+                </select>
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-500 mb-1.5 block">Type</label>
-                <Select value={form.employmentType || "Full-Time"} onValueChange={v => setForm({...form, employmentType: v})} disabled={isSaving}>
-                  <SelectItem value="Full-Time">Full-Time</SelectItem>
-                  <SelectItem value="Contractor">Contractor</SelectItem>
-                </Select>
+                <select className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-[var(--bg-surface)] px-3 py-2 text-sm shadow-sm ring-offset-background" value={form.employmentType || "Full-Time"} onChange={e => setForm({...form, employmentType: e.target.value})} disabled={isSaving}>
+                  <option value="Full-Time">Full-Time</option>
+                  <option value="Contractor">Contractor</option>
+                </select>
               </div>
             </div>
             <div>
               <label className="text-xs font-bold text-slate-500 mb-1.5 block">Base Salary (USD)</label>
-              <TextInput type="number" value={form.baseSalary || ""} onChange={e => setForm({...form, baseSalary: Number(e.target.value)})} disabled={isSaving} />
+              <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" type="number" value={form.baseSalary || ""} onChange={e => setForm({...form, baseSalary: Number(e.target.value)})} disabled={isSaving} />
             </div>
           </div>
-        </Card>
+        </div>
       </div>
     </div>
   );
@@ -274,47 +273,49 @@ const renderPeopleList = () => (
              onChange={(e) => setPeopleSearch(e.target.value)}
            />
          </div>
-         <Button icon={() => <UserPlus size={16} className="mr-2 inline"/>} onClick={() => setDetailEmpId("new")}>Add Employee</Button>
+         <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2" onClick={() => setDetailEmpId("new")}><UserPlus size={16} className="mr-2 inline"/>Add Employee</button>
       </div>
       
-      <Card className="p-0 overflow-hidden shadow-sm border-slate-200">
-        <Table>
-          <TableHead className="bg-slate-50 border-b border-slate-200">
-            <TableRow>
-              <TableHeaderCell>Employee</TableHeaderCell>
-              <TableHeaderCell>Title & Department</TableHeaderCell>
-              <TableHeaderCell>Type</TableHeaderCell>
-              <TableHeaderCell>Location</TableHeaderCell>
-              <TableHeaderCell className="text-right">Base Salary</TableHeaderCell>
-              <TableHeaderCell className="text-right">Start Date</TableHeaderCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {filteredPeople.map((emp) => (
-              <TableRow key={emp.id} onClick={() => setDetailEmpId(emp.id)} className="hover:bg-slate-50 transition-colors cursor-pointer group">
-                <TableCell>
-                  <div className="flex items-center gap-3">
-                    <img src={emp.avatarUrl} className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200" alt={emp.name} />
-                    <div className="font-medium text-slate-900 group-hover:text-brand-600 transition-colors">{emp.name}</div>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="text-slate-900">{emp.title}</div>
-                  <div className="text-xs text-slate-500 mt-0.5">{emp.department}</div>
-                </TableCell>
-                <TableCell>
-                  <Badge size="xs" color={emp.employmentType === 'Full-Time' ? 'indigo' : 'slate'}>
-                    {emp.employmentType}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-slate-600">{emp.location}</TableCell>
-                <TableCell className="text-right font-medium text-slate-900">{fmtMoney(emp.baseSalary)}</TableCell>
-                <TableCell className="text-right text-slate-500">{new Date(emp.startDate).toLocaleDateString()}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
+      <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-0 overflow-hidden shadow-sm border-slate-200">
+        <div className="overflow-x-auto w-full">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
+              <tr>
+                <th className="px-4 py-3 font-medium">Employee</th>
+                <th className="px-4 py-3 font-medium">Title & Department</th>
+                <th className="px-4 py-3 font-medium">Type</th>
+                <th className="px-4 py-3 font-medium">Location</th>
+                <th className="px-4 py-3 font-medium text-right">Base Salary</th>
+                <th className="px-4 py-3 font-medium text-right">Start Date</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredPeople.map((emp) => (
+                <tr key={emp.id} onClick={() => setDetailEmpId(emp.id)} className="hover:bg-slate-50 transition-colors cursor-pointer group">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <img src={emp.avatarUrl} className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200" alt={emp.name} />
+                      <div className="font-medium text-slate-900 group-hover:text-[var(--brand-600)] transition-colors">{emp.name}</div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="text-slate-900">{emp.title}</div>
+                    <div className="text-xs text-slate-500 mt-0.5">{emp.department}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors border-transparent shadow-sm bg-indigo-50 text-indigo-700 border-indigo-200">
+                      {emp.employmentType}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">{emp.location}</td>
+                  <td className="px-4 py-3 text-right font-medium text-slate-900">{fmtMoney(emp.baseSalary)}</td>
+                  <td className="px-4 py-3 text-right text-slate-500">{new Date(emp.startDate).toLocaleDateString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 
@@ -341,30 +342,30 @@ const renderPeopleList = () => (
             <span className="text-slate-900 font-medium">Add Department</span>
           </div>
 
-          <Card className="shadow-sm border-slate-200">
-             <Title>{deptForm.id ? 'Edit Department' : 'Provision New Department'}</Title>
-             <Text className="mt-2 text-slate-500">Enter the details for the new department to add to your organization.</Text>
+          <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 shadow-sm border-slate-200">
+             <h3 className="text-lg font-semibold tracking-tight mb-2">{deptForm.id ? 'Edit Department' : 'Provision New Department'}</h3>
+             <div className="text-sm text-[var(--text-secondary)] mt-2 text-slate-500">Enter the details for the new department to add to your organization.</div>
              
              <div className="mt-6 flex flex-col gap-5">
                 <div>
                   <label className="text-xs font-bold text-slate-500 mb-1.5 block">Department Name</label>
-                  <TextInput placeholder="Engineering" value={deptForm.name || ""} onChange={e => setDeptForm({...deptForm, name: e.target.value})} />
+                  <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" placeholder="Engineering" value={deptForm.name || ""} onChange={e => setDeptForm({...deptForm, name: e.target.value})} />
                 </div>
                 <div>
                   <label className="text-xs font-bold text-slate-500 mb-1.5 block">Head / CFO (Optional)</label>
-                  <TextInput placeholder="Jane Doe" value={deptForm.headCfo || ""} onChange={e => setDeptForm({...deptForm, headCfo: e.target.value})} />
+                  <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" placeholder="Jane Doe" value={deptForm.headCfo || ""} onChange={e => setDeptForm({...deptForm, headCfo: e.target.value})} />
                 </div>
                 <div>
                   <label className="text-xs font-bold text-slate-500 mb-1.5 block">Annual Budget Forecast (USD)</label>
-                  <TextInput placeholder="1200000" type={"number" as any} value={deptForm.annualBudget?.toString() || ""} onChange={e => setDeptForm({...deptForm, annualBudget: Number(e.target.value)})} />
+                  <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" placeholder="1200000" type={"number" as any} value={deptForm.annualBudget?.toString() || ""} onChange={e => setDeptForm({...deptForm, annualBudget: Number(e.target.value)})} />
                 </div>
              </div>
              
              <div className="mt-8 pt-6 border-t border-slate-100 flex justify-end gap-3">
-               <Button variant="secondary" onClick={() => setShowAddDept(false)}>Cancel</Button>
-               <Button onClick={handleAddDepartment} disabled={!deptForm.name}>{deptForm.id ? 'Save Changes' : 'Confirm Provision'}</Button>
+               <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-slate-100 text-slate-900 shadow-sm hover:bg-slate-200 h-9 px-4 py-2" onClick={() => setShowAddDept(false)}>Cancel</button>
+               <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2" onClick={handleAddDepartment} disabled={!deptForm.name}>{deptForm.id ? 'Save Changes' : 'Confirm Provision'}</button>
              </div>
-          </Card>
+          </div>
         </div>
       );
     }
@@ -398,84 +399,81 @@ const renderPeopleList = () => (
                onChange={(e) => setDeptSearch(e.target.value)}
              />
            </div>
-           <Button icon={() => <Building size={16} className="mr-2 inline"/>} onClick={() => { setDeptForm({}); setShowAddDept(true); }}>Add Department</Button>
+           <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2" onClick={() => { setDeptForm({}); setShowAddDept(true); }}><Building size={16} className="mr-2 inline"/>Add Department</button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card className="shadow-sm border-slate-200" decoration="top" decorationColor="blue">
-            <Text>Total Headcount</Text>
-            <Metric className="text-3xl font-black mt-2">{totalHeadcount}</Metric>
-          </Card>
-          <Card className="shadow-sm border-slate-200" decoration="top" decorationColor="emerald">
-            <Text>Total Annual Base</Text>
-            <Metric className="text-3xl font-black mt-2">{fmtMoney(totalAnnualBase)}</Metric>
-          </Card>
-          <Card className="shadow-sm border-slate-200" decoration="top" decorationColor="amber">
-            <Text>Average Base Salary</Text>
-            <Metric className="text-3xl font-black mt-2">{fmtMoney(totalHeadcount ? totalAnnualBase / totalHeadcount : 0)}</Metric>
-          </Card>
+          <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 shadow-sm border-t-4 border-t-blue-500 border-x-slate-200 border-b-slate-200">
+            <div className="text-sm text-[var(--text-secondary)]">Total Headcount</div>
+            <div className="text-3xl font-bold tracking-tight text-3xl font-black mt-2">{totalHeadcount}</div>
+          </div>
+          <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 shadow-sm border-t-4 border-t-emerald-500 border-x-slate-200 border-b-slate-200">
+            <div className="text-sm text-[var(--text-secondary)]">Total Annual Base</div>
+            <div className="text-3xl font-bold tracking-tight text-3xl font-black mt-2">{fmtMoney(totalAnnualBase)}</div>
+          </div>
+          <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 shadow-sm border-t-4 border-t-amber-500 border-x-slate-200 border-b-slate-200">
+            <div className="text-sm text-[var(--text-secondary)]">Average Base Salary</div>
+            <div className="text-3xl font-bold tracking-tight text-3xl font-black mt-2">{fmtMoney(totalHeadcount ? totalAnnualBase / totalHeadcount : 0)}</div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full">
-          <Card className="shadow-sm border-slate-200 lg:col-span-4">
-            <Title>Salary Burden Distribution</Title>
-            <BarChart
-              className="mt-6 h-72"
-              data={chartData}
-              index="Department"
-              categories={["Total Base Burden"]}
-              colors={["indigo"]}
-              valueFormatter={fmtMoney}
-            />
-          </Card>
+          <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 shadow-sm border-slate-200 lg:col-span-4">
+            <h3 className="text-lg font-semibold tracking-tight mb-2">Salary Burden Distribution</h3>
+            <div className="mt-6 h-72 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-lg">
+              <p className="text-sm text-slate-500">Chart visualization temporarily disabled</p>
+            </div>
+          </div>
           
-          <Card className="shadow-sm border-slate-200 overflow-hidden px-0 pb-0 lg:col-span-8">
+          <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 shadow-sm border-slate-200 overflow-hidden px-0 pb-0 lg:col-span-8">
              <div className="px-6 pb-4">
-               <Title>Cost Centers Registry</Title>
+               <h3 className="text-lg font-semibold tracking-tight mb-2">Cost Centers Registry</h3>
              </div>
-             <Table>
-                <TableHead className="bg-slate-50">
-                   <TableRow>
-                     <TableHeaderCell>Department Name</TableHeaderCell>
-                     <TableHeaderCell>Head/CFO</TableHeaderCell>
-                     <TableHeaderCell className="text-right">Headcount</TableHeaderCell>
-                     <TableHeaderCell className="text-right">Deployed Annual Cost</TableHeaderCell>
-                     <TableHeaderCell className="text-right">Annual Budget</TableHeaderCell>
-                     <TableHeaderCell className="text-right">Actions</TableHeaderCell>
-                   </TableRow>
-                </TableHead>
-                <TableBody>
-                   {sortedDepts.map(dept => {
-                     const hc = deptMap[dept.name]?.headcount || 0;
-                     const cost = deptMap[dept.name]?.totalBase || 0;
-                     return (
-                       <TableRow key={dept.id}>
-                          <TableCell className="font-bold text-slate-900">{dept.name}</TableCell>
-                          <TableCell className="text-slate-600">{dept.headCfo || '—'}</TableCell>
-                          <TableCell className="text-right">{hc}</TableCell>
-                          <TableCell className="text-right font-medium text-slate-900">{fmtMoney(cost)}</TableCell>
-                          <TableCell className="text-right text-slate-500">{dept.annualBudget ? fmtMoney(dept.annualBudget) : '—'}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <button onClick={() => { setDeptForm(dept); setShowAddDept(true); }} className="text-slate-500 hover:text-brand-600 bg-slate-50 hover:bg-slate-100 p-1.5 rounded transition-colors" title="Edit Department">
-                                <Edit size={14} />
-                              </button>
-                              <button onClick={() => handleDeleteDepartment(dept.id)} className="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-1.5 rounded transition-colors" title="Delete Department">
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          </TableCell>
-                       </TableRow>
-                     );
-                   })}
-                   {sortedDepts.length === 0 && (
-                     <TableRow>
-                        <TableCell colSpan={6} className="text-center py-6 text-slate-500">No departments configured.</TableCell>
-                     </TableRow>
-                   )}
-                </TableBody>
-             </Table>
-          </Card>
+             <div className="overflow-x-auto w-full">
+               <table className="w-full text-sm text-left">
+                  <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
+                     <tr>
+                       <th className="px-4 py-3 font-medium">Department Name</th>
+                       <th className="px-4 py-3 font-medium">Head/CFO</th>
+                       <th className="px-4 py-3 font-medium text-right">Headcount</th>
+                       <th className="px-4 py-3 font-medium text-right">Deployed Annual Cost</th>
+                       <th className="px-4 py-3 font-medium text-right">Annual Budget</th>
+                       <th className="px-4 py-3 font-medium text-right">Actions</th>
+                     </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                     {sortedDepts.map(dept => {
+                       const hc = deptMap[dept.name]?.headcount || 0;
+                       const cost = deptMap[dept.name]?.totalBase || 0;
+                       return (
+                         <tr key={dept.id} className="hover:bg-slate-50">
+                            <td className="px-4 py-3 font-bold text-slate-900">{dept.name}</td>
+                            <td className="px-4 py-3 text-slate-600">{dept.headCfo || '—'}</td>
+                            <td className="px-4 py-3 text-right">{hc}</td>
+                            <td className="px-4 py-3 text-right font-medium text-slate-900">{fmtMoney(cost)}</td>
+                            <td className="px-4 py-3 text-right text-slate-500">{dept.annualBudget ? fmtMoney(dept.annualBudget) : '—'}</td>
+                            <td className="px-4 py-3 text-right">
+                              <div className="flex justify-end gap-2">
+                                <button onClick={() => { setDeptForm(dept); setShowAddDept(true); }} className="text-slate-500 hover:text-[var(--brand-600)] bg-slate-50 hover:bg-slate-100 p-1.5 rounded transition-colors" title="Edit Department">
+                                  <Edit size={14} />
+                                </button>
+                                <button onClick={() => handleDeleteDepartment(dept.id)} className="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-1.5 rounded transition-colors" title="Delete Department">
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </td>
+                         </tr>
+                       );
+                     })}
+                     {sortedDepts.length === 0 && (
+                       <tr>
+                          <td colSpan={6} className="text-center py-6 text-slate-500">No departments configured.</td>
+                       </tr>
+                     )}
+                  </tbody>
+               </table>
+             </div>
+          </div>
         </div>
       </div>
     );
@@ -485,42 +483,44 @@ const renderPeopleList = () => (
     <div className="animate-fade-in space-y-6">
        <div className="flex justify-between items-end">
          <div>
-           <Title>Sales Commissions</Title>
-           <Text>Recent payouts generated by closed-won CRM opportunities or manual overrides.</Text>
+           <h3 className="text-lg font-semibold tracking-tight mb-2">Sales Commissions</h3>
+           <div className="text-sm text-[var(--text-secondary)]">Recent payouts generated by closed-won CRM opportunities or manual overrides.</div>
          </div>
-         <Button icon={() => <PlusCircle size={16} className="mr-2 inline"/>} onClick={() => setShowAddCommission(true)}>Log Commission</Button>
+         <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2" onClick={() => setShowAddCommission(true)}><PlusCircle size={16} className="mr-2 inline"/>Log Commission</button>
        </div>
 
-       <Card className="p-0 overflow-hidden shadow-sm border-slate-200">
-         <Table>
-            <TableHead className="bg-slate-50">
-              <TableRow>
-                <TableHeaderCell>Rep Name</TableHeaderCell>
-                <TableHeaderCell>Deal Origination</TableHeaderCell>
-                <TableHeaderCell className="text-right">Deal Value (ARR)</TableHeaderCell>
-                <TableHeaderCell className="text-right">Final Commission</TableHeaderCell>
-                <TableHeaderCell>Date</TableHeaderCell>
-                <TableHeaderCell>Status</TableHeaderCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {commissions.map(c => (
-                <TableRow key={c.id}>
-                  <TableCell className="font-medium text-slate-900">{c.employeeName}</TableCell>
-                  <TableCell className="text-slate-600">{c.dealName}</TableCell>
-                  <TableCell className="text-right text-slate-500">{fmtMoney(c.dealValueUsd)}</TableCell>
-                  <TableCell className="text-right font-bold text-emerald-600">+{fmtMoney(c.commissionAmount)}</TableCell>
-                  <TableCell className="text-slate-500">{new Date(c.timestamp).toLocaleDateString()}</TableCell>
-                  <TableCell>
-                    <Badge size="xs" color={c.status === 'paid' ? 'emerald' : 'amber'}>
-                      {c.status.toUpperCase()}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-         </Table>
-       </Card>
+       <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 p-0 overflow-hidden shadow-sm border-slate-200">
+         <div className="overflow-x-auto w-full">
+           <table className="w-full text-sm text-left">
+              <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Rep Name</th>
+                  <th className="px-4 py-3 font-medium">Deal Origination</th>
+                  <th className="px-4 py-3 font-medium text-right">Deal Value (ARR)</th>
+                  <th className="px-4 py-3 font-medium text-right">Final Commission</th>
+                  <th className="px-4 py-3 font-medium">Date</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {commissions.map(c => (
+                  <tr key={c.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 font-medium text-slate-900">{c.employeeName}</td>
+                    <td className="px-4 py-3 text-slate-600">{c.dealName}</td>
+                    <td className="px-4 py-3 text-right text-slate-500">{fmtMoney(c.dealValueUsd)}</td>
+                    <td className="px-4 py-3 text-right font-bold text-emerald-600">+{fmtMoney(c.commissionAmount)}</td>
+                    <td className="px-4 py-3 text-slate-500">{new Date(c.timestamp).toLocaleDateString()}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold ${c.status === 'paid' ? 'bg-emerald-500 text-white' : 'bg-amber-500 text-white'}`}>
+                        {c.status.toUpperCase()}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+           </table>
+         </div>
+       </div>
     </div>
   );
 
@@ -528,23 +528,23 @@ const renderPeopleList = () => (
     <div className="animate-fade-in space-y-6">
       <div className="flex items-center justify-between">
          <div>
-           <Title>Payroll Runs</Title>
-           <Text>Execute and approve total compensation outflows.</Text>
+           <h3 className="text-lg font-semibold tracking-tight mb-2">Payroll Runs</h3>
+           <div className="text-sm text-[var(--text-secondary)]">Execute and approve total compensation outflows.</div>
          </div>
-         <Button icon={() => <CheckCircle2 size={16} className="mr-2 inline"/>} onClick={handleGeneratePayRun}>New Pay Run</Button>
+         <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2" onClick={handleGeneratePayRun}><CheckCircle2 size={16} className="mr-2 inline"/>New Pay Run</button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {payruns.map(run => (
-          <Card key={run.id} className="shadow-sm border-slate-200 flex flex-col pt-5">
+          <div className="bg-card text-card-foreground shadow-sm rounded-xl border border-[var(--border)] p-5 shadow-sm border-slate-200 flex flex-col pt-5" key={run.id}>
              <div className="flex justify-between items-start mb-6">
                <div>
                   <div className="text-sm font-bold text-slate-900 mb-1">{run.period} Payload</div>
                   <div className="text-xs text-slate-500">Authorized: {run.runDate ? new Date(run.runDate).toLocaleDateString() : '—'}</div>
                </div>
-               <Badge size="xs" color={run.status === 'paid' ? 'emerald' : run.status === 'approved' ? 'blue' : 'amber'}>
+               <span className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-[10px] font-semibold transition-colors border-transparent bg-[var(--brand-500)] text-white shadow">
                   {run.status.toUpperCase()}
-               </Badge>
+               </span>
              </div>
 
              <div className="space-y-3 mb-6">
@@ -569,12 +569,12 @@ const renderPeopleList = () => (
 
              <div className="mt-auto flex gap-2">
                {run.status === 'draft' ? (
-                 <Button className="w-full" color="blue" onClick={() => handleApprovePayrun(run.id)}>Approve Run</Button>
+                 <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-blue-600 hover:bg-blue-700 text-white shadow h-9 px-4 py-2 w-full" onClick={() => handleApprovePayrun(run.id)}>Approve Run</button>
                ) : (
-                 <Button className="w-full" variant="secondary" icon={() => <Download size={14} className="mr-1 inline" />}>Export Ledger</Button>
+                 <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-slate-100 text-slate-900 hover:bg-slate-200 shadow-sm h-9 px-4 py-2 w-full" onClick={() => {}}><Download size={14} className="mr-1 inline" />Export Ledger</button>
                )}
              </div>
-          </Card>
+          </div>
         ))}
       </div>
     </div>
@@ -611,13 +611,13 @@ const renderPeopleList = () => (
             <button onClick={() => setShowAddCommission(false)} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"><X size={20} /></button>
           </div>
           <div className="p-6 flex-1 overflow-y-auto flex flex-col gap-4">
-            <div><label className="text-xs font-bold text-[var(--text-secondary)] mb-1 block">Agent / Employee Name</label><TextInput placeholder="Carlos Mendoza" onChange={e => setCommForm({...commForm, employeeName: e.target.value})} /></div>
-            <div><label className="text-xs font-bold text-[var(--text-secondary)] mb-1 block">Deal Info</label><TextInput placeholder="Annual SaaS Renewal" onChange={e => setCommForm({...commForm, dealName: e.target.value})} /></div>
-            <div><label className="text-xs font-bold text-[var(--text-secondary)] mb-1 block">Deal Value (ARR)</label><TextInput placeholder="50000" type="number" onChange={e => setCommForm({...commForm, dealValueUsd: Number(e.target.value)})} /></div>
-            <div><label className="text-xs font-bold text-[var(--text-secondary)] mb-1 block">Commission Amount Payout</label><TextInput placeholder="5000" type="number" onChange={e => setCommForm({...commForm, commissionAmount: Number(e.target.value)})} /></div>
+            <div><label className="text-xs font-bold text-[var(--text-secondary)] mb-1 block">Agent / Employee Name</label><input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" placeholder="Carlos Mendoza" onChange={e => setCommForm({...commForm, employeeName: e.target.value})} /></div>
+            <div><label className="text-xs font-bold text-[var(--text-secondary)] mb-1 block">Deal Info</label><input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" placeholder="Annual SaaS Renewal" onChange={e => setCommForm({...commForm, dealName: e.target.value})} /></div>
+            <div><label className="text-xs font-bold text-[var(--text-secondary)] mb-1 block">Deal Value (ARR)</label><input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" placeholder="50000" type="number" onChange={e => setCommForm({...commForm, dealValueUsd: Number(e.target.value)})} /></div>
+            <div><label className="text-xs font-bold text-[var(--text-secondary)] mb-1 block">Commission Amount Payout</label><input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" placeholder="5000" type="number" onChange={e => setCommForm({...commForm, commissionAmount: Number(e.target.value)})} /></div>
           </div>
           <div className="p-6 border-t border-[var(--border)] bg-[var(--bg-elevated)] pb-12">
-            <Button className="w-full" onClick={handleAddCommission} disabled={!commForm.employeeName || !commForm.commissionAmount}>Log Commission</Button>
+            <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-[var(--brand-600)] text-white shadow hover:bg-[var(--brand-700)] h-9 px-4 py-2 w-full" onClick={handleAddCommission} disabled={!commForm.employeeName || !commForm.commissionAmount}>Log Commission</button>
           </div>
         </div>
         </>

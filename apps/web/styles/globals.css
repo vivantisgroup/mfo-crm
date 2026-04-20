@@ -1,13 +1,33 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=Public+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=Public+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@font-face {
+  font-family: "72";
+  src: url("https://ui5.sap.com/resources/sap/ui/core/themes/base/fonts/72-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: "72";
+  src: url("https://ui5.sap.com/resources/sap/ui/core/themes/base/fonts/72-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: "72";
+  src: url("https://ui5.sap.com/resources/sap/ui/core/themes/base/fonts/72-Light.woff2") format("woff2");
+  font-weight: 300;
+  font-style: normal;
+}
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
 /* ─── CSS Custom Properties ───────────────────────────────────────────── */
 
 /* Unified Aliases for Backward Compatibility */
 :root {
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-sans: '72', "72full", Arial, Helvetica, sans-serif;
   --font-mono: 'JetBrains Mono', 'Courier New', monospace;
 
   /* Legacy Aliases connecting to our new Unified Theming System */
@@ -25,25 +45,16 @@
   --brand-900: var(--brand-muted);
   --brand-glow: var(--brand-muted);
 
-  --sidebar-bg: var(--bg-surface);
-  --sidebar-border: var(--border-subtle);
-  --sidebar-text: var(--text-secondary);
-  --sidebar-accent: var(--brand-primary);
-  --sidebar-hover: var(--bg-elevated);
-  --sidebar-logo-bg: var(--brand-emphasis);
+  /* sap.m.Shadows — Fiori Web Horizon Specifications */
+  --shadow-sm: min(1px, 0) 0 0 1px rgba(0,0,0,0.15), 0 1px 2px 0 rgba(0,0,0,0.15);
+  --shadow-md: 0 0 0 1px rgba(0,0,0,0.1), 0 4px 8px 0 rgba(0,0,0,0.1);
+  --shadow-lg: 0 0 0 1px rgba(0,0,0,0.05), 0 10px 30px 0 rgba(0,0,0,0.1);
 
-  /* Shadows — precise, tight depth */
-  --shadow-sm:    0 1px 2px rgba(2,6,23,0.04);
-  --shadow-md:    0 4px 6px -1px rgba(2,6,23,0.05), 0 2px 4px -2px rgba(2,6,23,0.05);
-  --shadow-lg:    0 10px 15px -3px rgba(2,6,23,0.05), 0 4px 6px -4px rgba(2,6,23,0.05);
-  --shadow-float: 0 25px 50px -12px rgba(2,6,23,0.25);
-  --shadow-brand: 0 4px 14px rgba(79,70,229,0.25);
-
-  /* Radius — Standardized to 12px/16px per spec */
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 16px;
+  /* Fiori Web Block Radii (Horizon) */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1rem;
   --radius-2xl: 16px;
   --radius-full: 9999px;
 
@@ -51,10 +62,9 @@
   --transition: 180ms cubic-bezier(0.16, 1, 0.3, 1);
   --transition-slow: 350ms cubic-bezier(0.16, 1, 0.3, 1);
   
-  /* Additional Semantic Variables */
-  --color-green:  #10b981;
-  --color-red:    #e11d48;
-  --color-amber:  #f59e0b;
+  --color-green:  #107e3e; /* SAP Positive */
+  --color-red:    #bb0000; /* SAP Negative */
+  --color-amber:  #e9730c; /* SAP Critical */
   
   --sidebar-width: 240px;
   --sidebar-collapsed: 64px;
@@ -268,69 +278,68 @@ input, button, select, textarea { font-family: inherit; }
 /* Respect custom font set via ThemeContext */
 body { font-family: var(--font-body, var(--font-sans)); }
 
-/* ─── Global Base Theme Variables (Boxed Light) ─────────────── */
-:root, [data-theme="boxed-light"] {
-  --bg-background: #f8fafc;
-  --bg-surface: #ffffff;
-  --bg-elevated: #f1f5f9;
-  --bg-muted: #e2e8f0;
+/* ─── SAP Fiori Morning Horizon (Light) ─────────────── */
+:root, [data-theme="horizon-light"], [data-theme="quartz-light"] {
+  --bg-background: #f4f5f6; /* SAP Fiori base canvas */
+  --bg-surface: #ffffff; /* Fiori Tiles */
+  --bg-elevated: #f4f5f6;
+  --bg-muted: #e5e5e5;
   
-  --text-primary: #0f172a;
-  --text-secondary: #334155;
-  --text-muted: #64748b;
+  --text-primary: #1d2d3e; /* Morning Horizon standard */
+  --text-secondary: #556b82; 
+  --text-muted: #89919a;
   --text-inverted: #ffffff;
   
-  --border-subtle: #e2e8f0;
-  --border-strong: #cbd5e1;
+  --border-subtle: #d9d9d9;
+  --border-strong: #89919a;
   
-  --brand-faint: #ecfdf5;
-  --brand-muted: #a7f3d0;
-  --brand-subtle: #34d399;
-  --brand-primary: #10b981;
-  --brand-emphasis: #004b44; /* Deep Emerald */
+  --brand-faint: #e6f2fb;
+  --brand-muted: #bde0fe;
+  --brand-subtle: #0a6ed1;
+  --brand-primary: #0a6ed1;
+  --brand-emphasis: #0854a0; 
 
   /* Badges matching light environment */
-  --badge-success: #dcfce7;
-  --badge-success-text: #15803d;
-  --badge-warning: #fef9c3;
-  --badge-warning-text: #a16207;
-  --badge-danger: #fee2e2;
-  --badge-danger-text: #b91c1c;
-  --badge-neutral: #f1f5f9;
-  --badge-neutral-text: #475569;
+  --badge-success: #f5fae5;
+  --badge-success-text: #107e3e;
+  --badge-warning: #fff8d6;
+  --badge-warning-text: #e9730c;
+  --badge-danger: #ffebeb;
+  --badge-danger-text: #bb0000;
+  --badge-neutral: #f4f5f6;
+  --badge-neutral-text: #6a6d70;
 }
 
-/* ─── Theme: Boxed Dark ─────────────── */
-[data-theme="boxed-dark"] {
-  /* Deep Emerald Terminal Palette */
-  --bg-background: #000c0a; /* Almost Black with Emerald tint */
-  --bg-surface:    #001512; /* Deep Dark Emerald */
-  --bg-elevated:   #01231e; /* Elevated Emerald */
-  --bg-muted:      #01302a; /* Muted Emerald */
+/* ─── SAP Fiori Evening Horizon (Dark) ─────────────── */
+[data-theme="horizon-dark"], [data-theme="quartz-dark"] {
+  --bg-background: #12171c; /* SAP Evening Fiori Base */
+  --bg-surface:    #1c2228; /* Deep Dark Shell */
+  --bg-elevated:   #12171c; 
+  --bg-muted:      #32363a;
   
-  --text-primary:   #f4f4f5;
-  --text-secondary: #94b9b4; /* Tinted text to match emerald */
-  --text-muted:     #5e8a83; 
-  --text-inverted:  #000c0a;
+  --text-primary:   #f4f5f6;
+  --text-secondary: #89919a;
+  --text-muted:     #6a6d70; 
+  --text-inverted:  #12171c;
   
-  --border-subtle: #01362f;
-  --border-strong: #004b44;
+  --border-subtle: #32363a;
+  --border-strong: #6a6d70;
   
-  --brand-faint:   #022c22;
-  --brand-muted:   #064e3b;
-  --brand-subtle:  #059669;
-  --brand-primary: #10b981;
-  --brand-emphasis:#34d399;
+  --brand-faint:   #003b75;
+  --brand-muted:   #0057a6;
+  --brand-subtle:  #4ca4fc;
+  --brand-primary: #4ca4fc;
+  --brand-emphasis:#bde0fe;
 
   /* Dark mode badges */
-  --badge-success: #064e3b;
-  --badge-success-text: #34d399;
-  --badge-warning: #422006;
-  --badge-warning-text: #fcd34d;
-  --badge-danger: #450a0a;
-  --badge-danger-text: #fca5a5;
-  --badge-neutral: #27272a;
-  --badge-neutral-text: #a1a1aa;
+  --badge-success: #0b4a22;
+  --badge-success-text: #74b868;
+  --badge-warning: #633306;
+  --badge-warning-text: #faa643;
+  --badge-danger: #610808;
+  --badge-danger-text: #f07f7f;
+  --badge-neutral: #1c2228;
+  --badge-neutral-text: #89919a;
 }
 
 /* Sidebar nav items adapt to sidebar theme colors */
@@ -731,7 +740,7 @@ table {
 
 thead tr {
   border-bottom: 1px solid var(--border);
-  background: var(--bg-elevated);
+  background-color: var(--sapObjectHeader_Background);
 }
 
 th {
@@ -1767,4 +1776,99 @@ tr.hover-lift:hover {
   html {
     @apply font-sans;
   }
+}
+
+/* ─── React Flow Custom Orange Cursors ────────────────────────────────── */
+.react-flow__pane {
+  cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="darkorange" stroke="black" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v4M14 11V4a2 2 0 0 0-4 0v7M10 11V5a2 2 0 0 0-4 0v8.68M15 22h-5.28a4 4 0 0 1-3.64-2.36l-2.8-6.1A2 2 0 0 1 5.1 11h11a2 2 0 0 1 2 2v6a3 3 0 0 1-3 3Z"/></svg>') 12 12, grab !important;
+}
+
+.react-flow__pane:active {
+  cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="darkorange" stroke="black" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22h-5.28a4 4 0 0 1-3.64-2.36l-2.8-6.1A2 2 0 0 1 5.1 11h11a2 2 0 0 1 2 2v6a3 3 0 0 1-3 3Z"/></svg>') 12 12, grabbing !important;
+}
+/* --- CRM Mentions in Rich Text ----------------------------------------- */
+
+.crm-mention {
+  display: inline-block;
+  padding: 1px 6px;
+  margin: 0 2px;
+  border-radius: var(--radius-sm);
+  font-size: 0.9em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.crm-mention:hover {
+  filter: brightness(0.95);
+}
+
+.crm-mention::before {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 4px;
+  vertical-align: middle;
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+.crm-mention-organization {
+  background: var(--brand-faint);
+  color: var(--brand-emphasis);
+  border: 1px solid var(--brand-muted);
+}
+
+.crm-mention-organization::before {
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%230854a0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect><path d="M9 22v-4h6v4"></path><path d="M8 6h.01"></path><path d="M16 6h.01"></path><path d="M12 6h.01"></path><path d="M12 10h.01"></path><path d="M12 14h.01"></path><path d="M16 10h.01"></path><path d="M16 14h.01"></path><path d="M8 10h.01"></path><path d="M8 14h.01"></path></svg>');
+}
+
+.crm-mention-contact {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.crm-mention-contact::before {
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%23166534" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>');
+}
+
+.crm-mention-user {
+  background: #fdf4ff;
+  color: #86198f;
+  border: 1px solid #fbcfe8;
+}
+
+.crm-mention-user::before {
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%2386198f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>');
+}
+
+.crm-mention-unknown {
+  background: var(--bg-muted);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+
+/* ─── React Flow Enhancements ─── */
+.react-flow__controls-button[title="pan"],
+.react-flow__controls-button[aria-label="pan"],
+.react-flow__controls-button:has(svg path[d*="M19"]) {
+  color: #10b981 !important;
+  fill: #10b981 !important;
+}
+
+.react-flow__controls-button[title="pan"] path,
+.react-flow__controls-button[aria-label="pan"] path,
+.react-flow__controls-button:has(svg path[d*="M19"]) path {
+  fill: #10b981 !important;
+}
+
+/* Emerald Green Hand Cursor */
+.react-flow__pane {
+  cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="%2310b981" stroke="%2310b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v4"/><path d="M14 10V5a2 2 0 0 0-4 0v5"/><path d="M10 10.5V4a2 2 0 0 0-4 0v6"/><path d="M6 14v-2a2 2 0 0 0-4 0v8a10 10 0 0 0 10 10h1a10 10 0 0 0 9-7l3-7a2 2 0 0 0-3-2H18"/></svg>') 12 12, grab !important;
+}
+
+.react-flow__pane.grabbing {
+  cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="%23059669" stroke="%23059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v4"/><path d="M14 10V5a2 2 0 0 0-4 0v5"/><path d="M10 10.5V4a2 2 0 0 0-4 0v6"/><path d="M6 14v-2a2 2 0 0 0-4 0v8a10 10 0 0 0 10 10h1a10 10 0 0 0 9-7l3-7a2 2 0 0 0-3-2H18"/></svg>') 12 12, grabbing !important;
 }

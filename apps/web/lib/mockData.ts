@@ -1,5 +1,5 @@
 import type {
-  Family, FamilyMember, Entity, Activity, Task, Document, Holding,
+  Family, FamilyMember, Activity, Task, Document, Holding,
   PrivateInvestment, CapitalCall, AllocationSlice, ConsolidatedBalanceSheet,
   PerformancePoint, GovernanceMeeting, Vote, EstatePlan, ServiceRequest,
   PlatformUser, AuditLogEntry, DashboardStats, GovernanceStructure, Transaction, Account,
@@ -88,11 +88,6 @@ export const FAMILIES: Family[] = [
       { id: 'mem-003', familyId: 'fam-001', firstName: 'James', lastName: 'Smith', dateOfBirth: '1988-04-22', nationality: ['US'], roleInFamily: 'Beneficiary', generation: 2, email: 'james.smith@gmail.com', kycStatus: 'approved', pepFlag: false },
       { id: 'mem-004', familyId: 'fam-001', firstName: 'Claire', lastName: 'Smith', dateOfBirth: '1991-09-15', nationality: ['US'], roleInFamily: 'Beneficiary', generation: 2, email: 'claire.smith@gmail.com', kycStatus: 'in_review', pepFlag: false },
     ],
-    entities: [
-      { id: 'ent-001', familyId: 'fam-001', name: 'Smith Family Trust', entityType: 'trust', jurisdiction: 'Cayman Islands', currency: 'USD', status: 'active', totalValue: 78_000_000 },
-      { id: 'ent-002', familyId: 'fam-001', name: 'Smith Ventures LLC', entityType: 'llc', jurisdiction: 'Delaware, USA', currency: 'USD', status: 'active', totalValue: 28_200_000 },
-      { id: 'ent-003', familyId: 'fam-001', name: 'Redwood Foundation', entityType: 'foundation', jurisdiction: 'Switzerland', currency: 'CHF', status: 'active', totalValue: 14_200_000 },
-    ],
   },
   {
     id: 'fam-002',
@@ -114,10 +109,6 @@ export const FAMILIES: Family[] = [
       { id: 'mem-006', familyId: 'fam-002', firstName: 'Lucia', lastName: 'Rodríguez', dateOfBirth: '1955-05-12', nationality: ['MX', 'ES'], roleInFamily: 'Matriarch', generation: 1, kycStatus: 'approved', pepFlag: false },
       { id: 'mem-007', familyId: 'fam-002', firstName: 'Andrés', lastName: 'Rodríguez', dateOfBirth: '1980-12-05', nationality: ['MX', 'US'], roleInFamily: 'Beneficiary', generation: 2, email: 'andres.r@gmail.com', kycStatus: 'approved', pepFlag: false },
     ],
-    entities: [
-      { id: 'ent-004', familyId: 'fam-002', name: 'GR Holdings BVI', entityType: 'corporation', jurisdiction: 'British Virgin Islands', currency: 'USD', status: 'active', totalValue: 52_000_000 },
-      { id: 'ent-005', familyId: 'fam-002', name: 'Rodríguez Real Estate SL', entityType: 'corporation', jurisdiction: 'Spain', currency: 'EUR', status: 'active', totalValue: 24_800_000 },
-    ],
   },
   {
     id: 'fam-003',
@@ -138,10 +129,6 @@ export const FAMILIES: Family[] = [
       { id: 'mem-008', familyId: 'fam-003', firstName: 'Wei', lastName: 'Chen', dateOfBirth: '1965-08-20', nationality: ['SG', 'CN'], roleInFamily: 'Patriarch', generation: 1, email: 'wei.chen@chengroup.sg', kycStatus: 'approved', pepFlag: false },
       { id: 'mem-009', familyId: 'fam-003', firstName: 'Li', lastName: 'Chen', dateOfBirth: '1969-03-14', nationality: ['SG', 'CN'], roleInFamily: 'Matriarch', generation: 1, kycStatus: 'approved', pepFlag: false },
     ],
-    entities: [
-      { id: 'ent-006', familyId: 'fam-003', name: 'Chen Capital Pte. Ltd.', entityType: 'corporation', jurisdiction: 'Singapore', currency: 'SGD', status: 'active', totalValue: 38_000_000 },
-      { id: 'ent-007', familyId: 'fam-003', name: 'Chen Family Trust', entityType: 'trust', jurisdiction: 'Jersey', currency: 'USD', status: 'active', totalValue: 16_200_000 },
-    ],
   },
   {
     id: 'fam-004',
@@ -161,9 +148,6 @@ export const FAMILIES: Family[] = [
     members: [
       { id: 'mem-010', familyId: 'fam-004', firstName: 'Khalid', lastName: 'Al-Rashid', dateOfBirth: '1970-04-10', nationality: ['AE'], roleInFamily: 'Principal', generation: 1, email: 'k.alrashid@rashidgroup.ae', kycStatus: 'in_review', pepFlag: true },
       { id: 'mem-011', familyId: 'fam-004', firstName: 'Fatima', lastName: 'Al-Rashid', dateOfBirth: '1974-11-21', nationality: ['AE', 'GB'], roleInFamily: 'Spouse', generation: 1, kycStatus: 'pending', pepFlag: false },
-    ],
-    entities: [
-      { id: 'ent-008', familyId: 'fam-004', name: 'Al-Rashid Investments DIFC', entityType: 'llc', jurisdiction: 'DIFC, UAE', currency: 'USD', status: 'active', totalValue: 33_800_000 },
     ],
   },
 ];

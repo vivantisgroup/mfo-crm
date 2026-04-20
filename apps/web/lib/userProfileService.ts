@@ -37,6 +37,9 @@ export interface UserProfileData {
   numberFormat: string;   // e.g. "1.234,56" | "1,234.56"
   currency:     string;   // e.g. "BRL" | "USD"
   photoURL:     string | null;
+  signatureImageURL?: string | null;
+  address?:     string;
+  useCustomAddressForSignature?: boolean;
   mfaEnabled:   boolean;
   createdAt:    string;
   updatedAt:    string;
@@ -116,6 +119,22 @@ export async function uploadAvatar(uid: string, file: File): Promise<string> {
 }
 
 /**
+ * Upload a new digital signature image and update the Firestore profile.
+ * Returns the download URL.
+ */
+export async function uploadSignatureImage(uid: string, file: File): Promise<string> {
+  const ext  = file.name.split('.').pop() ?? 'png';
+  const path = `signatures/${uid}/signature.${ext}`;
+  const ref  = storageRef(storage, path);
+  await uploadBytes(ref, file, { contentType: file.type });
+  const url = await getDownloadURL(ref);
+
+  await saveUserProfile(uid, { signatureImageURL: url });
+
+  return url;
+}
+
+/**
  * Remove the avatar and reset to null.
  */
 export async function removeAvatar(uid: string): Promise<void> {
@@ -152,6 +171,9 @@ export function buildDefaultProfile(
     numberFormat: '1.234,56',
     currency:     'USD',
     photoURL:     null,
+    signatureImageURL: null,
+    address:      '',
+    useCustomAddressForSignature: false,
     mfaEnabled:   false,
     createdAt:    now,
     updatedAt:    now,
