@@ -30,17 +30,17 @@ import {
 import {
   isPlatformInitialized,
   bootstrapPlatform,
-  ensureUserProfile,
   updateUserProfile,
   addTenantToUser,
   getTenant,
-  getTenantsForUser,
   type UserProfile,
   type TenantRecord,
   type PlatformRole,
 } from './platformService';
+import { getUserProfileAndTenants, switchTenantAction } from '@/lib/serverActions/auth';
 import { getGroupsForUser } from './groupService';
 import { buildAuthzContext, type AuthzContext } from './rbacService';
+import { getTenantMember } from './tenantMemberService';
 
 // ─── Public shape ─────────────────────────────────────────────────────────────
 
@@ -61,7 +61,28 @@ export interface ActiveTenant {
   isSuperadmin?: boolean;
   brandColor?:  string;
   industryVertical?: string;
+  vertical?:    string;
   aiAssistantName?: string;
+  currencyCode?: string;
+  primaryOrganizationId?: string;
+  jurisdiction?: string;
+  language?: string;
+  defaultLanguage?: string;
+  branding?: any;
+  logoUrl?: string;
+  logo?: string;
+  settings?: any;
+  kycDocuments?: any[];
+  copilotConfig?: {
+    enabled?: boolean;
+    agentName?: string;
+    agentLogo?: string;
+    logoUrl?: string;
+    systemPrompt?: string;
+    tenantContext?: string;
+    metadataCatalog?: string;
+    skillsCatalog?: { name: string; description: string }[];
+  };
 }
 
 export type AuthStage =
@@ -129,7 +150,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const user: UserSession | null = userProfile ? {
     uid:      userProfile.uid,
     id:       userProfile.uid,
-    name:     userProfile.displayName,
+    name:     userProfile.displayName || userProfile.email,
     email:    userProfile.email,
     role:     userProfile.role,
     photoURL: userProfile.photoURL,
@@ -138,12 +159,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const tenant: ActiveTenant | null = tenantRecord ? {
     id:          tenantRecord.id,
     name:        tenantRecord.name,
-    role:        userProfile?.role ?? '',
+    role:        authzContext?.role ?? userProfile?.role ?? '',
     isInternal:  tenantRecord.isInternal,
     isSuperadmin: userProfile?.role === 'saas_master_admin',
     brandColor:  tenantRecord.brandColor,
     industryVertical: tenantRecord.industryVertical,
+    vertical:    tenantRecord.vertical,
     aiAssistantName: tenantRecord.aiAssistantName,
+    currencyCode: tenantRecord.currencyCode,
+    primaryOrganizationId: tenantRecord.primaryOrganizationId,
+    branding:    tenantRecord.branding,
+    logoUrl:     tenantRecord.logoUrl,
+    logo:        tenantRecord.logo,
+    settings:    tenantRecord.settings,
+    copilotConfig: tenantRecord.copilotConfig,
   } : null;
 
   const isSaasMasterAdmin = userProfile?.role === 'saas_master_admin';
@@ -158,33 +187,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const profile = await ensureUserProfile(fbU);
+      const { profile, tenants: tenantDocs } = await getUserProfileAndTenants(fbU.uid, fbU.email || '', fbU.displayName || '');
       setUserProfile(profile);
 
-      // ── Real-time listener on users/{uid} ─────────────────────────────────
-      // Clean up any previous listener first
-      if (profileListenerRef.current) {
-        profileListenerRef.current();
-        profileListenerRef.current = null;
-      }
-      const db = getFirestore(firebaseApp);
-      const unsub = onSnapshot(doc(db, 'users', fbU.uid), snap => {
-        if (snap.exists()) {
-          setUserProfile(prev => prev ? { ...prev, ...(snap.data() as Partial<UserProfile>) } : prev);
-        }
-      }, () => {}); // silently ignore snapshot errors
-      profileListenerRef.current = unsub;
-      // ─────────────────────────────────────────────────────────────────────
-
       // Collect all tenants this user belongs to
-      const allTenantIds = Array.from(new Set([
-        ...(profile.tenantIds ?? []),
-        ...(profile.tenantId ? [profile.tenantId] : []),
-      ])).filter(Boolean);
-
-      if (profile.role === 'saas_master_admin' && !allTenantIds.includes('master')) {
-        allTenantIds.push('master');
-      }
+      const allTenantIds = tenantDocs.map(t => t.id);
 
       // Retrieve previously selected tenant from storage
       const localLast   = typeof localStorage   !== 'undefined' ? localStorage.getItem(`lastTenantId_${profile.uid}`)   : null;
@@ -196,7 +203,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Users with 0 tenants are newly created; we don't block them.
       if (allTenantIds.length <= 1) {
         const tenantId = allTenantIds[0] ?? storedId ?? profile.tenantId ?? null;
-        const tRecord  = tenantId ? await getTenant(tenantId).catch(() => null) : null;
+        const tRecord  = tenantDocs.find(t => t.id === tenantId) || null;
         setTenantRecord(tRecord);
 
         // mustChangePassword takes priority — set stage to authenticated so the
@@ -221,7 +228,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       // ── Multiple tenants — offer a picker ────────────────────────────────
-      const tenantDocs = await getTenantsForUser(profile);
       setAvailableTenants(tenantDocs);
 
       // If the previously selected tenant is still valid, skip the picker
@@ -257,24 +263,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // ── AuthzContext builder ──────────────────────────────────────────────────
   useEffect(() => {
     if (stage === 'authenticated' && userProfile && tenantRecord) {
-      getGroupsForUser(tenantRecord.id, userProfile.uid)
-        .then(groups => {
+      Promise.all([
+        getGroupsForUser(tenantRecord.id, userProfile.uid),
+        getTenantMember(tenantRecord.id, userProfile.uid)
+      ])
+        .then(([groups, member]) => {
           const groupIds = groups.map((g: any) => g.groupId);
-          return buildAuthzContext(userProfile.uid, tenantRecord.id, userProfile.role, groupIds);
+          const activeRole = member?.role || userProfile.role;
+          const additionalRoles = member?.additionalRoles || [];
+          return buildAuthzContext(userProfile.uid, tenantRecord.id, activeRole, groupIds, additionalRoles);
         })
         .then(setAuthzContext)
         .catch(console.error);
     } else {
       setAuthzContext(null);
     }
-  }, [stage, userProfile, tenantRecord]);
+  }, [stage, userProfile, tenantRecord?.id]);
+
+  // ── Real-time listener on active tenant ───────────────────────────────────
+  // Note: Firestore onSnapshot removed for active tenant.
+  useEffect(() => {
+    // We could add polling or SWR here in the future if needed.
+  }, [tenantRecord?.id, stage]);
 
   // ── Firebase Auth observer ────────────────────────────────────────────────
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (fbU) => {
       if (fbU) {
         try {
-          const idTokenResult = await fbU.getIdTokenResult(true);
+          const idTokenResult = await fbU.getIdTokenResult();
           setIsImpersonating(!!idTokenResult.claims.isImpersonating);
         } catch (e) {
           console.error('Failed to get parsed JWT claims', e);
@@ -334,7 +351,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await updateProfile(cred.user, { displayName });
       const initialized = await isPlatformInitialized();
       if (!initialized) {
-        const profile = await bootstrapPlatform(cred.user, displayName);
+        const profile = await bootstrapPlatform(cred.user.uid, cred.user.email || email, displayName);
         setUserProfile(profile);
         const tRecord = await getTenant('master');
         setTenantRecord(tRecord);
@@ -444,19 +461,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const switchTenant = useCallback(async (tenantId: string) => {
     if (!userProfile || !tenantId) return;
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(`lastTenantId_${userProfile.uid}`, tenantId);
-    }
     try {
-      // addTenantToUser uses arrayUnion so tenantId is in tenantIds BEFORE
-      // getTenant() is called — Firestore rules check userTenantIds().hasAny([tenantId])
-      await addTenantToUser(userProfile.uid, tenantId);
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(`lastTenantId_${userProfile.uid}`, tenantId);
+      }
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem('activeTenantId', tenantId);
+      }
+
+      // Call server action to sync Postgres and Firestore
+      await switchTenantAction(userProfile.uid, tenantId);
+
+      // Force a full redirect/reload to /dashboard to reset all contexts/listeners cleanly
+      window.location.href = '/dashboard';
     } catch (err) {
-      console.error('[switchTenant] Failed to update profile:', err);
+      console.error('[switchTenant] Failed to switch tenant:', err);
+      setError('Failed to switch workspace.');
     }
-    setUserProfile(prev => prev ? { ...prev, tenantId, tenantIds: Array.from(new Set([...(prev.tenantIds ?? []), tenantId])) } : prev);
-    const tRecord = await getTenant(tenantId);
-    setTenantRecord(tRecord);
   }, [userProfile]);
 
   const retryProfile = useCallback(async () => {
