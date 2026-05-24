@@ -1092,6 +1092,7 @@ export const en = {
   'planner.expiring.renew.rolloverPartial': 'Custom Amount',
   'planner.expiring.renew.cashout': 'Cash Out',
   'planner.expiring.renew.selectOption': 'Select Rollover Option',
+  'knowledgeBase.exclusiveMfoError': 'Exclusive module for Multi-Family Office (MFO) tenants.',
 };
 
 export type TranslationKey = keyof typeof en;

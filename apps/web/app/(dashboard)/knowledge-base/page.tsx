@@ -7,6 +7,8 @@ import { db } from '@/lib/firebase';
 import { BookOpen, Search, Folder, Zap, ExternalLink, Globe, FileText, Database } from 'lucide-react';
 import { usePageTitle } from '@/lib/PageTitleContext';
 import toast from 'react-hot-toast';
+import { useRouter } from 'next/navigation';
+import { useTranslation } from '@/lib/i18n/context';
 
 interface Article {
   id: string;
@@ -22,6 +24,8 @@ interface Article {
 export default function KnowledgeBase() {
   const { tenant } = useAuth();
   const { setTitle } = usePageTitle();
+  const router = useRouter();
+  const { t } = useTranslation();
   const [articles, setArticles] = useState<Article[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -34,6 +38,13 @@ export default function KnowledgeBase() {
 
   useEffect(() => {
     if (!tenant) return;
+
+    if (tenant.isInternal || tenant.industryVertical !== 'multi_family_office') {
+      toast.error(t('knowledgeBase.exclusiveMfoError') || 'Módulo exclusivo para Multi-Family Office (MFO)');
+      router.push('/dashboard');
+      return;
+    }
+
     async function load() {
       try {
         const q = query(collection(db, 'tenants', tenant!.id, 'articles'), orderBy('createdAt', 'desc'));
@@ -76,7 +87,9 @@ export default function KnowledgeBase() {
     }
   };
 
-  if (loading) {
+  const isAuthorized = tenant && !tenant.isInternal && tenant.industryVertical === 'multi_family_office';
+
+  if (loading || !isAuthorized) {
      return <div className="p-8 text-slate-500 animate-pulse font-medium">Carregando Acervo Knowledge Base...</div>;
   }
 
@@ -90,7 +103,7 @@ export default function KnowledgeBase() {
             <input 
               type="text"
               placeholder="Buscar leis, teses ou regulamentos..."
-              className="w-full pl-9 pr-4 py-2 bg-slate-100/50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-shadow"
+              className="w-full !pl-10 pr-4 py-2 bg-slate-100/50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-shadow"
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
             />
@@ -178,7 +191,7 @@ export default function KnowledgeBase() {
                     </span>
                  </div>
                  
-                 <h1 className="text-3xl font-extrabold text-slate-900 mb-8 leading-tight">{activeArticle.title}</h1>
+                 <h1 className="text-3xl font-extrabold text-primary mb-8 leading-tight">{activeArticle.title}</h1>
                  
                  <div className="prose prose-slate max-w-none prose-p:leading-relaxed prose-headings:font-bold prose-a:text-amber-600 prose-img:rounded-xl mb-12">
                    {activeArticle.content.split('\\n').map((para, i) => {
@@ -205,7 +218,7 @@ export default function KnowledgeBase() {
                         <h4 className="text-sm font-bold text-slate-700">Fontes & Referências</h4>
                       </div>
                       <p className="text-xs text-slate-500 leading-relaxed">
-                        Este documento foi estruturado pelo motor <strong className="text-slate-700">MFO Advisory Copilot</strong> utilizando jurisprudência e doutrina publicamente acessíveis. Verifique legislações específicas (como Lei 14.754/23 para offshores).
+                        Este documento foi estruturado pelo motor <strong className="text-slate-700">{tenant?.copilotConfig?.agentName || 'MFO Advisory Copilot'}</strong> utilizando jurisprudência e doutrina publicamente acessíveis. Verifique legislações específicas (como Lei 14.754/23 para offshores).
                       </p>
                       {activeArticle.sourceUrl && (
                         <a href={activeArticle.sourceUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-bold text-amber-600 hover:text-amber-700 mt-2">

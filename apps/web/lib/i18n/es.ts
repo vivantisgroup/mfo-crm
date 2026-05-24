@@ -1094,6 +1094,7 @@ export const es: Record<string, string> = {
   'Multilanguage Support': 'Suporte Multilíngue',
   'Orchestration': 'Orquestração',
   'auto.global_region': 'Região Global',
+  'knowledgeBase.exclusiveMfoError': 'Módulo exclusivo para Multi-Family Office (MFO).',
 
   // --- Auto-populated missing terms ---
 };

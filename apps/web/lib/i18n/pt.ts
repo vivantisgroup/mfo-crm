@@ -1093,4 +1093,5 @@ export const pt: Record<TranslationKey, string> = {
   'planner.expiring.renew.rolloverPartial': 'Valor Personalizado',
   'planner.expiring.renew.cashout': 'Resgatar',
   'planner.expiring.renew.selectOption': 'Selecionar Opção de Renovação',
+  'knowledgeBase.exclusiveMfoError': 'Módulo exclusivo para Multi-Family Office (MFO).',
 };
