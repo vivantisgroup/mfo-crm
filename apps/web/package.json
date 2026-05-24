@@ -1,7 +1,6 @@
 {
   "name": "@mfo-crm/web",
   "private": true,
-  "type": "module",
   "scripts": {
     "dev": "cross-env NODE_OPTIONS=--max-old-space-size=4096 next dev -p 3000",
     "build": "prisma generate && next build",
