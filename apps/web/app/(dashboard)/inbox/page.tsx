@@ -142,7 +142,7 @@ function AlertBanner({ type, uid, returnTo }: { type: 'not_connected' | 'no_toke
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 18px', background: '#6366f108', border: '1px solid #6366f133', borderRadius: 10, margin: '12px 16px' }}>
         <AlertTriangle size={16} color="#f59e0b" />
         <div style={{ flex: 1, fontSize: 13 }}>Gmail not connected — <span style={{ color: 'var(--text-secondary)' }}>go to Settings to connect your Google account.</span></div>
-        <button className="btn btn-secondary btn-sm" style={{ fontSize: 12 }} onClick={() => router.push('/settings?section=mail')}>
+        <button className="btn btn-secondary btn-sm" style={{ fontSize: 12 }} onClick={() => router.push('/settings?tab=mail')}>
           Connect →
         </button>
       </div>

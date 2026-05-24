@@ -1092,6 +1092,9 @@ export const en = {
   'planner.expiring.renew.rolloverPartial': 'Custom Amount',
   'planner.expiring.renew.cashout': 'Cash Out',
   'planner.expiring.renew.selectOption': 'Select Rollover Option',
+  'planner.noIntegrations': 'No active calendar integrations.',
+  'planner.noIntegrationsDesc': 'Connect your Outlook or Google Workspace account to automatically synchronize events and maturities.',
+  'planner.configureIntegration': 'Configure Connection',
   'knowledgeBase.exclusiveMfoError': 'Exclusive module for Multi-Family Office (MFO) tenants.',
 };
 

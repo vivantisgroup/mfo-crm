@@ -1093,5 +1093,8 @@ export const pt: Record<TranslationKey, string> = {
   'planner.expiring.renew.rolloverPartial': 'Valor Personalizado',
   'planner.expiring.renew.cashout': 'Resgatar',
   'planner.expiring.renew.selectOption': 'Selecionar Opção de Renovação',
+  'planner.noIntegrations': 'Nenhuma integração de calendário ativa.',
+  'planner.noIntegrationsDesc': 'Conecte sua conta do Outlook ou Google Workspace para sincronizar eventos e vencimentos automaticamente.',
+  'planner.configureIntegration': 'Configurar Conexão',
   'knowledgeBase.exclusiveMfoError': 'Módulo exclusivo para Multi-Family Office (MFO).',
 };

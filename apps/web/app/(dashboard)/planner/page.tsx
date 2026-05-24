@@ -542,11 +542,31 @@ export default function PlannerPage() {
                 )}
 
                 {!connectionStatus?.microsoft && !connectionStatus?.google && connectionStatus !== null && (
-                   <div className="text-xs text-slate-400 flex flex-col gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100 text-center">
-                      <AlertCircle size={16} className="mx-auto opacity-50" />
-                      {t('planner.noIntegrations', 'No active calendar integrations.')}
-                   </div>
-                )}
+                    <div className="relative overflow-hidden bg-gradient-to-br from-slate-50 to-slate-100/80 border border-slate-200/60 rounded-xl p-4 flex flex-col items-center text-center gap-3 shadow-sm hover:shadow-md transition-all duration-300">
+                       <div className="absolute -right-8 -top-8 w-24 h-24 rounded-full bg-blue-500/5 blur-xl pointer-events-none" />
+                       <div className="absolute -left-8 -bottom-8 w-24 h-24 rounded-full bg-indigo-500/5 blur-xl pointer-events-none" />
+                       
+                       <div className="w-10 h-10 rounded-full bg-blue-50/80 border border-blue-100 flex items-center justify-center text-blue-500 shadow-inner">
+                          <AlertCircle size={20} className="animate-pulse" />
+                       </div>
+                       
+                       <div className="space-y-1 z-10">
+                          <div className="text-xs font-bold text-slate-800 tracking-tight">
+                             {t('planner.noIntegrations', 'No active calendar integrations.')}
+                          </div>
+                          <p className="text-[11px] font-medium text-slate-500 leading-relaxed max-w-[200px] mx-auto">
+                             {t('planner.noIntegrationsDesc', 'Connect your Outlook or Google Workspace account to automatically synchronize events and maturities.')}
+                          </p>
+                       </div>
+                       
+                       <button 
+                          onClick={() => router.push('/settings?tab=mail')}
+                          className="w-full mt-1 px-3 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-semibold rounded-lg shadow-sm hover:shadow-md active:scale-[0.98] transition-all duration-200 z-10"
+                       >
+                          {t('planner.configureIntegration', 'Configure Connection')}
+                       </button>
+                    </div>
+                 )}
               </div>
            </>
         ) : activeTab === 'expiring' ? (
